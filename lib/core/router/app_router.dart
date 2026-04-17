@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../presentation/screens/all_apps/all_apps_screen.dart';
 import '../../presentation/screens/focus/focus_screen.dart';
+import '../../presentation/screens/focus/pomodoro_screen.dart';
+import '../../presentation/screens/focus/quick_block_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/launcher_shell/launcher_shell.dart';
 import '../../presentation/screens/onboarding/onboarding_screen.dart';
@@ -112,6 +114,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: KoruRoutes.focus,
                 builder: (context, state) => const FocusScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'quick',
+                    builder: (context, state) => const QuickBlockScreen(),
+                  ),
+                  GoRoute(
+                    path: 'pomodoro',
+                    builder: (context, state) => const PomodoroScreen(),
+                  ),
+                ],
               ),
             ],
           ),
