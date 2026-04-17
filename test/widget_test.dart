@@ -3,9 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:koru/app.dart';
 
 void main() {
-  testWidgets('KoruApp boots and shows app name', (tester) async {
+  testWidgets('KoruApp boots and shows Home tab', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: KoruApp()));
     await tester.pumpAndSettle();
-    expect(find.text('Koru'), findsOneWidget);
+    // Home tab è initial location; la AppBar mostra "Home"
+    expect(find.text('Home'), findsWidgets);
   });
 }
