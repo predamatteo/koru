@@ -64,6 +64,30 @@ object PermissionMethodChannel {
                         activity.startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
                         result.success(null)
                     }
+                    "setLauncherModeEnabled" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        val pm = activity.packageManager
+                        val alias = ComponentName(activity, "com.dev.koru.MainActivityHome")
+                        val newState = if (enabled) {
+                            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                        } else {
+                            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                        }
+                        pm.setComponentEnabledSetting(
+                            alias,
+                            newState,
+                            android.content.pm.PackageManager.DONT_KILL_APP,
+                        )
+                        result.success(true)
+                    }
+                    "isLauncherModeEnabled" -> {
+                        val pm = activity.packageManager
+                        val alias = ComponentName(activity, "com.dev.koru.MainActivityHome")
+                        val state = pm.getComponentEnabledSetting(alias)
+                        result.success(
+                            state == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                        )
+                    }
                     "checkAllPermissions" -> {
                         val pm = activity.getSystemService(Context.POWER_SERVICE) as PowerManager
                         result.success(

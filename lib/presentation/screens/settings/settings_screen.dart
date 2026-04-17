@@ -1,21 +1,79 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
-import '../../../l10n/generated/app_localizations.dart';
-import '../home/widgets/placeholder_tab_body.dart';
+import '../../../core/constants/koru_colors.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
-      appBar: AppBar(title: Text(l10n.tabSettings)),
-      body: PlaceholderTabBody(
-        icon: Icons.settings_outlined,
-        label: l10n.tabSettings,
-        hint: 'Temi, lingua, launcher, strict mode, about (Step 14)',
+      appBar: AppBar(title: const Text('Settings')),
+      body: ListView(
+        children: [
+          const _SectionLabel('Appearance'),
+          ListTile(
+            leading: const Icon(Icons.font_download_outlined),
+            title: const Text('Font'),
+            subtitle: const Text('Pick the typography you prefer'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/settings/font'),
+          ),
+          const Divider(height: 1),
+          const _SectionLabel('Launcher'),
+          ListTile(
+            leading: const Icon(Icons.home_outlined),
+            title: const Text('Koru as launcher'),
+            subtitle: const Text('Replace your default home screen'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/settings/launcher'),
+          ),
+          const Divider(height: 1),
+          const _SectionLabel('Discipline'),
+          ListTile(
+            leading: const Icon(Icons.lock_outlined),
+            title: const Text('Strict mode'),
+            subtitle: const Text('Lock Settings, Recent apps, Uninstall'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/settings/strict-mode'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.vpn_key_outlined),
+            title: const Text('Backdoor code'),
+            subtitle: const Text('Emergency unblock'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/settings/backdoor'),
+          ),
+          const Divider(height: 1),
+          const _SectionLabel('About'),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('About Koru'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/settings/about'),
+          ),
+        ],
       ),
     );
   }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+        child: Text(
+          text.toUpperCase(),
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: KoruColors.textSecondary,
+                letterSpacing: 2,
+                fontWeight: FontWeight.w600,
+              ),
+        ),
+      );
 }

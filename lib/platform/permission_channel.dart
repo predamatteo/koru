@@ -71,6 +71,16 @@ class PermissionChannel {
   Future<void> openDefaultLauncherSettings() =>
       _channel.invokeMethod<void>('openDefaultLauncherSettings');
 
+  /// Abilita/disabilita l'activity-alias HOME di Koru.
+  Future<bool> setLauncherModeEnabled(bool enabled) async =>
+      (await _channel.invokeMethod<bool>('setLauncherModeEnabled', {
+        'enabled': enabled,
+      })) ??
+      false;
+
+  Future<bool> isLauncherModeEnabled() async =>
+      (await _channel.invokeMethod<bool>('isLauncherModeEnabled')) ?? false;
+
   Future<KoruPermissionStatus> checkAllPermissions() async {
     final raw = await _channel.invokeMethod<Map<dynamic, dynamic>>('checkAllPermissions');
     return KoruPermissionStatus.fromMap(raw ?? const {});
