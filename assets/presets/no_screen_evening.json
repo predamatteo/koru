@@ -1,0 +1,25 @@
+{
+  "presetId": 3,
+  "title": "No Screen Evening",
+  "emoji": "🌙",
+  "colorHex": "#A85449",
+  "dayFlags": 127,
+  "blockingMode": 0,
+  "typeCombinations": 1,
+  "intervals": [
+    { "fromMinutes": 1320, "toMinutes": 420 }
+  ],
+  "blockedPackages": [
+    "com.instagram.android",
+    "com.zhiliaoapp.musically",
+    "com.google.android.youtube",
+    "com.twitter.android",
+    "com.x.android",
+    "com.facebook.katana",
+    "com.reddit.frontpage",
+    "com.netflix.mediaclient",
+    "com.snapchat.android",
+    "com.whatsapp",
+    "org.telegram.messenger"
+  ]
+}

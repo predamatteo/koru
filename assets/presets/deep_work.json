@@ -1,0 +1,23 @@
+{
+  "presetId": 2,
+  "title": "Deep Work",
+  "emoji": "🧠",
+  "colorHex": "#5C8262",
+  "dayFlags": 31,
+  "blockingMode": 0,
+  "typeCombinations": 1,
+  "intervals": [
+    { "fromMinutes": 540, "toMinutes": 1020 }
+  ],
+  "blockedPackages": [
+    "com.instagram.android",
+    "com.zhiliaoapp.musically",
+    "com.google.android.youtube",
+    "com.twitter.android",
+    "com.x.android",
+    "com.facebook.katana",
+    "com.reddit.frontpage",
+    "com.snapchat.android",
+    "com.pinterest"
+  ]
+}

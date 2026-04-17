@@ -1,0 +1,21 @@
+{
+  "presetId": 1,
+  "title": "Mindful Morning",
+  "emoji": "🌅",
+  "colorHex": "#8A6D52",
+  "dayFlags": 127,
+  "blockingMode": 0,
+  "typeCombinations": 1,
+  "intervals": [
+    { "fromMinutes": 420, "toMinutes": 540 }
+  ],
+  "blockedPackages": [
+    "com.instagram.android",
+    "com.zhiliaoapp.musically",
+    "com.google.android.youtube",
+    "com.twitter.android",
+    "com.x.android",
+    "com.facebook.katana",
+    "com.reddit.frontpage"
+  ]
+}

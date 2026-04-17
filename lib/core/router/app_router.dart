@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../constants/hive_keys.dart';
+import '../di/providers.dart';
 import '../../presentation/screens/all_apps/all_apps_screen.dart';
 import '../../presentation/screens/focus/focus_screen.dart';
 import '../../presentation/screens/focus/pomodoro_screen.dart';
@@ -40,9 +42,21 @@ final shellNavigatorStatsKey = GlobalKey<NavigatorState>();
 final shellNavigatorSettingsKey = GlobalKey<NavigatorState>();
 
 final appRouterProvider = Provider<GoRouter>((ref) {
+  final hive = ref.watch(hiveSettingsServiceProvider);
   return GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: KoruRoutes.home,
+    redirect: (context, state) {
+      final onboarded = hive.getBool(
+        HiveKeys.onboardingBox,
+        HiveKeys.isOnboardingPassed,
+        defaultValue: false,
+      );
+      final isOnboardingRoute = state.matchedLocation == KoruRoutes.onboarding;
+      if (!onboarded && !isOnboardingRoute) return KoruRoutes.onboarding;
+      if (onboarded && isOnboardingRoute) return KoruRoutes.home;
+      return null;
+    },
     debugLogDiagnostics: false,
     routes: [
       GoRoute(
