@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Policy Device Admin di Koru.
+    NOTA: wipe-data escluso per compliance Play Store.
+    Solo force-lock + watch-login per Strict Mode.
+-->
+<device-admin>
+    <uses-policies>
+        <force-lock />
+        <watch-login />
+        <disable-keyguard-features />
+    </uses-policies>
+</device-admin>

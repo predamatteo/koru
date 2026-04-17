@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Koru</string>
+    <string name="koru_accessibility_description">Koru needs accessibility access to detect when you open distracting apps and show the mindful block overlay. No data ever leaves your device.</string>
+    <string name="koru_service_channel_title">Koru Blocking Engine</string>
+    <string name="koru_service_channel_description">Keeps your profiles active in the background.</string>
+    <string name="koru_service_notification_title">Koru is watching over you</string>
+    <string name="koru_service_notification_text">Tap to open Koru</string>
+    <string name="koru_device_admin_description">Enable Device Admin to lock Settings, Recent Apps and Uninstallation while Strict Mode is on.</string>
+    <string name="koru_blocked_title">Take a breath</string>
+    <string name="koru_blocked_subtitle">This app is paused by your Koru profile.</string>
+    <string name="koru_blocked_button_back">Go back</string>
+</resources>
