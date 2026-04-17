@@ -7,6 +7,7 @@ import '../../presentation/screens/focus/focus_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/launcher_shell/launcher_shell.dart';
 import '../../presentation/screens/onboarding/onboarding_screen.dart';
+import '../../presentation/screens/profiles/profile_editor_screen.dart';
 import '../../presentation/screens/profiles/profiles_list_screen.dart';
 import '../../presentation/screens/settings/settings_screen.dart';
 import '../../presentation/screens/statistics/statistics_screen.dart';
@@ -66,6 +67,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: KoruRoutes.profiles,
                 builder: (context, state) => const ProfilesListScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'new',
+                    builder: (context, state) => const ProfileEditorScreen(),
+                  ),
+                  GoRoute(
+                    path: ':id',
+                    builder: (context, state) => ProfileEditorScreen(
+                      profileId: int.tryParse(state.pathParameters['id'] ?? ''),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
