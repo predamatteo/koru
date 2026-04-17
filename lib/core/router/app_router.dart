@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../presentation/screens/all_apps/all_apps_screen.dart';
 import '../../presentation/screens/focus/focus_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/launcher_shell/launcher_shell.dart';
@@ -16,6 +17,7 @@ class KoruRoutes {
 
   static const String onboarding = '/onboarding';
   static const String home = '/home';
+  static const String drawer = '/home/drawer';
   static const String profiles = '/profiles';
   static const String focus = '/focus';
   static const String stats = '/stats';
@@ -49,6 +51,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: KoruRoutes.home,
                 builder: (context, state) => const HomeScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'drawer',
+                    builder: (context, state) => const AllAppsScreen(),
+                  ),
+                ],
               ),
             ],
           ),
