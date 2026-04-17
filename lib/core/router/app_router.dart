@@ -9,6 +9,9 @@ import '../../presentation/screens/launcher_shell/launcher_shell.dart';
 import '../../presentation/screens/onboarding/onboarding_screen.dart';
 import '../../presentation/screens/profiles/profile_editor_screen.dart';
 import '../../presentation/screens/profiles/profiles_list_screen.dart';
+import '../../presentation/screens/profiles/sub_screens/block_in_app_content_screen.dart';
+import '../../presentation/screens/profiles/sub_screens/overlay_designer_screen.dart';
+import '../../presentation/screens/profiles/sub_screens/set_blocked_apps_screen.dart';
 import '../../presentation/screens/settings/settings_screen.dart';
 import '../../presentation/screens/statistics/statistics_screen.dart';
 
@@ -77,6 +80,27 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     builder: (context, state) => ProfileEditorScreen(
                       profileId: int.tryParse(state.pathParameters['id'] ?? ''),
                     ),
+                    routes: [
+                      GoRoute(
+                        path: 'apps',
+                        builder: (context, state) => SetBlockedAppsScreen(
+                          profileId: int.parse(state.pathParameters['id']!),
+                        ),
+                      ),
+                      GoRoute(
+                        path: 'sections',
+                        builder: (context, state) => BlockInAppContentScreen(
+                          profileId: int.parse(state.pathParameters['id']!),
+                        ),
+                      ),
+                      GoRoute(
+                        path: 'overlay/:pkg',
+                        builder: (context, state) => OverlayDesignerScreen(
+                          profileId: int.parse(state.pathParameters['id']!),
+                          packageName: state.pathParameters['pkg']!,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

@@ -196,15 +196,35 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
             selected: {_blockingMode},
             onSelectionChanged: (s) => setState(() => _blockingMode = s.first),
           ),
-          const SizedBox(height: 24),
-          _SectionHeader(title: 'Apps & websites'),
-          const SizedBox(height: 8),
-          Text(
-            'App selection, in-app content and websites: Step 9 — MVP pending.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: KoruColors.textSecondary,
-                ),
-          ),
+          if (!widget.isNew) ...[
+            const SizedBox(height: 24),
+            _SectionHeader(title: 'What to block'),
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.apps_outlined),
+              title: const Text('Blocked apps'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.push('/profiles/${widget.profileId}/apps'),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.layers_clear_outlined),
+              title: const Text('In-app content'),
+              subtitle: const Text(
+                  'Instagram Reels/Stories/Explore · YouTube Shorts'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.push('/profiles/${widget.profileId}/sections'),
+            ),
+          ] else ...[
+            const SizedBox(height: 16),
+            Text(
+              'Save the profile first, then configure apps and in-app sections.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: KoruColors.textSecondary,
+                  ),
+            ),
+          ],
         ],
       ),
     );

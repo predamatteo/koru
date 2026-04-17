@@ -12,11 +12,14 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.dev.koru.browser.BrowserConfigLoader
 import com.dev.koru.browser.BrowserUrlDetector
 import com.dev.koru.browser.WebsiteMatcher
+import com.dev.koru.channels.ServiceEventChannel
+import com.dev.koru.content.InAppContentDetector
 import com.dev.koru.db.NativeAppRelation
 import com.dev.koru.db.NativeDatabase
 import com.dev.koru.db.NativeProfile
 import com.dev.koru.db.NativeWebsiteRule
 import com.dev.koru.strictmode.StrictModeEnforcer
+import org.json.JSONObject
 import java.util.Calendar
 
 /**
@@ -62,10 +65,14 @@ class KoruAccessibilityService : AccessibilityService() {
     )
 
     private var actionReceiver: BroadcastReceiver? = null
+    private var inAppDetector: InAppContentDetector? = null
+    private var lastSectionEventTime = 0L
+    private var lastDetectedSectionWireId: String? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        inAppDetector = InAppContentDetector(applicationContext)
 
         actionReceiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
@@ -109,10 +116,64 @@ class KoruAccessibilityService : AccessibilityService() {
 
         checkAppBlocking(pkg)
 
+        // In-app content blocking (Instagram Reels/Stories/Explore, YouTube Shorts)
+        val detector = inAppDetector
+        if (detector != null && detector.supports(pkg)) {
+            val root = try { rootInActiveWindow } catch (_: Exception) { null }
+            if (root != null) checkInAppContentBlocking(pkg, root)
+        }
+
         if (BrowserConfigLoader.isBrowser(applicationContext, pkg)) {
             val root = try { rootInActiveWindow } catch (_: Exception) { null }
             if (root != null) checkWebsiteBlocking(pkg, root)
         }
+    }
+
+    private fun checkInAppContentBlocking(packageName: String, root: AccessibilityNodeInfo) {
+        val detected = inAppDetector?.detect(packageName, root) ?: return
+
+        // Debounce: avoid firing for the same detection within 1s
+        val now = System.currentTimeMillis()
+        if (detected.wireId == lastDetectedSectionWireId && now - lastSectionEventTime < 1_000) {
+            return
+        }
+        lastDetectedSectionWireId = detected.wireId
+        lastSectionEventTime = now
+
+        for (profile in profiles) {
+            if (!isProfileActiveNow(profile)) continue
+            val apps = profileApps[profile.id] ?: continue
+            val relation = apps.firstOrNull { it.packageName == packageName } ?: continue
+
+            // Se app è già bloccata interamente, il checkAppBlocking la gestisce.
+            if (relation.isEnabled) continue
+
+            val json = relation.blockedSectionsJson ?: continue
+            if (!json.contains(detected.wireId)) continue
+
+            Log.w(TAG, ">>> BLOCKING SECTION ${detected.wireId} in $packageName by '${profile.title}'")
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            try {
+                NativeDatabase.insertBlockSession(
+                    applicationContext,
+                    "$packageName/${detected.wireId}",
+                    now,
+                )
+            } catch (_: Exception) {}
+            sendSectionEvent(packageName, detected.wireId, profile)
+            return
+        }
+    }
+
+    private fun sendSectionEvent(packageName: String, sectionWireId: String, profile: NativeProfile) {
+        val json = JSONObject().apply {
+            put("type", "IN_APP_SECTION_DETECTED")
+            put("packageName", packageName)
+            put("section", sectionWireId)
+            put("profileId", profile.id)
+            put("profileTitle", profile.title)
+        }
+        ServiceEventChannel.sendEvent(json.toString())
     }
 
     private fun checkAppBlocking(packageName: String) {

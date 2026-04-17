@@ -1,0 +1,19 @@
+{
+  "REELS": [
+    "clips_viewer_view_pager",
+    "clips_viewer_recyclerview",
+    "reel_viewer_container",
+    "tab_reels"
+  ],
+  "STORIES": [
+    "story_viewer_fragment",
+    "reel_header_username",
+    "reel_viewer_texture_view",
+    "story_header_user_textview"
+  ],
+  "EXPLORE": [
+    "explore_grid_recycler_view",
+    "tab_explore",
+    "tab_search"
+  ]
+}
