@@ -15,6 +15,8 @@ import '../../presentation/screens/profiles/sub_screens/block_in_app_content_scr
 import '../../presentation/screens/profiles/sub_screens/overlay_designer_screen.dart';
 import '../../presentation/screens/profiles/sub_screens/set_blocked_apps_screen.dart';
 import '../../presentation/screens/settings/settings_screen.dart';
+import '../../presentation/screens/settings/sub_screens/backdoor_codes_screen.dart';
+import '../../presentation/screens/settings/sub_screens/strict_mode_screen.dart';
 import '../../presentation/screens/statistics/statistics_screen.dart';
 
 /// Route names accessibili da tutta l'app (evita hard-coded strings).
@@ -142,6 +144,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: KoruRoutes.settings,
                 builder: (context, state) => const SettingsScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'strict-mode',
+                    builder: (context, state) => const StrictModeScreen(),
+                  ),
+                  GoRoute(
+                    path: 'backdoor',
+                    builder: (context, state) => const BackdoorCodesScreen(),
+                  ),
+                ],
               ),
             ],
           ),
