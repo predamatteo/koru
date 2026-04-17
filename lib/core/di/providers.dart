@@ -5,6 +5,7 @@ import '../../data/database/daos/focus_usage_events_dao.dart';
 import '../../data/database/daos/intention_usage_events_dao.dart';
 import '../../data/database/daos/restricted_access_events_dao.dart';
 import '../../data/local/hive_settings_service.dart';
+import '../../platform/platform_channel_service.dart';
 
 /// Root provider for the Drift database. Must be overridden in main() with an
 /// initialized [AppDatabase] instance (or disposed at app shutdown).
@@ -33,4 +34,9 @@ final intentionUsageEventsDaoProvider = Provider<IntentionUsageEventsDao>(
 
 final focusUsageEventsDaoProvider = Provider<FocusUsageEventsDao>(
   (ref) => ref.watch(appDatabaseProvider).focusUsageEventsDao,
+);
+
+/// Facade per i MethodChannel/EventChannel del native.
+final platformChannelServiceProvider = Provider<PlatformChannelService>(
+  (ref) => PlatformChannelService(),
 );
