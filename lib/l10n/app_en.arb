@@ -1,0 +1,19 @@
+{
+  "@@locale": "en",
+  "appName": "Koru",
+  "appTagline": "A minimalist launcher and mindful blocker to reclaim your attention.",
+  "onboardingWelcomeTitle": "Welcome to Koru",
+  "onboardingWelcomeSubtitle": "Koru is a symbol of inner growth. Take back control of your attention, one breath at a time.",
+  "tabHome": "Home",
+  "tabProfiles": "Profiles",
+  "tabFocus": "Focus",
+  "tabStats": "Stats",
+  "tabSettings": "Settings",
+  "commonCancel": "Cancel",
+  "commonConfirm": "Confirm",
+  "commonContinue": "Continue",
+  "commonBack": "Back",
+  "commonSave": "Save",
+  "commonDelete": "Delete",
+  "commonEdit": "Edit"
+}
