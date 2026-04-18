@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -25,9 +27,15 @@ import java.util.Calendar
 /**
  * Koru blocking engine running inside an AccessibilityService process.
  *
- * Reacts event-driven to TYPE_WINDOW_STATE_CHANGED for immediate blocking and
- * URL parsing. Works in parallel with LockForegroundService's LockRunnable
- * (polling-based backup loop).
+ * Event-driven su TYPE_WINDOW_STATE_CHANGED — quando rileva un'app bloccata
+ * da un profilo attivo:
+ *   1. Mostra l'overlay Koru via [OverlayManager] (ComposeView sopra tutto).
+ *   2. Performa GLOBAL_ACTION_HOME per riportare l'utente alla home.
+ *
+ * L'OverlayManager deve vivere nello stesso processo dell'AccessibilityService
+ * (cioè `:accessibility`) perché entrambi usano WindowManager attached a
+ * quel processo. È un proprio OverlayManager distinto da quello di
+ * LockForegroundService (che gira nel main process).
  */
 class KoruAccessibilityService : AccessibilityService() {
 
@@ -69,10 +77,19 @@ class KoruAccessibilityService : AccessibilityService() {
     private var lastSectionEventTime = 0L
     private var lastDetectedSectionWireId: String? = null
 
+    private var overlayManager: OverlayManager? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
         inAppDetector = InAppContentDetector(applicationContext)
+        overlayManager = OverlayManager(applicationContext).apply {
+            onReturnHome = {
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                dismiss()
+            }
+        }
 
         actionReceiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
@@ -93,7 +110,7 @@ class KoruAccessibilityService : AccessibilityService() {
         }
 
         loadProfiles()
-        Log.i(TAG, "=== Accessibility Service CONNECTED ===")
+        Log.i(TAG, "=== Accessibility Service CONNECTED (overlay enabled) ===")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -105,7 +122,11 @@ class KoruAccessibilityService : AccessibilityService() {
         if (StrictModeEnforcer.handleEvent(this, event)) return
 
         if (skipPackages.contains(pkg) || pkg == packageName) {
-            if (currentlyBlockingPackage != null) currentlyBlockingPackage = null
+            // Siamo tornati al launcher o a Koru stesso → dismiss overlay.
+            if (currentlyBlockingPackage != null) {
+                currentlyBlockingPackage = null
+                mainHandler.post { overlayManager?.dismiss() }
+            }
             return
         }
 
@@ -114,13 +135,14 @@ class KoruAccessibilityService : AccessibilityService() {
         val now = System.currentTimeMillis()
         if (now - lastProfileLoadTime > 10_000) loadProfiles()
 
-        checkAppBlocking(pkg)
+        val blockedByApp = checkAppBlocking(pkg)
+        if (blockedByApp) return
 
         // In-app content blocking (Instagram Reels/Stories/Explore, YouTube Shorts)
         val detector = inAppDetector
         if (detector != null && detector.supports(pkg)) {
             val root = try { rootInActiveWindow } catch (_: Exception) { null }
-            if (root != null) checkInAppContentBlocking(pkg, root)
+            if (root != null && checkInAppContentBlocking(pkg, root)) return
         }
 
         if (BrowserConfigLoader.isBrowser(applicationContext, pkg)) {
@@ -129,13 +151,60 @@ class KoruAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun checkInAppContentBlocking(packageName: String, root: AccessibilityNodeInfo) {
-        val detected = inAppDetector?.detect(packageName, root) ?: return
+    /**
+     * Ritorna true se ha bloccato l'app (overlay mostrato + HOME).
+     */
+    private fun checkAppBlocking(packageName: String): Boolean {
+        for (profile in profiles) {
+            if (!isProfileActiveNow(profile)) continue
+
+            val apps = profileApps[profile.id] ?: emptyList()
+            val enabledApps = apps.filter { it.isEnabled }.map { it.packageName }
+
+            val shouldBlock = when (profile.blockingMode) {
+                0 -> enabledApps.contains(packageName)
+                1 -> enabledApps.isNotEmpty() && !enabledApps.contains(packageName)
+                else -> false
+            }
+
+            if (shouldBlock) {
+                Log.w(TAG, ">>> BLOCKING APP: $packageName by '${profile.title}'")
+                currentlyBlockingPackage = packageName
+                val appLabel = getAppLabel(packageName)
+                mainHandler.post {
+                    overlayManager?.show(packageName, appLabel, profile.title)
+                }
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                try {
+                    NativeDatabase.insertBlockSession(
+                        applicationContext,
+                        packageName,
+                        System.currentTimeMillis(),
+                    )
+                } catch (_: Exception) {}
+                sendBlockingStateEvent(true, packageName, profile)
+                return true
+            }
+        }
+        // Nessun profilo blocca questo pkg — se avevamo un overlay, dismiss.
+        if (currentlyBlockingPackage != null) {
+            currentlyBlockingPackage = null
+            mainHandler.post { overlayManager?.dismiss() }
+            sendBlockingStateEvent(false, "", null)
+        }
+        return false
+    }
+
+    private fun checkInAppContentBlocking(
+        packageName: String,
+        root: AccessibilityNodeInfo,
+    ): Boolean {
+        val detected = inAppDetector?.detect(packageName, root) ?: return false
 
         // Debounce: avoid firing for the same detection within 1s
         val now = System.currentTimeMillis()
         if (detected.wireId == lastDetectedSectionWireId && now - lastSectionEventTime < 1_000) {
-            return
+            return false
         }
         lastDetectedSectionWireId = detected.wireId
         lastSectionEventTime = now
@@ -152,6 +221,10 @@ class KoruAccessibilityService : AccessibilityService() {
             if (!json.contains(detected.wireId)) continue
 
             Log.w(TAG, ">>> BLOCKING SECTION ${detected.wireId} in $packageName by '${profile.title}'")
+            val appLabel = getAppLabel(packageName)
+            mainHandler.post {
+                overlayManager?.show(packageName, appLabel, profile.title)
+            }
             performGlobalAction(GLOBAL_ACTION_HOME)
             try {
                 NativeDatabase.insertBlockSession(
@@ -161,45 +234,9 @@ class KoruAccessibilityService : AccessibilityService() {
                 )
             } catch (_: Exception) {}
             sendSectionEvent(packageName, detected.wireId, profile)
-            return
+            return true
         }
-    }
-
-    private fun sendSectionEvent(packageName: String, sectionWireId: String, profile: NativeProfile) {
-        val json = JSONObject().apply {
-            put("type", "IN_APP_SECTION_DETECTED")
-            put("packageName", packageName)
-            put("section", sectionWireId)
-            put("profileId", profile.id)
-            put("profileTitle", profile.title)
-        }
-        ServiceEventChannel.sendEvent(json.toString())
-    }
-
-    private fun checkAppBlocking(packageName: String) {
-        for (profile in profiles) {
-            if (!isProfileActiveNow(profile)) continue
-
-            val apps = profileApps[profile.id] ?: emptyList()
-            val enabledApps = apps.filter { it.isEnabled }.map { it.packageName }
-
-            val shouldBlock = when (profile.blockingMode) {
-                0 -> enabledApps.contains(packageName)
-                1 -> enabledApps.isNotEmpty() && !enabledApps.contains(packageName)
-                else -> false
-            }
-
-            if (shouldBlock) {
-                Log.w(TAG, ">>> BLOCKING APP: $packageName by '${profile.title}'")
-                currentlyBlockingPackage = packageName
-                performGlobalAction(GLOBAL_ACTION_HOME)
-                try {
-                    NativeDatabase.insertBlockSession(applicationContext, packageName, System.currentTimeMillis())
-                } catch (_: Exception) {}
-                return
-            }
-        }
-        if (currentlyBlockingPackage != null) currentlyBlockingPackage = null
+        return false
     }
 
     private fun checkWebsiteBlocking(packageName: String, rootNode: AccessibilityNodeInfo) {
@@ -211,9 +248,17 @@ class KoruAccessibilityService : AccessibilityService() {
         for ((profileId, rules) in websiteRulesCache) {
             if (WebsiteMatcher.matchesAny(rules, detected.fullUrl, detected.domain)) {
                 Log.w(TAG, ">>> BLOCKING SITE: ${detected.domain} by profile $profileId")
+                val profileTitle = profiles.firstOrNull { it.id == profileId }?.title ?: "Koru"
+                mainHandler.post {
+                    overlayManager?.show(packageName, detected.domain, profileTitle)
+                }
                 performGlobalAction(GLOBAL_ACTION_HOME)
                 try {
-                    NativeDatabase.insertBlockSession(applicationContext, detected.domain, System.currentTimeMillis())
+                    NativeDatabase.insertBlockSession(
+                        applicationContext,
+                        detected.domain,
+                        System.currentTimeMillis(),
+                    )
                 } catch (_: Exception) {}
                 return
             }
@@ -266,6 +311,39 @@ class KoruAccessibilityService : AccessibilityService() {
         lastForegroundPackage?.let { checkAppBlocking(it) }
     }
 
+    private fun getAppLabel(packageName: String): String = try {
+        val pm = packageManager
+        pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
+    } catch (_: Exception) {
+        packageName
+    }
+
+    private fun sendBlockingStateEvent(
+        isBlocking: Boolean,
+        packageName: String,
+        profile: NativeProfile?,
+    ) {
+        val json = JSONObject().apply {
+            put("type", "BLOCKING_STATE")
+            put("isBlocking", isBlocking)
+            put("packageName", packageName)
+            put("profileId", profile?.id ?: -1)
+            put("profileTitle", profile?.title ?: "")
+        }
+        ServiceEventChannel.sendEvent(json.toString())
+    }
+
+    private fun sendSectionEvent(packageName: String, sectionWireId: String, profile: NativeProfile) {
+        val json = JSONObject().apply {
+            put("type", "IN_APP_SECTION_DETECTED")
+            put("packageName", packageName)
+            put("section", sectionWireId)
+            put("profileId", profile.id)
+            put("profileTitle", profile.title)
+        }
+        ServiceEventChannel.sendEvent(json.toString())
+    }
+
     override fun onInterrupt() {
         Log.w(TAG, "Interrupted")
     }
@@ -274,6 +352,8 @@ class KoruAccessibilityService : AccessibilityService() {
         instance = null
         actionReceiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
         actionReceiver = null
+        overlayManager?.destroy()
+        overlayManager = null
         NativeDatabase.close()
         super.onDestroy()
     }
