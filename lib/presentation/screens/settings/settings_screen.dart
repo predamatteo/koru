@@ -80,6 +80,13 @@ class SettingsScreen extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/settings/app-limits'),
           ),
+          ListTile(
+            leading: const Icon(Icons.notifications_off_outlined),
+            title: const Text('Notification filter'),
+            subtitle: const Text('Silence notifications from distracting apps'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/settings/notification-filter'),
+          ),
           const Divider(height: 1),
           const _SectionLabel('About'),
           ListTile(

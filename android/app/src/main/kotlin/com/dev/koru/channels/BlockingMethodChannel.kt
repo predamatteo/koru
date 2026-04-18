@@ -11,6 +11,7 @@ import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
+import com.dev.koru.notification.NotificationFilterStore
 import com.dev.koru.service.AppUsageLimitsStore
 import com.dev.koru.service.LockForegroundService
 import io.flutter.embedding.engine.FlutterEngine
@@ -142,6 +143,32 @@ object BlockingMethodChannel {
                         val pkg = call.argument<String>("packageName")
                             ?: return@setMethodCallHandler result.error("MISSING_ARG", "packageName required", null)
                         result.success(getTodayForegroundMs(activity, pkg))
+                    }
+                    "getSilencedPackages" -> {
+                        result.success(
+                            NotificationFilterStore.read(activity.applicationContext).toList()
+                        )
+                    }
+                    "setSilencedPackages" -> {
+                        val list = call.argument<List<String>>("packages") ?: emptyList()
+                        NotificationFilterStore.save(activity.applicationContext, list.toSet())
+                        result.success(true)
+                    }
+                    "isNotificationAccessGranted" -> {
+                        val flat = android.provider.Settings.Secure.getString(
+                            activity.contentResolver,
+                            "enabled_notification_listeners",
+                        ) ?: ""
+                        val expected = "${activity.packageName}/" +
+                            "com.dev.koru.notification.KoruNotificationListenerService"
+                        result.success(flat.contains(expected))
+                    }
+                    "openNotificationAccessSettings" -> {
+                        val intent = Intent(
+                            android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS
+                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        activity.startActivity(intent)
+                        result.success(true)
                     }
                     else -> result.notImplemented()
                 }

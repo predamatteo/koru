@@ -146,4 +146,23 @@ class BlockingChannel {
         'packageName': packageName,
       })) ??
       0;
+
+  Future<List<String>> getSilencedPackages() async {
+    final raw = await _channel.invokeListMethod<String>('getSilencedPackages');
+    return raw ?? const [];
+  }
+
+  Future<bool> setSilencedPackages(List<String> packages) async =>
+      (await _channel.invokeMethod<bool>('setSilencedPackages', {
+        'packages': packages,
+      })) ??
+      false;
+
+  Future<bool> isNotificationAccessGranted() async =>
+      (await _channel.invokeMethod<bool>('isNotificationAccessGranted')) ??
+      false;
+
+  Future<void> openNotificationAccessSettings() async {
+    await _channel.invokeMethod<bool>('openNotificationAccessSettings');
+  }
 }

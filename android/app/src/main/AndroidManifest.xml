@@ -108,6 +108,18 @@
                 android:value="Persistent mindful blocking engine for digital wellbeing" />
         </service>
 
+        <!-- Notification filter: auto-dismiss delle notifiche dai pkg
+             silenziati dall'utente. Richiede che l'utente abiliti Koru
+             in "Notification access" nelle Settings Android. -->
+        <service
+            android:name=".notification.KoruNotificationListenerService"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".strictmode.KoruDeviceAdminReceiver"
             android:permission="android.permission.BIND_DEVICE_ADMIN"

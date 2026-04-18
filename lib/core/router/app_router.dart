@@ -28,6 +28,7 @@ import '../../presentation/screens/settings/sub_screens/about_screen.dart';
 import '../../presentation/screens/settings/sub_screens/app_limits_screen.dart';
 import '../../presentation/screens/settings/sub_screens/app_personalization_screen.dart';
 import '../../presentation/screens/settings/sub_screens/backdoor_codes_screen.dart';
+import '../../presentation/screens/settings/sub_screens/notification_filter_screen.dart';
 import '../../presentation/screens/settings/sub_screens/font_screen.dart';
 import '../../presentation/screens/settings/sub_screens/launcher_settings_screen.dart';
 import '../../presentation/screens/settings/sub_screens/permissions_screen.dart';
@@ -287,6 +288,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     path: 'app-personalization',
                     builder: (context, state) =>
                         const AppPersonalizationScreen(),
+                  ),
+                  GoRoute(
+                    path: 'notification-filter',
+                    builder: (context, state) =>
+                        const NotificationFilterScreen(),
                   ),
                   GoRoute(
                     path: 'permissions',
