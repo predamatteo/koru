@@ -121,4 +121,10 @@ class BlockingChannel {
 
   Future<bool> isCharging() async =>
       (await _channel.invokeMethod<bool>('isCharging')) ?? false;
+
+  Future<String?> getDefaultDialerPackage() async =>
+      _channel.invokeMethod<String>('getDefaultDialerPackage');
+
+  Future<String?> getDefaultCameraPackage() async =>
+      _channel.invokeMethod<String>('getDefaultCameraPackage');
 }

@@ -6,8 +6,10 @@ import '../../../core/constants/koru_colors.dart';
 import '../../../core/router/app_router.dart';
 import '../home/widgets/circle_clock_widget.dart';
 import '../home/widgets/favorites_list.dart';
+import 'widgets/launcher_shortcut_buttons.dart';
 
-/// Schermata launcher: clock + battery ring + favoriti + "All apps".
+/// Schermata launcher: clock minimalista + favoriti + 2 shortcut
+/// personalizzabili (phone / camera di default) + link "All apps" e "Koru".
 ///
 /// Mostrata SOLO quando Koru è lanciato via HOME intent (cioè è stato
 /// scelto come launcher di default). Accessibile sulla route `/launcher`,
@@ -21,9 +23,9 @@ class LauncherHomeScreen extends ConsumerWidget {
       body: SafeArea(
         child: Column(
           children: [
-            const SizedBox(height: 32),
+            const SizedBox(height: 40),
             const CircleClockWidget(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             Expanded(
               child: SingleChildScrollView(
                 child: Column(
@@ -58,7 +60,8 @@ class LauncherHomeScreen extends ConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const LauncherShortcutButtons(),
+            const SizedBox(height: 8),
           ],
         ),
       ),

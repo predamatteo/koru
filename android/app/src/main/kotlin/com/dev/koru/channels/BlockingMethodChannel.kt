@@ -121,6 +121,12 @@ object BlockingMethodChannel {
                         val bm = activity.getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
                         result.success(bm.isCharging)
                     }
+                    "getDefaultDialerPackage" -> {
+                        result.success(resolveDefaultDialer(activity))
+                    }
+                    "getDefaultCameraPackage" -> {
+                        result.success(resolveDefaultCamera(activity))
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -155,6 +161,29 @@ object BlockingMethodChannel {
                     "lastTimeUsed" to it.lastTimeUsed,
                 )
             }
+    }
+
+    /// Risolve il package del dialer di sistema (telecom + fallback su
+     /// Intent.ACTION_DIAL se TelecomManager non disponibile).
+    private fun resolveDefaultDialer(context: Context): String? {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val tm = context.getSystemService(Context.TELECOM_SERVICE)
+                    as? android.telecom.TelecomManager
+                val pkg = tm?.defaultDialerPackage
+                if (!pkg.isNullOrBlank()) return pkg
+            }
+        } catch (_: Exception) {}
+        val intent = Intent(Intent.ACTION_DIAL)
+        val ri = context.packageManager.resolveActivity(intent, 0)
+        return ri?.activityInfo?.packageName
+    }
+
+    /// Risolve l'app fotocamera di default (IMAGE_CAPTURE).
+    private fun resolveDefaultCamera(context: Context): String? {
+        val intent = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
+        val ri = context.packageManager.resolveActivity(intent, 0)
+        return ri?.activityInfo?.packageName
     }
 
     private fun drawableToBytes(drawable: Drawable): ByteArray {

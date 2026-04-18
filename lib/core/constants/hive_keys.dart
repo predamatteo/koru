@@ -38,6 +38,10 @@ class HiveKeys {
   static const String lastSeenDrawerLetter = 'LAST_SEEN_DRAWER_LETTER';
   static const String lastTabIndex = 'LAST_TAB_INDEX';
   static const String coachmarksDismissed = 'COACHMARKS_DISMISSED';
+  /// Package scelto dall'utente per shortcut sinistro del launcher (default: dialer).
+  static const String launcherLeftShortcut = 'LAUNCHER_LEFT_SHORTCUT';
+  /// Package scelto per shortcut destro del launcher (default: camera).
+  static const String launcherRightShortcut = 'LAUNCHER_RIGHT_SHORTCUT';
 
   // ─── cache box keys ────────────────────────────────────────────────────────
   /// Mappa packageName → icon base64, invalidata su install/uninstall events.

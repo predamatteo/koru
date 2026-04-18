@@ -12,6 +12,8 @@ import '../../presentation/screens/focus/whitelist_editor_screen.dart';
 import '../../presentation/providers/focus_whitelist_provider.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/launcher/launcher_home_screen.dart';
+import '../../presentation/screens/launcher/launcher_shortcut_picker_screen.dart';
+import '../../presentation/providers/launcher_shortcuts_provider.dart';
 import '../../presentation/screens/launcher_shell/launcher_shell.dart';
 import '../../presentation/screens/onboarding/onboarding_screen.dart';
 import '../../presentation/screens/profiles/profile_editor_screen.dart';
@@ -40,6 +42,7 @@ class KoruRoutes {
   /// imposta defaultRouteName a `/launcher` in quel caso).
   static const String launcher = '/launcher';
   static const String launcherDrawer = '/launcher/drawer';
+  static const String launcherShortcuts = '/launcher/shortcut';
 
   /// Tab Home dentro lo shell (dashboard).
   static const String home = '/home';
@@ -102,6 +105,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'drawer',
             builder: (context, state) => const AllAppsScreen(),
+          ),
+          GoRoute(
+            path: 'shortcut',
+            builder: (context, state) {
+              final slot =
+                  (state.uri.queryParameters['slot'] ?? 'left') == 'right'
+                      ? LauncherShortcutSlot.right
+                      : LauncherShortcutSlot.left;
+              return LauncherShortcutPickerScreen(slot: slot);
+            },
           ),
         ],
       ),
