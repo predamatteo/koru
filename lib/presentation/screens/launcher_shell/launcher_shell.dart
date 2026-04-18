@@ -44,41 +44,50 @@ class LauncherShell extends StatelessWidget {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(32),
-              child: NavigationBar(
-                selectedIndex: navigationShell.currentIndex,
-                onDestinationSelected: _onTap,
-                destinations: [
-                  NavigationDestination(
-                    icon: const Icon(Icons.home_outlined),
-                    selectedIcon: const Icon(Icons.home),
-                    label: l10n.tabHome,
-                    tooltip: l10n.tabHome,
-                  ),
-                  NavigationDestination(
-                    icon: const Icon(Icons.shield_outlined),
-                    selectedIcon: const Icon(Icons.shield),
-                    label: l10n.tabProfiles,
-                    tooltip: l10n.tabProfiles,
-                  ),
-                  NavigationDestination(
-                    icon: const Icon(Icons.self_improvement_outlined),
-                    selectedIcon: const Icon(Icons.self_improvement),
-                    label: l10n.tabFocus,
-                    tooltip: l10n.tabFocus,
-                  ),
-                  NavigationDestination(
-                    icon: const Icon(Icons.insights_outlined),
-                    selectedIcon: const Icon(Icons.insights),
-                    label: l10n.tabStats,
-                    tooltip: l10n.tabStats,
-                  ),
-                  NavigationDestination(
-                    icon: const Icon(Icons.settings_outlined),
-                    selectedIcon: const Icon(Icons.settings),
-                    label: l10n.tabSettings,
-                    tooltip: l10n.tabSettings,
-                  ),
-                ],
+              // Disabilita l'ink splash rettangolare che appariva al tap
+              // dentro ogni NavigationDestination — lasciamo solo l'indicator
+              // animato, senza highlight semi-trasparente.
+              child: Theme(
+                data: Theme.of(context).copyWith(
+                  splashFactory: NoSplash.splashFactory,
+                  highlightColor: Colors.transparent,
+                ),
+                child: NavigationBar(
+                  selectedIndex: navigationShell.currentIndex,
+                  onDestinationSelected: _onTap,
+                  destinations: [
+                    NavigationDestination(
+                      icon: const Icon(Icons.home_outlined),
+                      selectedIcon: const Icon(Icons.home),
+                      label: l10n.tabHome,
+                      tooltip: l10n.tabHome,
+                    ),
+                    NavigationDestination(
+                      icon: const Icon(Icons.shield_outlined),
+                      selectedIcon: const Icon(Icons.shield),
+                      label: l10n.tabProfiles,
+                      tooltip: l10n.tabProfiles,
+                    ),
+                    NavigationDestination(
+                      icon: const Icon(Icons.self_improvement_outlined),
+                      selectedIcon: const Icon(Icons.self_improvement),
+                      label: l10n.tabFocus,
+                      tooltip: l10n.tabFocus,
+                    ),
+                    NavigationDestination(
+                      icon: const Icon(Icons.insights_outlined),
+                      selectedIcon: const Icon(Icons.insights),
+                      label: l10n.tabStats,
+                      tooltip: l10n.tabStats,
+                    ),
+                    NavigationDestination(
+                      icon: const Icon(Icons.settings_outlined),
+                      selectedIcon: const Icon(Icons.settings),
+                      label: l10n.tabSettings,
+                      tooltip: l10n.tabSettings,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
