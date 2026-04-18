@@ -106,38 +106,47 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen> {
     final sec = s % 60;
     final timeStr =
         '${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Text(phase, style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 16),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            timeStr,
-            style: Theme.of(context)
-                .textTheme
-                .displayLarge
-                ?.copyWith(letterSpacing: 6),
+    return SizedBox.expand(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            phase,
+            style: Theme.of(context).textTheme.titleLarge,
+            textAlign: TextAlign.center,
           ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          'Cycle ${tick.currentCycle}/${tick.totalCycles}',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: KoruColors.textSecondary,
+          const SizedBox(height: 16),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.center,
+            child: Text(
+              timeStr,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.displayLarge,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Cycle ${tick.currentCycle}/${tick.totalCycles}',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: KoruColors.textSecondary,
+                ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 48),
+          Center(
+            child: FilledButton.icon(
+              onPressed: _stop,
+              icon: const Icon(Icons.stop),
+              label: const Text('Stop'),
+              style: FilledButton.styleFrom(
+                backgroundColor: KoruColors.danger,
               ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 48),
-        FilledButton.icon(
-          onPressed: _stop,
-          icon: const Icon(Icons.stop),
-          label: const Text('Stop'),
-          style: FilledButton.styleFrom(backgroundColor: KoruColors.danger),
-        ),
-      ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
