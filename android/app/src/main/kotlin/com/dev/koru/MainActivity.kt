@@ -4,6 +4,7 @@ import android.content.Intent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import com.dev.koru.channels.BlockingMethodChannel
+import com.dev.koru.channels.NavigationMethodChannel
 import com.dev.koru.channels.ProfileMethodChannel
 import com.dev.koru.channels.StrictModeMethodChannel
 import com.dev.koru.channels.ServiceEventChannel
@@ -17,6 +18,7 @@ class MainActivity : FlutterActivity() {
         StrictModeMethodChannel.register(flutterEngine, this)
         ServiceEventChannel.register(flutterEngine)
         PermissionMethodChannel.register(flutterEngine, this)
+        NavigationMethodChannel.register(flutterEngine)
     }
 
     /**
@@ -28,8 +30,25 @@ class MainActivity : FlutterActivity() {
      */
     override fun getInitialRoute(): String? {
         val current = intent ?: return super.getInitialRoute()
-        val isHomeIntent = current.action == Intent.ACTION_MAIN &&
-            current.categories?.contains(Intent.CATEGORY_HOME) == true
-        return if (isHomeIntent) "/launcher" else super.getInitialRoute()
+        return if (isHomeIntent(current)) "/launcher" else super.getInitialRoute()
     }
+
+    /**
+     * MainActivity è `singleTop`: un HOME intent mentre l'app è già in
+     * foreground non ricrea l'activity, fa partire onNewIntent. In quel caso
+     * Flutter è ancora sulla route precedente (es. /settings). Notifichiamo
+     * il lato Dart via [NavigationMethodChannel] così GoRouter salta sulla
+     * /launcher immediatamente invece di aspettare un'interazione utente.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (isHomeIntent(intent)) {
+            NavigationMethodChannel.goToLauncher()
+        }
+    }
+
+    private fun isHomeIntent(intent: Intent): Boolean =
+        intent.action == Intent.ACTION_MAIN &&
+            intent.categories?.contains(Intent.CATEGORY_HOME) == true
 }

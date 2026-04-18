@@ -5,6 +5,7 @@ import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'l10n/generated/app_localizations.dart';
 import 'presentation/providers/events_refresher.dart';
+import 'presentation/providers/home_intent_listener.dart';
 import 'presentation/providers/theme_provider.dart';
 
 class KoruApp extends ConsumerWidget {
@@ -18,6 +19,7 @@ class KoruApp extends ConsumerWidget {
     // ogni volta che l'app torna in foreground (no eventi persi durante bg).
     ref.watch(appLifecycleInvalidatorProvider);
     ref.watch(blockingEventsRefresherProvider);
+    ref.watch(homeIntentListenerProvider);
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,
       onGenerateTitle: (context) => AppLocalizations.of(context).appName,
