@@ -26,17 +26,41 @@ class QuickBlockManager {
     private var currentCycle: Int = 0
     private var isBreakPhase = false
 
-    fun startQuickBlock(durationMs: Long) {
+    /// Package whitelist corrente (app che restano usabili durante
+    /// quick-block / pomodoro-work). Tutte le altre app sono bloccate.
+    @Volatile
+    var whitelist: Set<String> = emptySet()
+        private set
+
+    /**
+     * True quando un blocco "catch-all" è in corso e la app `packageName`
+     * NON è nella whitelist → AccessibilityService deve bloccarla.
+     * Durante la fase break del pomodoro ritorna false (l'utente può
+     * usare il telefono normalmente nei break).
+     */
+    fun shouldBlockEverythingExceptWhitelist(packageName: String): Boolean {
+        if (!isActive) return false
+        if (isPomodoroMode && isBreakPhase) return false
+        return !whitelist.contains(packageName)
+    }
+
+    fun startQuickBlock(durationMs: Long, whitelist: Set<String> = emptySet()) {
         stop()
         isPomodoroMode = false
         totalMs = durationMs
         remainingMs = durationMs
+        this.whitelist = whitelist
         isActive = true
         startTimer(durationMs)
-        Log.i(TAG, "Quick block started: ${durationMs}ms")
+        Log.i(TAG, "Quick block started: ${durationMs}ms, whitelist=${whitelist.size} apps")
     }
 
-    fun startPomodoro(workMs: Long, breakMs: Long, cycles: Int) {
+    fun startPomodoro(
+        workMs: Long,
+        breakMs: Long,
+        cycles: Int,
+        whitelist: Set<String> = emptySet(),
+    ) {
         stop()
         isPomodoroMode = true
         this.workMs = workMs
@@ -44,11 +68,12 @@ class QuickBlockManager {
         this.totalCycles = cycles
         this.currentCycle = 1
         this.isBreakPhase = false
+        this.whitelist = whitelist
         totalMs = workMs
         remainingMs = workMs
         isActive = true
         startTimer(workMs)
-        Log.i(TAG, "Pomodoro started: ${workMs}ms work, ${breakMs}ms break, $cycles cycles")
+        Log.i(TAG, "Pomodoro started: ${workMs}ms work, ${breakMs}ms break, $cycles cycles, whitelist=${whitelist.size}")
     }
 
     fun stop() {
@@ -57,6 +82,7 @@ class QuickBlockManager {
         isActive = false
         remainingMs = 0
         isPomodoroMode = false
+        whitelist = emptySet()
         sendTickEvent()
         Log.i(TAG, "Quick block/pomodoro stopped")
     }

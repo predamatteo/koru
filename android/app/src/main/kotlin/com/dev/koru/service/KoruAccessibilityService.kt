@@ -220,6 +220,37 @@ class KoruAccessibilityService : AccessibilityService() {
         // Bypass temporaneo (utente ha toccato "Open anyway" sull'overlay).
         if (OverlayManager.isBypassed(packageName)) return false
 
+        // Quick-block / Pomodoro-work: blocca tutto tranne whitelist.
+        val qb = LockForegroundService.quickBlockManager
+        if (qb.shouldBlockEverythingExceptWhitelist(packageName)) {
+            Log.w(TAG, ">>> BLOCKING APP (focus): $packageName")
+            currentlyBlockingPackage = packageName
+            val appLabel = getAppLabel(packageName)
+            mainHandler.post {
+                overlayManager?.show(
+                    packageName = packageName,
+                    appLabel = appLabel,
+                    profileTitle = "Focus session",
+                    reason = BlockReason.FOCUS_MODE,
+                    config = OverlayConfig.DEFAULT,
+                    profileEmoji = "\uD83C\uDFAF", // 🎯
+                )
+            }
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            val now = System.currentTimeMillis()
+            try {
+                NativeDatabase.insertBlockSession(applicationContext, packageName, now)
+                NativeDatabase.insertRestrictedAccessEvent(
+                    applicationContext,
+                    packageName,
+                    eventType = 0,
+                    restrictionType = 4, // FOCUS_MODE
+                    timestamp = now,
+                )
+            } catch (_: Exception) {}
+            return true
+        }
+
         for (profile in profiles) {
             if (!isProfileActiveNow(profile)) continue
 

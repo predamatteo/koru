@@ -80,9 +80,13 @@ class BlockingChannel {
         .toList(growable: false);
   }
 
-  Future<bool> startQuickBlock(Duration duration) async =>
+  Future<bool> startQuickBlock(
+    Duration duration, {
+    List<String> whitelist = const [],
+  }) async =>
       (await _channel.invokeMethod<bool>('startQuickBlock', {
         'durationMs': duration.inMilliseconds,
+        'whitelist': whitelist,
       })) ??
       false;
 
@@ -93,11 +97,13 @@ class BlockingChannel {
     required Duration workPhase,
     required Duration breakPhase,
     required int cycles,
+    List<String> whitelist = const [],
   }) async =>
       (await _channel.invokeMethod<bool>('startPomodoro', {
         'workMs': workPhase.inMilliseconds,
         'breakMs': breakPhase.inMilliseconds,
         'cycles': cycles,
+        'whitelist': whitelist,
       })) ??
       false;
 

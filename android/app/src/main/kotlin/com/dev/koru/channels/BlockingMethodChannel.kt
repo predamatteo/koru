@@ -67,7 +67,12 @@ object BlockingMethodChannel {
                     }
                     "startQuickBlock" -> {
                         val durationMs = call.longArg("durationMs")
-                        LockForegroundService.quickBlockManager.startQuickBlock(durationMs)
+                        val whitelist = (call.argument<List<String>>("whitelist") ?: emptyList())
+                            .toSet()
+                        LockForegroundService.quickBlockManager.startQuickBlock(
+                            durationMs,
+                            whitelist,
+                        )
                         result.success(true)
                     }
                     "stopQuickBlock" -> {
@@ -78,7 +83,14 @@ object BlockingMethodChannel {
                         val workMs = call.longArg("workMs")
                         val breakMs = call.longArg("breakMs")
                         val cycles = call.argument<Int>("cycles") ?: 4
-                        LockForegroundService.quickBlockManager.startPomodoro(workMs, breakMs, cycles)
+                        val whitelist = (call.argument<List<String>>("whitelist") ?: emptyList())
+                            .toSet()
+                        LockForegroundService.quickBlockManager.startPomodoro(
+                            workMs,
+                            breakMs,
+                            cycles,
+                            whitelist,
+                        )
                         result.success(true)
                     }
                     "stopPomodoro" -> {

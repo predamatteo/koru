@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:go_router/go_router.dart';
+
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/di/providers.dart';
 import '../../providers/focus_session_provider.dart';
+import '../../providers/focus_whitelist_provider.dart';
 
 class QuickBlockScreen extends ConsumerStatefulWidget {
   const QuickBlockScreen({super.key});
@@ -18,14 +21,16 @@ class _QuickBlockScreenState extends ConsumerState<QuickBlockScreen> {
 
   Future<void> _start(int minutes) async {
     final blocking = ref.read(platformChannelServiceProvider).blocking;
-    await blocking.startQuickBlock(Duration(minutes: minutes));
+    final whitelist = ref.read(focusWhitelistProvider(FocusMode.quickBlock));
+    await blocking.startQuickBlock(
+      Duration(minutes: minutes),
+      whitelist: whitelist.toList(growable: false),
+    );
   }
 
   Future<void> _stop() async {
     final blocking = ref.read(platformChannelServiceProvider).blocking;
     await blocking.stopQuickBlock();
-    // Log completed session approssimata: minutes elapsed dall'ultimo tick.
-    // (porting più preciso in Step 15)
   }
 
   @override
@@ -35,7 +40,16 @@ class _QuickBlockScreenState extends ConsumerState<QuickBlockScreen> {
     final isActive = tick?.isActive ?? false;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Quick block')),
+      appBar: AppBar(
+        title: const Text('Quick block'),
+        actions: [
+          IconButton(
+            tooltip: 'Whitelist',
+            icon: const Icon(Icons.playlist_add_check),
+            onPressed: () => context.push('/focus/quick/whitelist'),
+          ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
