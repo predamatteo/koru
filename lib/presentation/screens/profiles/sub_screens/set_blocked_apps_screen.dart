@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/koru_colors.dart';
+import '../../../../platform/blocking_channel.dart';
 import '../../../providers/app_list_provider.dart';
 import '../../../providers/profile_providers.dart';
 
@@ -20,6 +21,8 @@ class SetBlockedAppsScreen extends ConsumerStatefulWidget {
 class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
   Set<String> _selected = <String>{};
   bool _loaded = false;
+  final _searchController = TextEditingController();
+  String _query = '';
 
   @override
   void initState() {
@@ -32,6 +35,12 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
       ref.read(installedAppsProvider);
       _hydrate();
     });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _hydrate() async {
@@ -51,6 +60,16 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
     if (mounted) context.pop();
   }
 
+  List<InstalledAppInfo> _filter(List<InstalledAppInfo> apps) {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return apps;
+    return apps
+        .where((a) =>
+            a.label.toLowerCase().contains(q) ||
+            a.packageName.toLowerCase().contains(q))
+        .toList(growable: false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final appsAsync = ref.watch(installedAppsProvider);
@@ -59,6 +78,38 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
       appBar: AppBar(
         title: const Text('Select apps'),
         actions: [TextButton(onPressed: _save, child: const Text('Save'))],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(64),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (v) => setState(() => _query = v),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: 'Search apps',
+                prefixIcon: const Icon(Icons.search,
+                    color: KoruColors.textSecondary),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close,
+                            color: KoruColors.textSecondary),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _query = '');
+                        },
+                      ),
+                filled: true,
+                fillColor: KoruColors.surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
       body: appsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -67,17 +118,27 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
           if (!_loaded) {
             return const Center(child: CircularProgressIndicator());
           }
+          final filtered = _filter(apps);
+          if (filtered.isEmpty) {
+            return Center(
+              child: Text(
+                'No apps matching "$_query"',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: KoruColors.textSecondary,
+                    ),
+              ),
+            );
+          }
           return ListView.builder(
-            // itemExtent fisso → niente calcolo layout per-item, lista grande
-            // scrolla smooth senza jank alla prima apertura.
             itemExtent: 64,
-            itemCount: apps.length,
+            itemCount: filtered.length,
             itemBuilder: (context, i) {
-              final app = apps[i];
+              final app = filtered[i];
               final checked = _selected.contains(app.packageName);
               return CheckboxListTile(
                 value: checked,
-                title: Text(app.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+                title: Text(app.label,
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
                 subtitle: Text(
                   app.packageName,
                   maxLines: 1,
