@@ -16,6 +16,7 @@ class HiveKeys {
   // ─── settings box keys ─────────────────────────────────────────────────────
   static const String strictModeEnabled = 'STRICT_MODE_ENABLED';
   static const String isLauncherDefault = 'IS_LAUNCHER_DEFAULT';
+  static const String monochromeEnabled = 'MONOCHROME_ENABLED';
   static const String localeCode = 'LOCALE_CODE';
   static const String themeMode = 'THEME_MODE';
   static const String intentionsMode = 'INTENTIONS_MODE';

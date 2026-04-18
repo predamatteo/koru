@@ -4,12 +4,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
+import '../../providers/monochrome_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final monochrome = ref.watch(monochromeProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
@@ -23,6 +25,13 @@ class SettingsScreen extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/settings/font'),
           ),
+          SwitchListTile(
+            secondary: const Icon(Icons.invert_colors_outlined),
+            title: const Text('Monochrome'),
+            subtitle: const Text('Remove color from Koru UI and the launcher'),
+            value: monochrome,
+            onChanged: (v) => ref.read(monochromeProvider.notifier).setEnabled(v),
+          ),
           const Divider(height: 1),
           const _SectionLabel('Launcher'),
           ListTile(
@@ -31,6 +40,13 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: const Text('Replace your default home screen'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/settings/launcher'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.apps_outlined),
+            title: const Text('App personalization'),
+            subtitle: const Text('Rename or hide apps in the drawer'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/settings/app-personalization'),
           ),
           const Divider(height: 1),
           const _SectionLabel('Permissions'),

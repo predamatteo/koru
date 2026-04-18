@@ -4,6 +4,7 @@ import '../../data/database/app_database.dart';
 import '../../data/database/daos/achievements_dao.dart';
 import '../../data/database/daos/focus_usage_events_dao.dart';
 import '../../data/database/daos/intention_usage_events_dao.dart';
+import '../../data/database/daos/journal_dao.dart';
 import '../../data/database/daos/restricted_access_events_dao.dart';
 import '../../data/database/daos/streaks_dao.dart';
 import '../../data/local/hive_settings_service.dart';
@@ -44,6 +45,10 @@ final achievementsDaoProvider = Provider<AchievementsDao>(
 
 final streaksDaoProvider = Provider<StreaksDao>(
   (ref) => ref.watch(appDatabaseProvider).streaksDao,
+);
+
+final journalDaoProvider = Provider<JournalDao>(
+  (ref) => ref.watch(appDatabaseProvider).journalDao,
 );
 
 /// Facade per i MethodChannel/EventChannel del native.

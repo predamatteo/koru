@@ -1,6 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
@@ -211,6 +212,12 @@ class _MoodCard extends StatelessWidget {
             TextButton(
               onPressed: () => MoodCheckInSheet.show(context),
               child: Text(has ? 'Update' : 'Check in'),
+            ),
+            IconButton(
+              tooltip: 'Journal',
+              icon: const Icon(Icons.edit_note_outlined,
+                  color: KoruColors.textSecondary),
+              onPressed: () => context.push('/stats/journal'),
             ),
           ],
         ),

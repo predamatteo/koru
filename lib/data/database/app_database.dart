@@ -8,9 +8,11 @@ import 'package:path_provider/path_provider.dart';
 import 'daos/achievements_dao.dart';
 import 'daos/focus_usage_events_dao.dart';
 import 'daos/intention_usage_events_dao.dart';
+import 'daos/journal_dao.dart';
 import 'daos/restricted_access_events_dao.dart';
 import 'daos/streaks_dao.dart';
 import 'tables/achievements_unlocked_table.dart';
+import 'tables/journal_entries_table.dart';
 import 'tables/adult_content_sites_table.dart';
 import 'tables/app_profile_relations_table.dart';
 import 'tables/applications_table.dart';
@@ -66,6 +68,7 @@ part 'app_database.g.dart';
     Favorites,
     AchievementsUnlocked,
     StreakState,
+    JournalEntries,
   ],
   daos: [
     RestrictedAccessEventsDao,
@@ -73,6 +76,7 @@ part 'app_database.g.dart';
     FocusUsageEventsDao,
     AchievementsDao,
     StreaksDao,
+    JournalDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -81,7 +85,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -121,6 +125,10 @@ class AppDatabase extends _$AppDatabase {
             // v2: achievements & streaks (Phase 2).
             await m.createTable(achievementsUnlocked);
             await m.createTable(streakState);
+          }
+          if (from < 3) {
+            // v3: journaling (Phase 2).
+            await m.createTable(journalEntries);
           }
         },
       );

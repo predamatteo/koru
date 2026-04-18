@@ -13,6 +13,7 @@ import '../../presentation/providers/focus_whitelist_provider.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/launcher/launcher_home_screen.dart';
 import '../../presentation/screens/launcher/launcher_shortcut_picker_screen.dart';
+import '../../presentation/screens/mood/journal_screen.dart';
 import '../../presentation/providers/launcher_shortcuts_provider.dart';
 import '../../presentation/screens/launcher_shell/launcher_shell.dart';
 import '../../presentation/screens/onboarding/onboarding_screen.dart';
@@ -25,6 +26,7 @@ import '../../presentation/screens/profiles/sub_screens/websites_screen.dart';
 import '../../presentation/screens/settings/settings_screen.dart';
 import '../../presentation/screens/settings/sub_screens/about_screen.dart';
 import '../../presentation/screens/settings/sub_screens/app_limits_screen.dart';
+import '../../presentation/screens/settings/sub_screens/app_personalization_screen.dart';
 import '../../presentation/screens/settings/sub_screens/backdoor_codes_screen.dart';
 import '../../presentation/screens/settings/sub_screens/font_screen.dart';
 import '../../presentation/screens/settings/sub_screens/launcher_settings_screen.dart';
@@ -242,6 +244,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     path: 'achievements',
                     builder: (context, state) => const AchievementsScreen(),
                   ),
+                  GoRoute(
+                    path: 'journal',
+                    builder: (context, state) => const JournalScreen(),
+                  ),
                 ],
               ),
             ],
@@ -276,6 +282,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'app-limits',
                     builder: (context, state) => const AppLimitsScreen(),
+                  ),
+                  GoRoute(
+                    path: 'app-personalization',
+                    builder: (context, state) =>
+                        const AppPersonalizationScreen(),
                   ),
                   GoRoute(
                     path: 'permissions',
