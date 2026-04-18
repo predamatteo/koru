@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -17,17 +19,34 @@ void _invalidateStats(Ref ref) {
   ref.invalidate(profilesProvider);
 }
 
-/// Ascolta lo stream di eventi native (BLOCKING_STATE / IN_APP_SECTION_DETECTED)
-/// e invalida i provider di statistiche così il conteggio "Blocks" si
-/// aggiorna in real-time anche se il native scrive direttamente su SQLite
-/// (bypassando il tracking automatico di Drift.watch).
+/// Ascolta lo stream di eventi native (BLOCKING_STATE / IN_APP_SECTION_DETECTED
+/// / QUICK_BLOCK_TICK) e invalida i provider di statistiche così i conteggi
+/// di Blocks e Focus time si aggiornano in real-time anche se il native
+/// scrive direttamente su SQLite (bypassando il tracking di Drift.watch).
 final blockingEventsRefresherProvider = Provider<void>((ref) {
   final events = ref.watch(platformChannelServiceProvider).events.events();
+  bool? lastTickIsActive;
   final sub = events.listen((event) {
     final shouldInvalidate = (event is BlockingStateEvent && event.isBlocking) ||
         (event is UnknownServiceEvent &&
             event.raw['type'] == 'IN_APP_SECTION_DETECTED');
-    if (shouldInvalidate) _invalidateStats(ref);
+    if (shouldInvalidate) {
+      _invalidateStats(ref);
+      return;
+    }
+    // Quick-block / pomodoro session finita → il native ha appena scritto
+    // un focus_usage_event. Invalida le stats per aggiornare focus time.
+    if (event is QuickBlockTickEvent) {
+      final was = lastTickIsActive;
+      lastTickIsActive = event.isActive;
+      if (was == true && !event.isActive) {
+        developer.log(
+          'Focus session tick transition true→false, invalidating stats',
+          name: 'EventsRefresher',
+        );
+        _invalidateStats(ref);
+      }
+    }
   });
   ref.onDispose(sub.cancel);
 });

@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.CountDownTimer
 import android.util.Log
 import com.dev.koru.channels.ServiceEventChannel
+import com.dev.koru.db.NativeDatabase
 import org.json.JSONObject
 
 class QuickBlockManager {
@@ -98,6 +99,7 @@ class QuickBlockManager {
     }
 
     fun stop() {
+        recordFocusIfApplicable()
         timer?.cancel()
         timer = null
         isActive = false
@@ -107,6 +109,26 @@ class QuickBlockManager {
         clearSnapshot()
         sendTickEvent()
         Log.i(TAG, "Quick block/pomodoro stopped")
+    }
+
+    /**
+     * Se la fase corrente è una sessione di focus (quick-block o pomodoro
+     * work), registra la durata maturata su `focus_usage_events`.
+     * Fasi <30s sono ignorate come rumore (accidental tap).
+     */
+    private fun recordFocusIfApplicable() {
+        if (!isActive) return
+        if (isBreakPhase) return
+        if (phaseStartedAt <= 0) return
+        val ctx = appContext ?: return
+        val durationMs = System.currentTimeMillis() - phaseStartedAt
+        if (durationMs < 30_000) return
+        try {
+            NativeDatabase.insertFocusUsageEvent(ctx, durationMs, System.currentTimeMillis())
+            Log.i(TAG, "Focus session recorded: ${durationMs}ms")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to record focus session: ${e.message}")
+        }
     }
 
     private fun startTimer(durationMs: Long) {
@@ -122,6 +144,7 @@ class QuickBlockManager {
                 if (isPomodoroMode) {
                     handlePomodoroPhaseEnd()
                 } else {
+                    recordFocusIfApplicable()
                     isActive = false
                     clearSnapshot()
                     sendTickEvent()
@@ -133,6 +156,7 @@ class QuickBlockManager {
 
     private fun handlePomodoroPhaseEnd() {
         if (isBreakPhase) {
+            // break → work: niente da registrare per la break phase.
             currentCycle++
             if (currentCycle > totalCycles) {
                 isActive = false
@@ -149,6 +173,8 @@ class QuickBlockManager {
             startTimer(workMs)
             Log.i(TAG, "Pomodoro cycle $currentCycle: focus phase")
         } else {
+            // work → break (o completion): fase di focus appena chiusa, registra.
+            recordFocusIfApplicable()
             if (currentCycle >= totalCycles) {
                 isActive = false
                 clearSnapshot()

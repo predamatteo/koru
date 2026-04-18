@@ -264,6 +264,30 @@ object NativeDatabase {
         )
     }
 
+    /**
+     * Registra una sessione di focus (quick block o pomodoro work phase)
+     * completata o stoppata, con la durata effettivamente maturata.
+     * Alimenta il "Focus time" nelle statistiche.
+     */
+    fun insertFocusUsageEvent(
+        context: Context,
+        durationMs: Long,
+        timestamp: Long,
+    ) {
+        if (durationMs <= 0) return
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = timestamp }
+        val y = cal.get(java.util.Calendar.YEAR).toString().padStart(4, '0')
+        val m = (cal.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')
+        val d = cal.get(java.util.Calendar.DAY_OF_MONTH).toString().padStart(2, '0')
+        val dayKey = "$y-$m-$d"
+        open(context).execSQL(
+            "INSERT INTO focus_usage_events " +
+                "(occurred_at, day_start_date, duration_in_ms) " +
+                "VALUES (?, ?, ?)",
+            arrayOf(timestamp, dayKey, durationMs),
+        )
+    }
+
     fun getWebsiteRulesForProfile(context: Context, profileId: Int): List<NativeWebsiteRule> {
         val out = mutableListOf<NativeWebsiteRule>()
         open(context).rawQuery(
