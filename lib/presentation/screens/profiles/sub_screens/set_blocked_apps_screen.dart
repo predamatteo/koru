@@ -130,13 +130,15 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
             );
           }
           return ListView.builder(
-            itemExtent: 64,
             itemCount: filtered.length,
             itemBuilder: (context, i) {
               final app = filtered[i];
               final checked = _selected.contains(app.packageName);
               return CheckboxListTile(
                 value: checked,
+                secondary: app.iconBytes != null
+                    ? Image.memory(app.iconBytes!, width: 40, height: 40)
+                    : const SizedBox(width: 40),
                 title: Text(app.label,
                     maxLines: 1, overflow: TextOverflow.ellipsis),
                 subtitle: Text(

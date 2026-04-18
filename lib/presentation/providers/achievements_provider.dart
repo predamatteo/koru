@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -121,16 +122,35 @@ class AchievementEvaluationNotifier extends Notifier<void> {
   Future<void> trigger() async {
     try {
       final stats = await buildAchievementStats(ref);
+      developer.log(
+        'stats: focusLife=${stats.totalFocusMinutes}min '
+        'focusToday=${stats.focusMinutesToday}min '
+        'focusStreak=${stats.focusStreakCurrent} '
+        'profiles=${stats.profilesCount} '
+        'limits=${stats.appsWithLimitsCount} '
+        'strict=${stats.strictModeEnabled} '
+        'overlay=${stats.appsWithCustomOverlayCount}',
+        name: 'AchEval',
+      );
       final repo = ref.read(achievementsRepositoryProvider);
       final newly = await evaluateAchievements(stats: stats, repo: repo);
+      developer.log(
+        'unlocked ${newly.length} new: ${newly.map((a) => a.id).join(",")}',
+        name: 'AchEval',
+      );
       if (newly.isEmpty) return;
       final controller = ref.read(newUnlocksControllerProvider);
       for (final a in newly) {
         controller.emit(a);
       }
       ref.invalidate(achievementStatsProvider);
-    } catch (_) {
-      // fail silenzioso — gamification non deve crashare l'app
+    } catch (e, st) {
+      developer.log(
+        'trigger() failed',
+        name: 'AchEval',
+        error: e,
+        stackTrace: st,
+      );
     }
   }
 }
