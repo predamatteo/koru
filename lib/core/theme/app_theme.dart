@@ -51,14 +51,17 @@ class AppTheme {
         backgroundColor: KoruColors.surfaceElevated,
         surfaceTintColor: Colors.transparent,
         indicatorColor: KoruColors.primary.withValues(alpha: 0.22),
-        indicatorShape: const CircleBorder(),
-        height: 80,
+        // Cerchio con raggio maggiore del default Material 3 NavigationIndicator
+        // (che è 32x56). Usiamo una shape custom che "infla" il rect prima di
+        // disegnare l'oval, così il fill cresce oltre il bounds assegnato.
+        indicatorShape: const _InflatedCircleBorder(inflation: 8),
+        height: 64,
         elevation: 0,
         // Icon-only floating nav bar, cerchio tondo come indicator.
         labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
         iconTheme: WidgetStateProperty.resolveWith(
           (states) => IconThemeData(
-            size: 26,
+            size: 24,
             color: states.contains(WidgetState.selected)
                 ? KoruColors.primary
                 : KoruColors.textSecondary,
@@ -146,4 +149,54 @@ class KoruSemanticColors extends ThemeExtension<KoruSemanticColors> {
       textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
     );
   }
+}
+
+/// OutlinedBorder a forma di cerchio "inflato" — il path viene disegnato
+/// espandendo il rect di [inflation] px su ogni lato, così il pill indicator
+/// del NavigationBar cresce oltre il default 32x56 senza dover aumentare
+/// l'altezza della nav bar.
+class _InflatedCircleBorder extends OutlinedBorder {
+  const _InflatedCircleBorder({this.inflation = 0, super.side = BorderSide.none});
+
+  final double inflation;
+
+  Rect _inflated(Rect rect) => rect.inflate(inflation);
+
+  @override
+  OutlinedBorder copyWith({BorderSide? side}) =>
+      _InflatedCircleBorder(inflation: inflation, side: side ?? this.side);
+
+  @override
+  EdgeInsetsGeometry get dimensions => EdgeInsets.all(side.strokeInset);
+
+  @override
+  ShapeBorder scale(double t) =>
+      _InflatedCircleBorder(inflation: inflation * t, side: side.scale(t));
+
+  @override
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) {
+    return Path()..addOval(_inflated(rect).deflate(side.strokeInset));
+  }
+
+  @override
+  Path getOuterPath(Rect rect, {TextDirection? textDirection}) {
+    return Path()..addOval(_inflated(rect));
+  }
+
+  @override
+  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {
+    if (side.style == BorderStyle.solid) {
+      canvas.drawPath(getOuterPath(rect), side.toPaint());
+    }
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is _InflatedCircleBorder &&
+          other.side == side &&
+          other.inflation == inflation);
+
+  @override
+  int get hashCode => Object.hash(side, inflation);
 }
