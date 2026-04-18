@@ -49,10 +49,19 @@ class AppTheme {
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: KoruColors.surface,
-        indicatorColor: KoruColors.primary.withValues(alpha: 0.2),
+        surfaceTintColor: Colors.transparent,
+        indicatorColor: KoruColors.primary.withValues(alpha: 0.25),
+        indicatorShape: const StadiumBorder(),
+        height: 72,
+        elevation: 0,
+        // Modern pattern (YouTube Music / Gmail 2026): mostra label solo sul
+        // tab selezionato. Risolve truncate di label lunghe e dà più respiro.
+        labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
         labelTextStyle: WidgetStateProperty.resolveWith(
           (states) => TextStyle(
-            fontSize: 12,
+            fontSize: 11,
+            letterSpacing: 0.5,
+            fontWeight: FontWeight.w500,
             color: states.contains(WidgetState.selected)
                 ? KoruColors.primary
                 : KoruColors.textSecondary,
@@ -61,6 +70,7 @@ class AppTheme {
         ),
         iconTheme: WidgetStateProperty.resolveWith(
           (states) => IconThemeData(
+            size: 24,
             color: states.contains(WidgetState.selected)
                 ? KoruColors.primary
                 : KoruColors.textSecondary,
