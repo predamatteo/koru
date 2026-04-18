@@ -48,26 +48,15 @@ class AppTheme {
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: KoruColors.surface,
+        backgroundColor: KoruColors.surfaceElevated,
         surfaceTintColor: Colors.transparent,
-        indicatorColor: KoruColors.primary.withValues(alpha: 0.25),
+        indicatorColor: KoruColors.primary.withValues(alpha: 0.22),
         indicatorShape: const StadiumBorder(),
-        height: 72,
+        height: 64,
         elevation: 0,
-        // Modern pattern (YouTube Music / Gmail 2026): mostra label solo sul
-        // tab selezionato. Risolve truncate di label lunghe e dà più respiro.
-        labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
-        labelTextStyle: WidgetStateProperty.resolveWith(
-          (states) => TextStyle(
-            fontSize: 11,
-            letterSpacing: 0.5,
-            fontWeight: FontWeight.w500,
-            color: states.contains(WidgetState.selected)
-                ? KoruColors.primary
-                : KoruColors.textSecondary,
-            fontFamily: fontFamily,
-          ),
-        ),
+        // Icon-only floating pill nav bar. Label nascosta sempre; il pill
+        // StadiumBorder fa da indicator sul tab attivo.
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
         iconTheme: WidgetStateProperty.resolveWith(
           (states) => IconThemeData(
             size: 24,
