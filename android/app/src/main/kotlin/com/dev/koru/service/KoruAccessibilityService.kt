@@ -160,10 +160,6 @@ class KoruAccessibilityService : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
 
         // Content change dentro un browser → ricontrolla la URL bar.
-        // Chrome & co. cambiano tab o navigano senza emettere
-        // WINDOW_STATE_CHANGED, quindi serve intercettare anche
-        // WINDOW_CONTENT_CHANGED. Debounce 500ms + skip se pkg non è
-        // un browser tracciato.
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
             if (!BrowserConfigLoader.isBrowser(applicationContext, pkg)) return
             val now = System.currentTimeMillis()
@@ -172,8 +168,13 @@ class KoruAccessibilityService : AccessibilityService() {
             lastBrowserContentCheckMs = now
             lastBrowserContentPkg = pkg
             if (now - lastProfileLoadTime > 10_000) loadProfiles()
+            Log.d(TAG, "BROWSER CONTENT: pkg=$pkg rulesCache=${websiteRulesCache.values.flatten().size} rules")
             val root = try { rootInActiveWindow } catch (_: Exception) { null }
-            if (root != null) checkWebsiteBlocking(pkg, root)
+            if (root == null) {
+                Log.w(TAG, "  → rootInActiveWindow null")
+            } else {
+                checkWebsiteBlocking(pkg, root)
+            }
             return
         }
 
@@ -333,11 +334,25 @@ class KoruAccessibilityService : AccessibilityService() {
 
     private fun checkWebsiteBlocking(packageName: String, rootNode: AccessibilityNodeInfo) {
         val configs = BrowserConfigLoader.getConfigsForPackage(applicationContext, packageName)
-        if (configs.isEmpty()) return
+        if (configs.isEmpty()) {
+            Log.w(TAG, "  → no browser configs for $packageName")
+            return
+        }
 
-        val detected = BrowserUrlDetector.detect(rootNode, configs) ?: return
+        val detected = BrowserUrlDetector.detect(rootNode, configs)
+        if (detected == null) {
+            Log.d(TAG, "  → URL bar not detected (configs=${configs.size})")
+            return
+        }
+        Log.i(TAG, "  URL detected: domain=${detected.domain} full=${detected.fullUrl}")
+
+        if (websiteRulesCache.isEmpty()) {
+            Log.w(TAG, "  → websiteRulesCache is EMPTY")
+            return
+        }
 
         for ((profileId, rules) in websiteRulesCache) {
+            Log.d(TAG, "  profile $profileId has ${rules.size} rules: ${rules.map { "${it.name}(type=${it.blockingType},any=${it.isAnywhereInUrl})" }}")
             if (WebsiteMatcher.matchesAny(rules, detected.fullUrl, detected.domain)) {
                 Log.w(TAG, ">>> BLOCKING SITE: ${detected.domain} by profile $profileId")
                 val matchedProfile = profiles.firstOrNull { it.id == profileId }
