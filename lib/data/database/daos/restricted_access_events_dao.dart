@@ -44,6 +44,17 @@ class RestrictedAccessEventsDao extends DatabaseAccessor<AppDatabase>
     return row.read<int>('c');
   }
 
+  /// Lifetime count di eventi BLOCK_TRIGGERED (eventType=0) — usato
+  /// come "honest block count" (blocchi che l'utente NON ha bypassato).
+  Future<int> getLifetimeHonestBlockCount() async {
+    final query = customSelect(
+      'SELECT COUNT(*) AS c FROM restricted_access_events WHERE event_type = 0',
+      readsFrom: {restrictedAccessEvents},
+    );
+    final row = await query.getSingle();
+    return row.read<int>('c');
+  }
+
   Stream<int> watchCountEventsByTypeInRange(
     int eventType,
     String fromDate,

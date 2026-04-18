@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/koru_colors.dart';
+import '../../../domain/entities/streak.dart';
+import '../../providers/achievements_provider.dart';
 import '../../providers/mood_provider.dart';
 
 /// Daily mood check-in sheet (1-5, optional note).
@@ -39,6 +41,9 @@ class _MoodCheckInSheetState extends ConsumerState<MoodCheckInSheet> {
           note: _note.text.trim().isEmpty ? null : _note.text.trim(),
         );
     ref.invalidate(todayMoodProvider);
+    // Mindful streak: mood check-in di oggi marcato.
+    await ref.read(streaksRepositoryProvider).markToday(StreakId.mindful);
+    await ref.read(achievementEvaluationProvider.notifier).trigger();
     if (mounted) Navigator.pop(context);
   }
 

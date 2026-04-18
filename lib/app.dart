@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'l10n/generated/app_localizations.dart';
+import 'presentation/providers/achievement_evaluator.dart';
 import 'presentation/providers/events_refresher.dart';
 import 'presentation/providers/home_intent_listener.dart';
 import 'presentation/providers/theme_provider.dart';
@@ -20,6 +21,7 @@ class KoruApp extends ConsumerWidget {
     ref.watch(appLifecycleInvalidatorProvider);
     ref.watch(blockingEventsRefresherProvider);
     ref.watch(homeIntentListenerProvider);
+    ref.watch(achievementEvaluatorProvider);
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,
       onGenerateTitle: (context) => AppLocalizations.of(context).appName,

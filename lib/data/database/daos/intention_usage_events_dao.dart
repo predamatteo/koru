@@ -20,6 +20,14 @@ class IntentionUsageEventsDao extends DatabaseAccessor<AppDatabase>
   Future<void> insertEvent(IntentionUsageEventsCompanion event) =>
       into(intentionUsageEvents).insert(event);
 
+  Future<int> getLifetimeIntentionsCount() async {
+    final row = await customSelect(
+      'SELECT COUNT(*) AS total FROM intention_usage_events',
+      readsFrom: {intentionUsageEvents},
+    ).getSingle();
+    return row.read<int>('total');
+  }
+
   Stream<List<IntentionUsageResult>> watchIntentionsUsages(
     String fromDate,
     String toDate,

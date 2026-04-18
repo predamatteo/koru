@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/di/providers.dart';
+import 'achievements_provider.dart';
 
 /// Mappa `packageName → minuti consentiti al giorno`. 0 o assente = nessun
 /// limite. Stato canonico persistito nel file JSON nativo
@@ -26,6 +27,7 @@ class AppLimitsNotifier extends AsyncNotifier<Map<String, int>> {
         .read(platformChannelServiceProvider)
         .blocking
         .setAppDailyLimits(next);
+    await ref.read(achievementEvaluationProvider.notifier).trigger();
   }
 
   Future<void> clear(String packageName) => setLimit(packageName, 0);

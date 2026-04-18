@@ -8,6 +8,7 @@ import '../../../../core/di/providers.dart';
 import '../../../../data/database/app_database.dart';
 import '../../../../domain/entities/overlay_config.dart';
 import '../../../../platform/blocking_channel.dart';
+import '../../../providers/achievements_provider.dart';
 import '../../../providers/app_list_provider.dart';
 import '../../block_overlay/block_overlay_screen.dart';
 
@@ -100,6 +101,7 @@ class _OverlayDesignerScreenState extends ConsumerState<OverlayDesignerScreen> {
       await (db.update(db.appProfileRelations)..where((r) => r.id.equals(existing.id)))
           .write(AppProfileRelationsCompanion(overlayConfigJson: Value(json)));
     }
+    await ref.read(achievementEvaluationProvider.notifier).trigger();
     if (mounted) context.pop();
   }
 

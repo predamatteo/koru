@@ -13,6 +13,15 @@ class FocusUsageEventsDao extends DatabaseAccessor<AppDatabase>
   Future<void> insertEvent(FocusUsageEventsCompanion event) =>
       into(focusUsageEvents).insert(event);
 
+  /// Totale lifetime (in ms) di tutte le sessioni focus registrate.
+  Future<int> getLifetimeFocusMs() async {
+    final row = await customSelect(
+      'SELECT COALESCE(SUM(duration_in_ms), 0) AS total FROM focus_usage_events',
+      readsFrom: {focusUsageEvents},
+    ).getSingle();
+    return row.read<int>('total');
+  }
+
   Stream<int> watchFocusTimeUsage(String fromDate, String toDate) {
     final query = customSelect(
       'SELECT COALESCE(SUM(duration_in_ms), 0) AS total '

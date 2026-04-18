@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
 import '../../../../platform/strict_mode_channel.dart';
+import '../../../providers/achievements_provider.dart';
 
 class StrictModeScreen extends ConsumerStatefulWidget {
   const StrictModeScreen({super.key});
@@ -49,6 +50,7 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
       }
       await _channel.setStrictModeOptions(StrictModeOption.allMvp);
       setState(() => _mask = StrictModeOption.allMvp);
+      await ref.read(achievementEvaluationProvider.notifier).trigger();
     } else {
       await _channel.setStrictModeOptions(0);
       setState(() => _mask = 0);

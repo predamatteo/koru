@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/day_flags.dart';
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/profile_types.dart';
+import '../../providers/achievements_provider.dart';
 import '../../providers/profile_providers.dart';
 
 class ProfileEditorScreen extends ConsumerStatefulWidget {
@@ -104,6 +105,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
       await repo.setIntervalsForProfile(profileId, const []);
     }
 
+    await ref.read(achievementEvaluationProvider.notifier).trigger();
     if (mounted) context.pop();
   }
 
