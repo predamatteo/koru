@@ -122,11 +122,11 @@ class KoruAccessibilityService : AccessibilityService() {
         if (StrictModeEnforcer.handleEvent(this, event)) return
 
         if (skipPackages.contains(pkg) || pkg == packageName) {
-            // Siamo tornati al launcher o a Koru stesso → dismiss overlay.
-            if (currentlyBlockingPackage != null) {
-                currentlyBlockingPackage = null
-                mainHandler.post { overlayManager?.dismiss() }
-            }
+            // Launcher o Koru stesso in foreground — NON dismiss overlay:
+            // siamo probabilmente qui proprio perché abbiamo fatto HOME dopo
+            // aver bloccato un'app. L'overlay deve restare visibile sopra il
+            // launcher finché l'utente non apre un'app diversa (gestito sotto
+            // in checkAppBlocking) o tocca "Go back" sull'overlay.
             return
         }
 
