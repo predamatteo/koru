@@ -3,13 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/koru_colors.dart';
+import '../../../core/constants/layout.dart';
 import '../../../data/models/profile_model.dart';
 import '../../providers/profile_providers.dart';
-
-/// Padding bottom sufficiente a non far nascondere contenuto sotto la
-/// floating nav bar (64h + 10 margin + ~24 safe area gesture) quando
-/// Scaffold.extendBody=true.
-const double kBottomNavClearance = 110;
 
 class ProfilesListScreen extends ConsumerWidget {
   const ProfilesListScreen({super.key});
@@ -20,6 +16,8 @@ class ProfilesListScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profiles'),
+        elevation: 0,
+        scrolledUnderElevation: 0,
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
@@ -29,7 +27,7 @@ class ProfilesListScreen extends ConsumerWidget {
               icon: const Icon(Icons.add),
               style: IconButton.styleFrom(
                 backgroundColor: KoruColors.primary,
-                foregroundColor: KoruColors.textPrimary,
+                foregroundColor: Colors.white,
               ),
             ),
           ),
@@ -41,10 +39,11 @@ class ProfilesListScreen extends ConsumerWidget {
         data: (profiles) {
           if (profiles.isEmpty) return const _EmptyProfilesHint();
           return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(0, 8, 0, kBottomNavClearance),
+            padding:
+                const EdgeInsets.fromLTRB(16, 8, 16, kBottomNavClearance),
             itemCount: profiles.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, i) => _ProfileTile(profile: profiles[i]),
+            separatorBuilder: (_, _) => const SizedBox(height: 12),
+            itemBuilder: (context, i) => _ProfileCard(profile: profiles[i]),
           );
         },
       ),
@@ -52,33 +51,154 @@ class ProfilesListScreen extends ConsumerWidget {
   }
 }
 
-class _ProfileTile extends ConsumerWidget {
-  const _ProfileTile({required this.profile});
-
+class _ProfileCard extends ConsumerWidget {
+  const _ProfileCard({required this.profile});
   final ProfileModel profile;
 
-  Color get _badgeColor {
-    final hex = profile.colorHex.replaceFirst('#', '');
-    return Color(0xFF000000 | int.parse(hex, radix: 16));
+  String _buildSubtitle() {
+    final parts = <String>[profile.dayFlagsLabel];
+    if (profile.hasTimeCondition && profile.intervals.isNotEmpty) {
+      final iv = profile.intervals.first;
+      parts.add(
+        '${_fmt(iv.fromMinutes)}\u2013${_fmt(iv.toMinutes)}',
+      );
+    }
+    return parts.join(' \u00b7 ');
+  }
+
+  static String _fmt(int minutes) {
+    final h = (minutes ~/ 60).toString().padLeft(2, '0');
+    final m = (minutes % 60).toString().padLeft(2, '0');
+    return '$h:$m';
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(profileRepositoryProvider);
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: _badgeColor.withValues(alpha: 0.2),
-        foregroundColor: _badgeColor,
-        child: Text(profile.emoji == 'NoIcon' ? '🌱' : profile.emoji),
+    final appsCount = profile.apps.length;
+    return Container(
+      decoration: BoxDecoration(
+        color: KoruColors.surface,
+        borderRadius: BorderRadius.circular(22),
       ),
-      title: Text(profile.title.isEmpty ? 'Untitled' : profile.title),
-      subtitle: Text(profile.subtitle,
-          maxLines: 2, overflow: TextOverflow.ellipsis),
-      trailing: Switch(
-        value: profile.isEnabled,
-        onChanged: (v) => repo.toggleProfile(profile.id, v),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => context.push('/profiles/${profile.id}'),
+          child: Column(
+            children: [
+              // Top: emoji + title + switch
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 12, 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    _EmojiBadge(emoji: profile.emoji),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        profile.title.isEmpty ? 'Untitled' : profile.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: KoruColors.textPrimary,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Switch(
+                      value: profile.isEnabled,
+                      onChanged: (v) => repo.toggleProfile(profile.id, v),
+                      activeThumbColor: Colors.white,
+                      activeTrackColor: KoruColors.primary,
+                      inactiveThumbColor: KoruColors.textSecondary,
+                      inactiveTrackColor: KoruColors.backgroundBase,
+                    ),
+                  ],
+                ),
+              ),
+              // Subtitle
+              Padding(
+                padding: const EdgeInsets.fromLTRB(60, 0, 20, 14),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _buildSubtitle(),
+                    style: const TextStyle(
+                      color: KoruColors.textSecondary,
+                      fontSize: 13,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+              ),
+              // Divider
+              Container(
+                height: 1,
+                color: KoruColors.surfaceElevated,
+              ),
+              // Footer: apps count + Edit
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 10, 10, 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '$appsCount APPS BLOCKED',
+                        style: TextStyle(
+                          color: KoruColors.textSecondary.withAlpha(200),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.6,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        foregroundColor: KoruColors.primary,
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 14),
+                        minimumSize: const Size(0, 32),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () =>
+                          context.push('/profiles/${profile.id}'),
+                      child: const Text(
+                        'Edit',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
-      onTap: () => context.push('/profiles/${profile.id}'),
+    );
+  }
+}
+
+class _EmojiBadge extends StatelessWidget {
+  const _EmojiBadge({required this.emoji});
+  final String emoji;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 36,
+      height: 36,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: KoruColors.primary.withAlpha(40),
+        shape: BoxShape.circle,
+      ),
+      child: Text(
+        emoji == 'NoIcon' ? '🌿' : emoji,
+        style: const TextStyle(fontSize: 18),
+      ),
     );
   }
 }
