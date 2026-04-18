@@ -220,6 +220,7 @@ class KoruAccessibilityService : AccessibilityService() {
                         profileTitle = profile.title,
                         reason = BlockReason.APP_BLOCKED,
                         config = config,
+                        profileEmoji = profile.emoji,
                     )
                 }
                 performGlobalAction(GLOBAL_ACTION_HOME)
@@ -282,6 +283,7 @@ class KoruAccessibilityService : AccessibilityService() {
                     profileTitle = profile.title,
                     reason = BlockReason.SECTION_BLOCKED,
                     config = config,
+                    profileEmoji = profile.emoji,
                 )
             }
             performGlobalAction(GLOBAL_ACTION_HOME)
@@ -314,13 +316,15 @@ class KoruAccessibilityService : AccessibilityService() {
         for ((profileId, rules) in websiteRulesCache) {
             if (WebsiteMatcher.matchesAny(rules, detected.fullUrl, detected.domain)) {
                 Log.w(TAG, ">>> BLOCKING SITE: ${detected.domain} by profile $profileId")
-                val profileTitle = profiles.firstOrNull { it.id == profileId }?.title ?: "Koru"
+                val matchedProfile = profiles.firstOrNull { it.id == profileId }
+                val profileTitle = matchedProfile?.title ?: "Koru"
                 mainHandler.post {
                     overlayManager?.show(
                         packageName = packageName,
                         appLabel = detected.domain,
                         profileTitle = profileTitle,
                         reason = BlockReason.WEBSITE_BLOCKED,
+                        profileEmoji = matchedProfile?.emoji,
                     )
                 }
                 performGlobalAction(GLOBAL_ACTION_HOME)

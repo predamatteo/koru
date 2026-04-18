@@ -126,18 +126,22 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
     }
 
+    private var _profileEmoji = mutableStateOf<String?>(null)
+
     fun show(
         packageName: String,
         appLabel: String,
         profileTitle: String,
         reason: BlockReason = BlockReason.APP_BLOCKED,
         config: OverlayConfig = OverlayConfig.DEFAULT,
+        profileEmoji: String? = null,
     ) {
         currentPackageName = packageName
         _appLabel.value = appLabel
         _profileTitle.value = profileTitle
         _reason.value = reason
         _config.value = config
+        _profileEmoji.value = profileEmoji
 
         if (isShowing) return
 
@@ -172,6 +176,7 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
                             profileTitle = _profileTitle.value,
                             reason = _reason.value,
                             config = _config.value,
+                            profileEmoji = _profileEmoji.value,
                             onIntentionChosen = { intention ->
                                 onIntentionChosen?.invoke(currentPackageName, intention)
                             },
@@ -235,6 +240,7 @@ private fun BlockedScreen(
     profileTitle: String,
     reason: BlockReason,
     config: OverlayConfig,
+    profileEmoji: String?,
     onIntentionChosen: (String) -> Unit,
     onGoHome: () -> Unit,
     onBypass: () -> Unit,
@@ -259,8 +265,14 @@ private fun BlockedScreen(
         ) {
             Spacer(Modifier.weight(1f))
 
+            // Preferisci l'emoji del profilo (scelta dall'utente); fallback
+            // all'emoji della reason se il profilo non ha un'icona custom.
+            val headerEmoji = when {
+                !profileEmoji.isNullOrBlank() && profileEmoji != "NoIcon" -> profileEmoji
+                else -> reasonEmoji(reason)
+            }
             Text(
-                text = reasonEmoji(reason),
+                text = headerEmoji,
                 fontSize = 56.sp,
             )
             Spacer(Modifier.height(24.dp))
