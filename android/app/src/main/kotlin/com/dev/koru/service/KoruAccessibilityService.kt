@@ -20,6 +20,8 @@ import com.dev.koru.db.NativeAppRelation
 import com.dev.koru.db.NativeDatabase
 import com.dev.koru.db.NativeProfile
 import com.dev.koru.db.NativeWebsiteRule
+import com.dev.koru.overlay.BlockReason
+import com.dev.koru.overlay.OverlayConfig
 import com.dev.koru.strictmode.StrictModeEnforcer
 import org.json.JSONObject
 import java.util.Calendar
@@ -89,6 +91,31 @@ class KoruAccessibilityService : AccessibilityService() {
                 performGlobalAction(GLOBAL_ACTION_HOME)
                 dismiss()
             }
+            onIntentionChosen = { pkg, intention ->
+                try {
+                    NativeDatabase.insertIntentionEvent(
+                        applicationContext,
+                        pkg,
+                        intention,
+                        System.currentTimeMillis(),
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to log intention: ${e.message}")
+                }
+            }
+            onBypassOpen = { pkg ->
+                // bypass è già registrato in OverlayManager.Companion via markBypassed.
+                dismiss()
+                val intent = packageManager.getLaunchIntentForPackage(pkg)
+                if (intent != null) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    try {
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to launch $pkg: ${e.message}")
+                    }
+                }
+            }
         }
 
         actionReceiver = object : BroadcastReceiver() {
@@ -155,6 +182,9 @@ class KoruAccessibilityService : AccessibilityService() {
      * Ritorna true se ha bloccato l'app (overlay mostrato + HOME).
      */
     private fun checkAppBlocking(packageName: String): Boolean {
+        // Bypass temporaneo (utente ha toccato "Open anyway" sull'overlay).
+        if (OverlayManager.isBypassed(packageName)) return false
+
         for (profile in profiles) {
             if (!isProfileActiveNow(profile)) continue
 
@@ -171,8 +201,16 @@ class KoruAccessibilityService : AccessibilityService() {
                 Log.w(TAG, ">>> BLOCKING APP: $packageName by '${profile.title}'")
                 currentlyBlockingPackage = packageName
                 val appLabel = getAppLabel(packageName)
+                val relation = apps.firstOrNull { it.packageName == packageName }
+                val config = OverlayConfig.fromJsonString(relation?.overlayConfigJson)
                 mainHandler.post {
-                    overlayManager?.show(packageName, appLabel, profile.title)
+                    overlayManager?.show(
+                        packageName = packageName,
+                        appLabel = appLabel,
+                        profileTitle = profile.title,
+                        reason = BlockReason.APP_BLOCKED,
+                        config = config,
+                    )
                 }
                 performGlobalAction(GLOBAL_ACTION_HOME)
                 try {
@@ -222,8 +260,15 @@ class KoruAccessibilityService : AccessibilityService() {
 
             Log.w(TAG, ">>> BLOCKING SECTION ${detected.wireId} in $packageName by '${profile.title}'")
             val appLabel = getAppLabel(packageName)
+            val config = OverlayConfig.fromJsonString(relation.overlayConfigJson)
             mainHandler.post {
-                overlayManager?.show(packageName, appLabel, profile.title)
+                overlayManager?.show(
+                    packageName = packageName,
+                    appLabel = appLabel,
+                    profileTitle = profile.title,
+                    reason = BlockReason.SECTION_BLOCKED,
+                    config = config,
+                )
             }
             performGlobalAction(GLOBAL_ACTION_HOME)
             try {
@@ -250,7 +295,12 @@ class KoruAccessibilityService : AccessibilityService() {
                 Log.w(TAG, ">>> BLOCKING SITE: ${detected.domain} by profile $profileId")
                 val profileTitle = profiles.firstOrNull { it.id == profileId }?.title ?: "Koru"
                 mainHandler.post {
-                    overlayManager?.show(packageName, detected.domain, profileTitle)
+                    overlayManager?.show(
+                        packageName = packageName,
+                        appLabel = detected.domain,
+                        profileTitle = profileTitle,
+                        reason = BlockReason.WEBSITE_BLOCKED,
+                    )
                 }
                 performGlobalAction(GLOBAL_ACTION_HOME)
                 try {

@@ -215,6 +215,29 @@ object NativeDatabase {
         )
     }
 
+    /**
+     * Log di una intention scelta dall'utente sull'overlay di blocco.
+     * Alimenta il "Top intentions" nelle statistiche.
+     */
+    fun insertIntentionEvent(
+        context: Context,
+        packageName: String,
+        intentionName: String,
+        timestamp: Long,
+    ) {
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = timestamp }
+        val y = cal.get(java.util.Calendar.YEAR).toString().padStart(4, '0')
+        val m = (cal.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')
+        val d = cal.get(java.util.Calendar.DAY_OF_MONTH).toString().padStart(2, '0')
+        val dayKey = "$y-$m-$d"
+        open(context).execSQL(
+            "INSERT INTO intention_usage_events " +
+                "(occurred_at, day_start_date, package_name, intention_name) " +
+                "VALUES (?, ?, ?, ?)",
+            arrayOf(timestamp, dayKey, packageName, intentionName),
+        )
+    }
+
     fun getWebsiteRulesForProfile(context: Context, profileId: Int): List<NativeWebsiteRule> {
         val out = mutableListOf<NativeWebsiteRule>()
         open(context).rawQuery(
