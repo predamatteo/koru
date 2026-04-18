@@ -13,8 +13,20 @@ import android.graphics.drawable.Drawable
 import android.os.Build
 import com.dev.koru.service.LockForegroundService
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
+
+/// Dart `int` piccoli (fino a ~2.1B) entrano nel MethodChannel come Integer;
+/// valori più grandi (es. timestamps) come Long. `call.argument<Long>` fa
+/// un cast runtime che CRASHA se il valore arriva come Integer. Questo
+/// helper gestisce entrambi in modo safe.
+private fun MethodCall.longArg(name: String): Long = when (val v = argument<Any>(name)) {
+    is Long -> v
+    is Int -> v.toLong()
+    is Number -> v.toLong()
+    else -> 0L
+}
 
 object BlockingMethodChannel {
     private const val CHANNEL = "com.koru/blocking"
@@ -48,13 +60,13 @@ object BlockingMethodChannel {
                     "isBlockingServiceRunning" -> result.success(LockForegroundService.isRunning)
                     "getInstalledApps" -> result.success(getInstalledApps(activity))
                     "getUsageStats" -> {
-                        val startMs = call.argument<Long>("startMs") ?: 0L
-                        val endMs = call.argument<Long>("endMs") ?: System.currentTimeMillis()
+                        val startMs = call.longArg("startMs")
+                        val endMs = call.longArg("endMs").takeIf { it > 0 }
+                            ?: System.currentTimeMillis()
                         result.success(getUsageStats(activity, startMs, endMs))
                     }
                     "startQuickBlock" -> {
-                        val durationMs = call.argument<Long>("durationMs")
-                            ?: (call.argument<Int>("durationMs")?.toLong() ?: 0L)
+                        val durationMs = call.longArg("durationMs")
                         LockForegroundService.quickBlockManager.startQuickBlock(durationMs)
                         result.success(true)
                     }
@@ -63,10 +75,8 @@ object BlockingMethodChannel {
                         result.success(true)
                     }
                     "startPomodoro" -> {
-                        val workMs = call.argument<Long>("workMs")
-                            ?: (call.argument<Int>("workMs")?.toLong() ?: 0L)
-                        val breakMs = call.argument<Long>("breakMs")
-                            ?: (call.argument<Int>("breakMs")?.toLong() ?: 0L)
+                        val workMs = call.longArg("workMs")
+                        val breakMs = call.longArg("breakMs")
                         val cycles = call.argument<Int>("cycles") ?: 4
                         LockForegroundService.quickBlockManager.startPomodoro(workMs, breakMs, cycles)
                         result.success(true)
