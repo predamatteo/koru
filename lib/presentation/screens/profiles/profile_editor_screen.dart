@@ -18,6 +18,13 @@ class ProfileEditorScreen extends ConsumerStatefulWidget {
   ConsumerState<ProfileEditorScreen> createState() => _ProfileEditorScreenState();
 }
 
+/// Set minimo di emoji adatte a profili (work, focus, mindfulness, sleep,
+/// break). Tutte emoji single-codepoint per evitare problemi di fallback.
+const List<String> _emojiPalette = [
+  '🌿', '🌅', '🌙', '🧠', '💼', '🎯',
+  '📚', '🏃', '🧘', '🛌', '☕', '🔕',
+];
+
 class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
   final _titleController = TextEditingController();
   String _emoji = '🌿';
@@ -148,6 +155,38 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
               labelText: 'Profile name',
               hintText: 'e.g. Deep Work',
             ),
+          ),
+          const SizedBox(height: 24),
+          _SectionHeader(title: 'Icon'),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _emojiPalette.map((emoji) {
+              final selected = _emoji == emoji;
+              return InkWell(
+                onTap: () => setState(() => _emoji = emoji),
+                customBorder: const CircleBorder(),
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? KoruColors.primary.withValues(alpha: 0.22)
+                        : KoruColors.surface,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: selected
+                          ? KoruColors.primary
+                          : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                  child: Text(emoji, style: const TextStyle(fontSize: 22)),
+                ),
+              );
+            }).toList(growable: false),
           ),
           const SizedBox(height: 24),
           _SectionHeader(title: 'Days'),
