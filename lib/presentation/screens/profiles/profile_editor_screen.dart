@@ -255,6 +255,15 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
               trailing: const Icon(Icons.chevron_right),
               onTap: () => context.push('/profiles/${widget.profileId}/sections'),
             ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.language_outlined),
+              title: const Text('Websites'),
+              subtitle: const Text(
+                  'Block domains inside browsers (Chrome, Firefox, Brave…)'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.push('/profiles/${widget.profileId}/websites'),
+            ),
           ] else ...[
             const SizedBox(height: 16),
             Text(
