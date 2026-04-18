@@ -8,9 +8,12 @@ import '../../providers/mood_provider.dart';
 class MoodCheckInSheet extends ConsumerStatefulWidget {
   const MoodCheckInSheet({super.key});
 
+  /// Show on the root navigator so the bottom sheet covers also the
+  /// floating NavigationBar (otherwise the Save button sits underneath it).
   static Future<void> show(BuildContext context) => showModalBottomSheet(
         context: context,
         isScrollControlled: true,
+        useRootNavigator: true,
         builder: (_) => const MoodCheckInSheet(),
       );
 
@@ -56,21 +59,25 @@ class _MoodCheckInSheetState extends ConsumerState<MoodCheckInSheet> {
               style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 20),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: List.generate(5, (i) {
               final selected = _mood == i + 1;
-              return GestureDetector(
-                onTap: () => setState(() => _mood = i + 1),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? KoruColors.primary.withValues(alpha: 0.25)
-                        : Colors.transparent,
-                    shape: BoxShape.circle,
+              return Expanded(
+                child: Center(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _mood = i + 1),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? KoruColors.primary.withValues(alpha: 0.25)
+                            : Colors.transparent,
+                        shape: BoxShape.circle,
+                      ),
+                      child:
+                          Text(_emojis[i], style: const TextStyle(fontSize: 28)),
+                    ),
                   ),
-                  child: Text(_emojis[i], style: const TextStyle(fontSize: 32)),
                 ),
               );
             }),

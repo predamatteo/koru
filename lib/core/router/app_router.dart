@@ -22,6 +22,7 @@ import '../../presentation/screens/settings/sub_screens/about_screen.dart';
 import '../../presentation/screens/settings/sub_screens/backdoor_codes_screen.dart';
 import '../../presentation/screens/settings/sub_screens/font_screen.dart';
 import '../../presentation/screens/settings/sub_screens/launcher_settings_screen.dart';
+import '../../presentation/screens/settings/sub_screens/permissions_screen.dart';
 import '../../presentation/screens/settings/sub_screens/strict_mode_screen.dart';
 import '../../presentation/screens/statistics/statistics_screen.dart';
 
@@ -224,6 +225,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'about',
                     builder: (context, state) => const AboutScreen(),
+                  ),
+                  GoRoute(
+                    path: 'permissions',
+                    builder: (context, state) => const PermissionsScreen(),
                   ),
                 ],
               ),

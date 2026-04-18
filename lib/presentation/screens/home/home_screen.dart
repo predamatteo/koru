@@ -6,6 +6,7 @@ import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
 import '../../../data/models/profile_model.dart';
 import '../../providers/active_profile_provider.dart';
+import '../../providers/app_list_provider.dart';
 import '../../providers/profile_providers.dart';
 import '../../providers/statistics_providers.dart';
 
@@ -23,6 +24,10 @@ class HomeScreen extends ConsumerWidget {
     final activeProfiles = ref.watch(activeProfilesProvider).valueOrNull ?? [];
     final blocksToday = ref.watch(blockTriggeredCountProvider).valueOrNull ?? 0;
     final focusMs = ref.watch(focusTimeMsProvider).valueOrNull ?? 0;
+
+    // Pre-warm della lista app così quando l'utente entra in
+    // "Select apps" dentro un profilo la risposta native è già cached.
+    ref.watch(installedAppsProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Koru')),

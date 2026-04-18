@@ -33,6 +33,15 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => context.push('/settings/launcher'),
           ),
           const Divider(height: 1),
+          const _SectionLabel('Permissions'),
+          ListTile(
+            leading: const Icon(Icons.verified_user_outlined),
+            title: const Text('Permissions'),
+            subtitle: const Text('Grant or re-check Accessibility, Usage, Overlay…'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/settings/permissions'),
+          ),
+          const Divider(height: 1),
           const _SectionLabel('Discipline'),
           ListTile(
             leading: const Icon(Icons.lock_outlined),

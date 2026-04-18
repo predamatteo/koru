@@ -18,8 +18,21 @@ class SetBlockedAppsScreen extends ConsumerStatefulWidget {
 }
 
 class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
-  Set<String>? _selected;
+  Set<String> _selected = <String>{};
   bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fetch della lista app: anche se il provider è cached, la prima
+    // lettura (primo entering) è asincrona — triggeriamo subito così Flutter
+    // inizia il MethodChannel call in parallelo alla transition di navigazione.
+    Future.microtask(() {
+      if (!mounted) return;
+      ref.read(installedAppsProvider);
+      _hydrate();
+    });
+  }
 
   Future<void> _hydrate() async {
     if (_loaded) return;
@@ -32,16 +45,14 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
   }
 
   Future<void> _save() async {
-    if (_selected == null) return;
     await ref
         .read(profileRepositoryProvider)
-        .setAppsForProfile(widget.profileId, _selected!.toList(growable: false));
+        .setAppsForProfile(widget.profileId, _selected.toList(growable: false));
     if (mounted) context.pop();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_loaded) _hydrate();
     final appsAsync = ref.watch(installedAppsProvider);
 
     return Scaffold(
@@ -53,17 +64,24 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('$e')),
         data: (apps) {
-          if (_selected == null) return const SizedBox.shrink();
+          if (!_loaded) {
+            return const Center(child: CircularProgressIndicator());
+          }
           return ListView.builder(
+            // itemExtent fisso → niente calcolo layout per-item, lista grande
+            // scrolla smooth senza jank alla prima apertura.
+            itemExtent: 64,
             itemCount: apps.length,
             itemBuilder: (context, i) {
               final app = apps[i];
-              final checked = _selected!.contains(app.packageName);
+              final checked = _selected.contains(app.packageName);
               return CheckboxListTile(
                 value: checked,
-                title: Text(app.label),
+                title: Text(app.label, maxLines: 1, overflow: TextOverflow.ellipsis),
                 subtitle: Text(
                   app.packageName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: KoruColors.textSecondary,
                       ),
@@ -71,9 +89,9 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
                 onChanged: (v) {
                   setState(() {
                     if (v ?? false) {
-                      _selected!.add(app.packageName);
+                      _selected.add(app.packageName);
                     } else {
-                      _selected!.remove(app.packageName);
+                      _selected.remove(app.packageName);
                     }
                   });
                 },
