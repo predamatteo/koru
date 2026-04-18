@@ -1,5 +1,6 @@
 package com.dev.koru
 
+import android.content.Intent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import com.dev.koru.channels.BlockingMethodChannel
@@ -16,5 +17,19 @@ class MainActivity : FlutterActivity() {
         StrictModeMethodChannel.register(flutterEngine, this)
         ServiceEventChannel.register(flutterEngine)
         PermissionMethodChannel.register(flutterEngine, this)
+    }
+
+    /**
+     * Se l'intent launching è HOME (utente ha premuto il tasto home con Koru
+     * come launcher di default), avvia Flutter direttamente sulla route
+     * `/launcher` — la Koru launcher UI full-screen, senza bottom nav.
+     * Altrimenti comportamento standard (Flutter parte su `/` e GoRouter
+     * redirige a `/home`).
+     */
+    override fun getInitialRoute(): String? {
+        val current = intent ?: return super.getInitialRoute()
+        val isHomeIntent = current.action == Intent.ACTION_MAIN &&
+            current.categories?.contains(Intent.CATEGORY_HOME) == true
+        return if (isHomeIntent) "/launcher" else super.getInitialRoute()
     }
 }

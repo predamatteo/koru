@@ -9,6 +9,7 @@ import '../../presentation/screens/focus/focus_screen.dart';
 import '../../presentation/screens/focus/pomodoro_screen.dart';
 import '../../presentation/screens/focus/quick_block_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
+import '../../presentation/screens/launcher/launcher_home_screen.dart';
 import '../../presentation/screens/launcher_shell/launcher_shell.dart';
 import '../../presentation/screens/onboarding/onboarding_screen.dart';
 import '../../presentation/screens/profiles/profile_editor_screen.dart';
@@ -29,6 +30,14 @@ class KoruRoutes {
   const KoruRoutes._();
 
   static const String onboarding = '/onboarding';
+
+  /// Launcher UI (clock + favoriti + drawer), FUORI dallo shell, senza bottom
+  /// nav. Visibile solo quando Koru è lanciato via HOME intent (MainActivity
+  /// imposta defaultRouteName a `/launcher` in quel caso).
+  static const String launcher = '/launcher';
+  static const String launcherDrawer = '/launcher/drawer';
+
+  /// Tab Home dentro lo shell (dashboard).
   static const String home = '/home';
   static const String drawer = '/home/drawer';
   static const String profiles = '/profiles';
@@ -44,27 +53,53 @@ final shellNavigatorFocusKey = GlobalKey<NavigatorState>();
 final shellNavigatorStatsKey = GlobalKey<NavigatorState>();
 final shellNavigatorSettingsKey = GlobalKey<NavigatorState>();
 
+/// Route iniziale dell'app: se Flutter riceve `defaultRouteName == '/launcher'`
+/// (impostato da MainActivity.getInitialRoute quando l'app è stata lanciata
+/// via HOME intent) partiamo dal launcher. Altrimenti partiamo dalla tab Home.
+String _resolveInitialRoute() {
+  final name = WidgetsBinding.instance.platformDispatcher.defaultRouteName;
+  if (name == KoruRoutes.launcher) return KoruRoutes.launcher;
+  return KoruRoutes.home;
+}
+
 final appRouterProvider = Provider<GoRouter>((ref) {
   final hive = ref.watch(hiveSettingsServiceProvider);
+  final initialLocation = _resolveInitialRoute();
+
   return GoRouter(
     navigatorKey: rootNavigatorKey,
-    initialLocation: KoruRoutes.home,
+    initialLocation: initialLocation,
+    debugLogDiagnostics: false,
     redirect: (context, state) {
       final onboarded = hive.getBool(
         HiveKeys.onboardingBox,
         HiveKeys.isOnboardingPassed,
         defaultValue: false,
       );
-      final isOnboardingRoute = state.matchedLocation == KoruRoutes.onboarding;
-      if (!onboarded && !isOnboardingRoute) return KoruRoutes.onboarding;
-      if (onboarded && isOnboardingRoute) return KoruRoutes.home;
+      final loc = state.matchedLocation;
+      if (!onboarded && loc != KoruRoutes.onboarding) {
+        return KoruRoutes.onboarding;
+      }
+      if (onboarded && loc == KoruRoutes.onboarding) {
+        return initialLocation;
+      }
       return null;
     },
-    debugLogDiagnostics: false,
     routes: [
       GoRoute(
         path: KoruRoutes.onboarding,
         builder: (context, state) => const OnboardingScreen(),
+      ),
+      // Launcher mode: top-level, no bottom navigation.
+      GoRoute(
+        path: KoruRoutes.launcher,
+        builder: (context, state) => const LauncherHomeScreen(),
+        routes: [
+          GoRoute(
+            path: 'drawer',
+            builder: (context, state) => const AllAppsScreen(),
+          ),
+        ],
       ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>
