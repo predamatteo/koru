@@ -136,6 +136,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 routes: [
                   GoRoute(
                     path: 'drawer',
+                    parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) => const AllAppsScreen(),
                   ),
                 ],
@@ -208,6 +209,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 routes: [
                   GoRoute(
                     path: 'quick',
+                    parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) => const QuickBlockScreen(),
                     routes: [
                       GoRoute(
@@ -220,6 +222,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   ),
                   GoRoute(
                     path: 'pomodoro',
+                    parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) => const PomodoroScreen(),
                     routes: [
                       GoRoute(
@@ -243,10 +246,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 routes: [
                   GoRoute(
                     path: 'achievements',
+                    parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) => const AchievementsScreen(),
                   ),
                   GoRoute(
                     path: 'journal',
+                    parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) => const JournalScreen(),
                   ),
                 ],
@@ -262,40 +267,49 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 routes: [
                   GoRoute(
                     path: 'strict-mode',
+                    parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) => const StrictModeScreen(),
                   ),
                   GoRoute(
                     path: 'backdoor',
+                    parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) => const BackdoorCodesScreen(),
                   ),
                   GoRoute(
                     path: 'font',
+                    parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) => const FontScreen(),
                   ),
                   GoRoute(
                     path: 'launcher',
+                    parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) => const LauncherSettingsScreen(),
                   ),
                   GoRoute(
                     path: 'about',
+                    parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) => const AboutScreen(),
                   ),
                   GoRoute(
                     path: 'app-limits',
+                    parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) => const AppLimitsScreen(),
                   ),
                   GoRoute(
                     path: 'app-personalization',
+                    parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) =>
                         const AppPersonalizationScreen(),
                   ),
                   GoRoute(
                     path: 'notification-filter',
+                    parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) =>
                         const NotificationFilterScreen(),
                   ),
                   GoRoute(
                     path: 'permissions',
+                    parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) => const PermissionsScreen(),
                   ),
                 ],
