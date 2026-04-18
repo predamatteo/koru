@@ -52,14 +52,13 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
         indicatorColor: KoruColors.primary.withValues(alpha: 0.22),
         indicatorShape: const CircleBorder(),
-        height: 64,
+        height: 80,
         elevation: 0,
-        // Icon-only floating pill nav bar. Label nascosta sempre; il pill
-        // StadiumBorder fa da indicator sul tab attivo.
+        // Icon-only floating nav bar, cerchio tondo come indicator.
         labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
         iconTheme: WidgetStateProperty.resolveWith(
           (states) => IconThemeData(
-            size: 24,
+            size: 26,
             color: states.contains(WidgetState.selected)
                 ? KoruColors.primary
                 : KoruColors.textSecondary,
