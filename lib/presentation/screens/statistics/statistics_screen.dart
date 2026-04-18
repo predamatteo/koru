@@ -8,6 +8,8 @@ import '../../../domain/entities/statistics_period.dart';
 import '../../providers/mood_provider.dart';
 import '../../providers/statistics_providers.dart';
 import '../mood/mood_check_in_sheet.dart';
+import 'widgets/achievements_grid.dart';
+import 'widgets/streaks_row.dart';
 
 class StatisticsScreen extends ConsumerWidget {
   const StatisticsScreen({super.key});
@@ -38,6 +40,8 @@ class StatisticsScreen extends ConsumerWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, kBottomNavClearance),
           children: [
+            const StreaksRow(),
+            const SizedBox(height: 16),
             SegmentedButton<StatisticsPeriod>(
               segments: [
                 for (final p in StatisticsPeriod.values)
@@ -76,6 +80,8 @@ class StatisticsScreen extends ConsumerWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 16),
+            const AchievementsGrid(),
             const SizedBox(height: 16),
             _MoodCard(todayMood: todayMood),
             const SizedBox(height: 16),

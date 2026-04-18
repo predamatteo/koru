@@ -8,6 +8,7 @@ import 'presentation/providers/achievement_evaluator.dart';
 import 'presentation/providers/events_refresher.dart';
 import 'presentation/providers/home_intent_listener.dart';
 import 'presentation/providers/theme_provider.dart';
+import 'presentation/widgets/achievement_unlock_listener.dart';
 
 class KoruApp extends ConsumerWidget {
   const KoruApp({super.key});
@@ -29,6 +30,9 @@ class KoruApp extends ConsumerWidget {
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,
+      builder: (context, child) => AchievementUnlockListener(
+        child: child ?? const SizedBox.shrink(),
+      ),
     );
   }
 }

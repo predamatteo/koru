@@ -30,6 +30,7 @@ import '../../presentation/screens/settings/sub_screens/font_screen.dart';
 import '../../presentation/screens/settings/sub_screens/launcher_settings_screen.dart';
 import '../../presentation/screens/settings/sub_screens/permissions_screen.dart';
 import '../../presentation/screens/settings/sub_screens/strict_mode_screen.dart';
+import '../../presentation/screens/statistics/achievements_screen.dart';
 import '../../presentation/screens/statistics/statistics_screen.dart';
 
 /// Route names accessibili da tutta l'app (evita hard-coded strings).
@@ -236,6 +237,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: KoruRoutes.stats,
                 builder: (context, state) => const StatisticsScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'achievements',
+                    builder: (context, state) => const AchievementsScreen(),
+                  ),
+                ],
               ),
             ],
           ),
