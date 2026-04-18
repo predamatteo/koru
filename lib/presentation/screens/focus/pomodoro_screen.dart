@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/di/providers.dart';
 import '../../providers/focus_session_provider.dart';
+import '../../providers/focus_whitelist_provider.dart';
 
 class PomodoroScreen extends ConsumerStatefulWidget {
   const PomodoroScreen({super.key});
@@ -19,10 +21,12 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen> {
 
   Future<void> _start() async {
     final blocking = ref.read(platformChannelServiceProvider).blocking;
+    final whitelist = ref.read(focusWhitelistProvider(FocusMode.pomodoro));
     await blocking.startPomodoro(
       workPhase: Duration(minutes: _workMinutes),
       breakPhase: Duration(minutes: _breakMinutes),
       cycles: _cycles,
+      whitelist: whitelist.toList(growable: false),
     );
   }
 
@@ -37,7 +41,16 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen> {
     final isActive = tick?.isActive ?? false;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Pomodoro')),
+      appBar: AppBar(
+        title: const Text('Pomodoro'),
+        actions: [
+          IconButton(
+            tooltip: 'Whitelist',
+            icon: const Icon(Icons.playlist_add_check),
+            onPressed: () => context.push('/focus/pomodoro/whitelist'),
+          ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: isActive ? _buildActive(tick!) : _buildSetup(),

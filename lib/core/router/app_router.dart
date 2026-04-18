@@ -8,6 +8,8 @@ import '../../presentation/screens/all_apps/all_apps_screen.dart';
 import '../../presentation/screens/focus/focus_screen.dart';
 import '../../presentation/screens/focus/pomodoro_screen.dart';
 import '../../presentation/screens/focus/quick_block_screen.dart';
+import '../../presentation/screens/focus/whitelist_editor_screen.dart';
+import '../../presentation/providers/focus_whitelist_provider.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/launcher/launcher_home_screen.dart';
 import '../../presentation/screens/launcher_shell/launcher_shell.dart';
@@ -189,10 +191,26 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'quick',
                     builder: (context, state) => const QuickBlockScreen(),
+                    routes: [
+                      GoRoute(
+                        path: 'whitelist',
+                        parentNavigatorKey: rootNavigatorKey,
+                        builder: (context, state) =>
+                            const WhitelistEditorScreen(mode: FocusMode.quickBlock),
+                      ),
+                    ],
                   ),
                   GoRoute(
                     path: 'pomodoro',
                     builder: (context, state) => const PomodoroScreen(),
+                    routes: [
+                      GoRoute(
+                        path: 'whitelist',
+                        parentNavigatorKey: rootNavigatorKey,
+                        builder: (context, state) =>
+                            const WhitelistEditorScreen(mode: FocusMode.pomodoro),
+                      ),
+                    ],
                   ),
                 ],
               ),
