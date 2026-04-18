@@ -60,9 +60,12 @@ object StrictModeEnforcer {
         }
 
         if (mask and BLOCK_RECENT_APPS != 0) {
-            val isRecents = packageName == "com.android.systemui" ||
-                className.contains("Recents", ignoreCase = true) ||
+            // Check SOLO su className: il bare match su com.android.systemui
+            // triggerava sul pull-down della notification shade / QS panel
+            // (che hanno package systemui ma NON sono Recents).
+            val isRecents = className.contains("Recents", ignoreCase = true) ||
                 className.contains("RecentTask", ignoreCase = true) ||
+                className.contains("OverviewPanel", ignoreCase = true) ||
                 (packageName.contains("launcher", ignoreCase = true) &&
                     className.contains("Recent", ignoreCase = true))
             if (isRecents) {

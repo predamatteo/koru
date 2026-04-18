@@ -245,7 +245,9 @@ private fun BlockedScreen(
     onGoHome: () -> Unit,
     onBypass: () -> Unit,
 ) {
-    val gradientTop = Color(config.backgroundColorArgb).copy(alpha = 0.95f)
+    // Overlay completamente opaco (niente bleed-through dall'app bloccata
+     // sottostante) + gradiente sottile dal colore palette al base dark.
+    val gradientTop = Color(config.backgroundColorArgb)
     val gradient = Brush.verticalGradient(listOf(gradientTop, KoruBgBase))
 
     var countdownFinished by remember { mutableStateOf(false) }

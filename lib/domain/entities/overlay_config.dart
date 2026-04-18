@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 /// e per trasmissione al native tramite MethodChannel.
 class OverlayConfig {
   const OverlayConfig({
-    this.backgroundColorHex = '#A85449',
+    this.backgroundColorHex = '#5C8262',
     this.messageTitle,
     this.messageSubtitle,
     this.countdownSeconds = 8,
@@ -43,7 +43,7 @@ class OverlayConfig {
   String toJsonString() => jsonEncode(toJson());
 
   factory OverlayConfig.fromJson(Map<String, dynamic> json) => OverlayConfig(
-        backgroundColorHex: json['backgroundColorHex'] as String? ?? '#A85449',
+        backgroundColorHex: json['backgroundColorHex'] as String? ?? '#5C8262',
         messageTitle: json['messageTitle'] as String?,
         messageSubtitle: json['messageSubtitle'] as String?,
         countdownSeconds: (json['countdownSeconds'] as num?)?.toInt() ?? 8,

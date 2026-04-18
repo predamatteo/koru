@@ -12,7 +12,7 @@ import org.json.JSONObject
  * Lo schema JSON è allineato a [lib/domain/entities/overlay_config.dart].
  */
 data class OverlayConfig(
-    val backgroundColorArgb: Int = 0xFFA85449.toInt(), // Koru danger
+    val backgroundColorArgb: Int = 0xFF5C8262.toInt(), // Koru primary (felce)
     val messageTitle: String? = null,
     val messageSubtitle: String? = null,
     val countdownSeconds: Int = 8,
@@ -26,7 +26,7 @@ data class OverlayConfig(
             if (json.isNullOrBlank()) return DEFAULT
             return try {
                 val obj = JSONObject(json)
-                val hex = obj.optString("backgroundColorHex", "#A85449")
+                val hex = obj.optString("backgroundColorHex", "#5C8262")
                 val argb = parseHexToArgb(hex)
                 OverlayConfig(
                     backgroundColorArgb = argb,
@@ -47,7 +47,7 @@ data class OverlayConfig(
             return try {
                 AndroidColor.parseColor(if (hex.startsWith("#")) hex else "#$hex")
             } catch (_: Exception) {
-                0xFFA85449.toInt()
+                0xFF5C8262.toInt()
             }
         }
     }

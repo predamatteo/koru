@@ -31,10 +31,10 @@ class OverlayDesignerScreen extends ConsumerStatefulWidget {
 
 class _OverlayDesignerScreenState extends ConsumerState<OverlayDesignerScreen> {
   static const _paletteHex = [
-    '#A85449', // danger
-    '#5C8262', // primary
+    '#5C8262', // primary (default)
     '#8A6D52', // secondary
     '#6B9B5F', // success
+    '#A85449', // danger
     '#2D4A3E',
     '#1F2937',
   ];
