@@ -8617,6 +8617,556 @@ class FavoritesCompanion extends UpdateCompanion<Favorite> {
   }
 }
 
+class $AchievementsUnlockedTable extends AchievementsUnlocked
+    with TableInfo<$AchievementsUnlockedTable, AchievementsUnlockedData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AchievementsUnlockedTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _unlockedAtMeta = const VerificationMeta(
+    'unlockedAt',
+  );
+  @override
+  late final GeneratedColumn<int> unlockedAt = GeneratedColumn<int>(
+    'unlocked_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, unlockedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'achievements_unlocked';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<AchievementsUnlockedData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('unlocked_at')) {
+      context.handle(
+        _unlockedAtMeta,
+        unlockedAt.isAcceptableOrUnknown(data['unlocked_at']!, _unlockedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_unlockedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  AchievementsUnlockedData map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AchievementsUnlockedData(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      unlockedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}unlocked_at'],
+      )!,
+    );
+  }
+
+  @override
+  $AchievementsUnlockedTable createAlias(String alias) {
+    return $AchievementsUnlockedTable(attachedDatabase, alias);
+  }
+}
+
+class AchievementsUnlockedData extends DataClass
+    implements Insertable<AchievementsUnlockedData> {
+  final String id;
+  final int unlockedAt;
+  const AchievementsUnlockedData({required this.id, required this.unlockedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['unlocked_at'] = Variable<int>(unlockedAt);
+    return map;
+  }
+
+  AchievementsUnlockedCompanion toCompanion(bool nullToAbsent) {
+    return AchievementsUnlockedCompanion(
+      id: Value(id),
+      unlockedAt: Value(unlockedAt),
+    );
+  }
+
+  factory AchievementsUnlockedData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AchievementsUnlockedData(
+      id: serializer.fromJson<String>(json['id']),
+      unlockedAt: serializer.fromJson<int>(json['unlockedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'unlockedAt': serializer.toJson<int>(unlockedAt),
+    };
+  }
+
+  AchievementsUnlockedData copyWith({String? id, int? unlockedAt}) =>
+      AchievementsUnlockedData(
+        id: id ?? this.id,
+        unlockedAt: unlockedAt ?? this.unlockedAt,
+      );
+  AchievementsUnlockedData copyWithCompanion(
+    AchievementsUnlockedCompanion data,
+  ) {
+    return AchievementsUnlockedData(
+      id: data.id.present ? data.id.value : this.id,
+      unlockedAt: data.unlockedAt.present
+          ? data.unlockedAt.value
+          : this.unlockedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AchievementsUnlockedData(')
+          ..write('id: $id, ')
+          ..write('unlockedAt: $unlockedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, unlockedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AchievementsUnlockedData &&
+          other.id == this.id &&
+          other.unlockedAt == this.unlockedAt);
+}
+
+class AchievementsUnlockedCompanion
+    extends UpdateCompanion<AchievementsUnlockedData> {
+  final Value<String> id;
+  final Value<int> unlockedAt;
+  final Value<int> rowid;
+  const AchievementsUnlockedCompanion({
+    this.id = const Value.absent(),
+    this.unlockedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  AchievementsUnlockedCompanion.insert({
+    required String id,
+    required int unlockedAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       unlockedAt = Value(unlockedAt);
+  static Insertable<AchievementsUnlockedData> custom({
+    Expression<String>? id,
+    Expression<int>? unlockedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (unlockedAt != null) 'unlocked_at': unlockedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  AchievementsUnlockedCompanion copyWith({
+    Value<String>? id,
+    Value<int>? unlockedAt,
+    Value<int>? rowid,
+  }) {
+    return AchievementsUnlockedCompanion(
+      id: id ?? this.id,
+      unlockedAt: unlockedAt ?? this.unlockedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (unlockedAt.present) {
+      map['unlocked_at'] = Variable<int>(unlockedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AchievementsUnlockedCompanion(')
+          ..write('id: $id, ')
+          ..write('unlockedAt: $unlockedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $StreakStateTable extends StreakState
+    with TableInfo<$StreakStateTable, StreakStateData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $StreakStateTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _currentCountMeta = const VerificationMeta(
+    'currentCount',
+  );
+  @override
+  late final GeneratedColumn<int> currentCount = GeneratedColumn<int>(
+    'current_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _longestMeta = const VerificationMeta(
+    'longest',
+  );
+  @override
+  late final GeneratedColumn<int> longest = GeneratedColumn<int>(
+    'longest',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _lastIncrementedDayMeta =
+      const VerificationMeta('lastIncrementedDay');
+  @override
+  late final GeneratedColumn<String> lastIncrementedDay =
+      GeneratedColumn<String>(
+        'last_incremented_day',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    currentCount,
+    longest,
+    lastIncrementedDay,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'streak_state';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<StreakStateData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('current_count')) {
+      context.handle(
+        _currentCountMeta,
+        currentCount.isAcceptableOrUnknown(
+          data['current_count']!,
+          _currentCountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('longest')) {
+      context.handle(
+        _longestMeta,
+        longest.isAcceptableOrUnknown(data['longest']!, _longestMeta),
+      );
+    }
+    if (data.containsKey('last_incremented_day')) {
+      context.handle(
+        _lastIncrementedDayMeta,
+        lastIncrementedDay.isAcceptableOrUnknown(
+          data['last_incremented_day']!,
+          _lastIncrementedDayMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  StreakStateData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return StreakStateData(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      currentCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}current_count'],
+      )!,
+      longest: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}longest'],
+      )!,
+      lastIncrementedDay: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}last_incremented_day'],
+      ),
+    );
+  }
+
+  @override
+  $StreakStateTable createAlias(String alias) {
+    return $StreakStateTable(attachedDatabase, alias);
+  }
+}
+
+class StreakStateData extends DataClass implements Insertable<StreakStateData> {
+  final String id;
+  final int currentCount;
+  final int longest;
+  final String? lastIncrementedDay;
+  const StreakStateData({
+    required this.id,
+    required this.currentCount,
+    required this.longest,
+    this.lastIncrementedDay,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['current_count'] = Variable<int>(currentCount);
+    map['longest'] = Variable<int>(longest);
+    if (!nullToAbsent || lastIncrementedDay != null) {
+      map['last_incremented_day'] = Variable<String>(lastIncrementedDay);
+    }
+    return map;
+  }
+
+  StreakStateCompanion toCompanion(bool nullToAbsent) {
+    return StreakStateCompanion(
+      id: Value(id),
+      currentCount: Value(currentCount),
+      longest: Value(longest),
+      lastIncrementedDay: lastIncrementedDay == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastIncrementedDay),
+    );
+  }
+
+  factory StreakStateData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return StreakStateData(
+      id: serializer.fromJson<String>(json['id']),
+      currentCount: serializer.fromJson<int>(json['currentCount']),
+      longest: serializer.fromJson<int>(json['longest']),
+      lastIncrementedDay: serializer.fromJson<String?>(
+        json['lastIncrementedDay'],
+      ),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'currentCount': serializer.toJson<int>(currentCount),
+      'longest': serializer.toJson<int>(longest),
+      'lastIncrementedDay': serializer.toJson<String?>(lastIncrementedDay),
+    };
+  }
+
+  StreakStateData copyWith({
+    String? id,
+    int? currentCount,
+    int? longest,
+    Value<String?> lastIncrementedDay = const Value.absent(),
+  }) => StreakStateData(
+    id: id ?? this.id,
+    currentCount: currentCount ?? this.currentCount,
+    longest: longest ?? this.longest,
+    lastIncrementedDay: lastIncrementedDay.present
+        ? lastIncrementedDay.value
+        : this.lastIncrementedDay,
+  );
+  StreakStateData copyWithCompanion(StreakStateCompanion data) {
+    return StreakStateData(
+      id: data.id.present ? data.id.value : this.id,
+      currentCount: data.currentCount.present
+          ? data.currentCount.value
+          : this.currentCount,
+      longest: data.longest.present ? data.longest.value : this.longest,
+      lastIncrementedDay: data.lastIncrementedDay.present
+          ? data.lastIncrementedDay.value
+          : this.lastIncrementedDay,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('StreakStateData(')
+          ..write('id: $id, ')
+          ..write('currentCount: $currentCount, ')
+          ..write('longest: $longest, ')
+          ..write('lastIncrementedDay: $lastIncrementedDay')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, currentCount, longest, lastIncrementedDay);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is StreakStateData &&
+          other.id == this.id &&
+          other.currentCount == this.currentCount &&
+          other.longest == this.longest &&
+          other.lastIncrementedDay == this.lastIncrementedDay);
+}
+
+class StreakStateCompanion extends UpdateCompanion<StreakStateData> {
+  final Value<String> id;
+  final Value<int> currentCount;
+  final Value<int> longest;
+  final Value<String?> lastIncrementedDay;
+  final Value<int> rowid;
+  const StreakStateCompanion({
+    this.id = const Value.absent(),
+    this.currentCount = const Value.absent(),
+    this.longest = const Value.absent(),
+    this.lastIncrementedDay = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  StreakStateCompanion.insert({
+    required String id,
+    this.currentCount = const Value.absent(),
+    this.longest = const Value.absent(),
+    this.lastIncrementedDay = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id);
+  static Insertable<StreakStateData> custom({
+    Expression<String>? id,
+    Expression<int>? currentCount,
+    Expression<int>? longest,
+    Expression<String>? lastIncrementedDay,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (currentCount != null) 'current_count': currentCount,
+      if (longest != null) 'longest': longest,
+      if (lastIncrementedDay != null)
+        'last_incremented_day': lastIncrementedDay,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  StreakStateCompanion copyWith({
+    Value<String>? id,
+    Value<int>? currentCount,
+    Value<int>? longest,
+    Value<String?>? lastIncrementedDay,
+    Value<int>? rowid,
+  }) {
+    return StreakStateCompanion(
+      id: id ?? this.id,
+      currentCount: currentCount ?? this.currentCount,
+      longest: longest ?? this.longest,
+      lastIncrementedDay: lastIncrementedDay ?? this.lastIncrementedDay,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (currentCount.present) {
+      map['current_count'] = Variable<int>(currentCount.value);
+    }
+    if (longest.present) {
+      map['longest'] = Variable<int>(longest.value);
+    }
+    if (lastIncrementedDay.present) {
+      map['last_incremented_day'] = Variable<String>(lastIncrementedDay.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('StreakStateCompanion(')
+          ..write('id: $id, ')
+          ..write('currentCount: $currentCount, ')
+          ..write('longest: $longest, ')
+          ..write('lastIncrementedDay: $lastIncrementedDay, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -8653,6 +9203,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     this,
   );
   late final $FavoritesTable favorites = $FavoritesTable(this);
+  late final $AchievementsUnlockedTable achievementsUnlocked =
+      $AchievementsUnlockedTable(this);
+  late final $StreakStateTable streakState = $StreakStateTable(this);
   late final RestrictedAccessEventsDao restrictedAccessEventsDao =
       RestrictedAccessEventsDao(this as AppDatabase);
   late final IntentionUsageEventsDao intentionUsageEventsDao =
@@ -8660,6 +9213,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final FocusUsageEventsDao focusUsageEventsDao = FocusUsageEventsDao(
     this as AppDatabase,
   );
+  late final AchievementsDao achievementsDao = AchievementsDao(
+    this as AppDatabase,
+  );
+  late final StreaksDao streaksDao = StreaksDao(this as AppDatabase);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -8686,6 +9243,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     intentionUsageEvents,
     focusUsageEvents,
     favorites,
+    achievementsUnlocked,
+    streakState,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -14889,6 +15448,352 @@ typedef $$FavoritesTableProcessedTableManager =
       Favorite,
       PrefetchHooks Function({bool packageName})
     >;
+typedef $$AchievementsUnlockedTableCreateCompanionBuilder =
+    AchievementsUnlockedCompanion Function({
+      required String id,
+      required int unlockedAt,
+      Value<int> rowid,
+    });
+typedef $$AchievementsUnlockedTableUpdateCompanionBuilder =
+    AchievementsUnlockedCompanion Function({
+      Value<String> id,
+      Value<int> unlockedAt,
+      Value<int> rowid,
+    });
+
+class $$AchievementsUnlockedTableFilterComposer
+    extends Composer<_$AppDatabase, $AchievementsUnlockedTable> {
+  $$AchievementsUnlockedTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get unlockedAt => $composableBuilder(
+    column: $table.unlockedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$AchievementsUnlockedTableOrderingComposer
+    extends Composer<_$AppDatabase, $AchievementsUnlockedTable> {
+  $$AchievementsUnlockedTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get unlockedAt => $composableBuilder(
+    column: $table.unlockedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$AchievementsUnlockedTableAnnotationComposer
+    extends Composer<_$AppDatabase, $AchievementsUnlockedTable> {
+  $$AchievementsUnlockedTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get unlockedAt => $composableBuilder(
+    column: $table.unlockedAt,
+    builder: (column) => column,
+  );
+}
+
+class $$AchievementsUnlockedTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $AchievementsUnlockedTable,
+          AchievementsUnlockedData,
+          $$AchievementsUnlockedTableFilterComposer,
+          $$AchievementsUnlockedTableOrderingComposer,
+          $$AchievementsUnlockedTableAnnotationComposer,
+          $$AchievementsUnlockedTableCreateCompanionBuilder,
+          $$AchievementsUnlockedTableUpdateCompanionBuilder,
+          (
+            AchievementsUnlockedData,
+            BaseReferences<
+              _$AppDatabase,
+              $AchievementsUnlockedTable,
+              AchievementsUnlockedData
+            >,
+          ),
+          AchievementsUnlockedData,
+          PrefetchHooks Function()
+        > {
+  $$AchievementsUnlockedTableTableManager(
+    _$AppDatabase db,
+    $AchievementsUnlockedTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$AchievementsUnlockedTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$AchievementsUnlockedTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$AchievementsUnlockedTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<int> unlockedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => AchievementsUnlockedCompanion(
+                id: id,
+                unlockedAt: unlockedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required int unlockedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => AchievementsUnlockedCompanion.insert(
+                id: id,
+                unlockedAt: unlockedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$AchievementsUnlockedTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $AchievementsUnlockedTable,
+      AchievementsUnlockedData,
+      $$AchievementsUnlockedTableFilterComposer,
+      $$AchievementsUnlockedTableOrderingComposer,
+      $$AchievementsUnlockedTableAnnotationComposer,
+      $$AchievementsUnlockedTableCreateCompanionBuilder,
+      $$AchievementsUnlockedTableUpdateCompanionBuilder,
+      (
+        AchievementsUnlockedData,
+        BaseReferences<
+          _$AppDatabase,
+          $AchievementsUnlockedTable,
+          AchievementsUnlockedData
+        >,
+      ),
+      AchievementsUnlockedData,
+      PrefetchHooks Function()
+    >;
+typedef $$StreakStateTableCreateCompanionBuilder =
+    StreakStateCompanion Function({
+      required String id,
+      Value<int> currentCount,
+      Value<int> longest,
+      Value<String?> lastIncrementedDay,
+      Value<int> rowid,
+    });
+typedef $$StreakStateTableUpdateCompanionBuilder =
+    StreakStateCompanion Function({
+      Value<String> id,
+      Value<int> currentCount,
+      Value<int> longest,
+      Value<String?> lastIncrementedDay,
+      Value<int> rowid,
+    });
+
+class $$StreakStateTableFilterComposer
+    extends Composer<_$AppDatabase, $StreakStateTable> {
+  $$StreakStateTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get currentCount => $composableBuilder(
+    column: $table.currentCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get longest => $composableBuilder(
+    column: $table.longest,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lastIncrementedDay => $composableBuilder(
+    column: $table.lastIncrementedDay,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$StreakStateTableOrderingComposer
+    extends Composer<_$AppDatabase, $StreakStateTable> {
+  $$StreakStateTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get currentCount => $composableBuilder(
+    column: $table.currentCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get longest => $composableBuilder(
+    column: $table.longest,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lastIncrementedDay => $composableBuilder(
+    column: $table.lastIncrementedDay,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$StreakStateTableAnnotationComposer
+    extends Composer<_$AppDatabase, $StreakStateTable> {
+  $$StreakStateTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get currentCount => $composableBuilder(
+    column: $table.currentCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get longest =>
+      $composableBuilder(column: $table.longest, builder: (column) => column);
+
+  GeneratedColumn<String> get lastIncrementedDay => $composableBuilder(
+    column: $table.lastIncrementedDay,
+    builder: (column) => column,
+  );
+}
+
+class $$StreakStateTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $StreakStateTable,
+          StreakStateData,
+          $$StreakStateTableFilterComposer,
+          $$StreakStateTableOrderingComposer,
+          $$StreakStateTableAnnotationComposer,
+          $$StreakStateTableCreateCompanionBuilder,
+          $$StreakStateTableUpdateCompanionBuilder,
+          (
+            StreakStateData,
+            BaseReferences<_$AppDatabase, $StreakStateTable, StreakStateData>,
+          ),
+          StreakStateData,
+          PrefetchHooks Function()
+        > {
+  $$StreakStateTableTableManager(_$AppDatabase db, $StreakStateTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$StreakStateTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$StreakStateTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$StreakStateTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<int> currentCount = const Value.absent(),
+                Value<int> longest = const Value.absent(),
+                Value<String?> lastIncrementedDay = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => StreakStateCompanion(
+                id: id,
+                currentCount: currentCount,
+                longest: longest,
+                lastIncrementedDay: lastIncrementedDay,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                Value<int> currentCount = const Value.absent(),
+                Value<int> longest = const Value.absent(),
+                Value<String?> lastIncrementedDay = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => StreakStateCompanion.insert(
+                id: id,
+                currentCount: currentCount,
+                longest: longest,
+                lastIncrementedDay: lastIncrementedDay,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$StreakStateTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $StreakStateTable,
+      StreakStateData,
+      $$StreakStateTableFilterComposer,
+      $$StreakStateTableOrderingComposer,
+      $$StreakStateTableAnnotationComposer,
+      $$StreakStateTableCreateCompanionBuilder,
+      $$StreakStateTableUpdateCompanionBuilder,
+      (
+        StreakStateData,
+        BaseReferences<_$AppDatabase, $StreakStateTable, StreakStateData>,
+      ),
+      StreakStateData,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -14938,4 +15843,8 @@ class $AppDatabaseManager {
       $$FocusUsageEventsTableTableManager(_db, _db.focusUsageEvents);
   $$FavoritesTableTableManager get favorites =>
       $$FavoritesTableTableManager(_db, _db.favorites);
+  $$AchievementsUnlockedTableTableManager get achievementsUnlocked =>
+      $$AchievementsUnlockedTableTableManager(_db, _db.achievementsUnlocked);
+  $$StreakStateTableTableManager get streakState =>
+      $$StreakStateTableTableManager(_db, _db.streakState);
 }

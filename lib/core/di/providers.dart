@@ -1,9 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/database/app_database.dart';
+import '../../data/database/daos/achievements_dao.dart';
 import '../../data/database/daos/focus_usage_events_dao.dart';
 import '../../data/database/daos/intention_usage_events_dao.dart';
 import '../../data/database/daos/restricted_access_events_dao.dart';
+import '../../data/database/daos/streaks_dao.dart';
 import '../../data/local/hive_settings_service.dart';
 import '../../platform/platform_channel_service.dart';
 
@@ -34,6 +36,14 @@ final intentionUsageEventsDaoProvider = Provider<IntentionUsageEventsDao>(
 
 final focusUsageEventsDaoProvider = Provider<FocusUsageEventsDao>(
   (ref) => ref.watch(appDatabaseProvider).focusUsageEventsDao,
+);
+
+final achievementsDaoProvider = Provider<AchievementsDao>(
+  (ref) => ref.watch(appDatabaseProvider).achievementsDao,
+);
+
+final streaksDaoProvider = Provider<StreaksDao>(
+  (ref) => ref.watch(appDatabaseProvider).streaksDao,
 );
 
 /// Facade per i MethodChannel/EventChannel del native.

@@ -5,9 +5,12 @@ import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'daos/achievements_dao.dart';
 import 'daos/focus_usage_events_dao.dart';
 import 'daos/intention_usage_events_dao.dart';
 import 'daos/restricted_access_events_dao.dart';
+import 'daos/streaks_dao.dart';
+import 'tables/achievements_unlocked_table.dart';
 import 'tables/adult_content_sites_table.dart';
 import 'tables/app_profile_relations_table.dart';
 import 'tables/applications_table.dart';
@@ -25,6 +28,7 @@ import 'tables/pomodoro_sessions_table.dart';
 import 'tables/profiles_table.dart';
 import 'tables/restricted_access_events.dart';
 import 'tables/settings_table.dart';
+import 'tables/streak_state_table.dart';
 import 'tables/usage_limits_table.dart';
 import 'tables/used_backdoor_codes_table.dart';
 import 'tables/website_rules_table.dart';
@@ -60,11 +64,15 @@ part 'app_database.g.dart';
     IntentionUsageEvents,
     FocusUsageEvents,
     Favorites,
+    AchievementsUnlocked,
+    StreakState,
   ],
   daos: [
     RestrictedAccessEventsDao,
     IntentionUsageEventsDao,
     FocusUsageEventsDao,
+    AchievementsDao,
+    StreaksDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -73,7 +81,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -107,6 +115,13 @@ class AppDatabase extends _$AppDatabase {
               customColorHex: const Value('#A85449'),
             ),
           );
+        },
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            // v2: achievements & streaks (Phase 2).
+            await m.createTable(achievementsUnlocked);
+            await m.createTable(streakState);
+          }
         },
       );
 
