@@ -6,6 +6,11 @@ import '../../../core/constants/koru_colors.dart';
 import '../../../data/models/profile_model.dart';
 import '../../providers/profile_providers.dart';
 
+/// Padding bottom sufficiente a non far nascondere contenuto sotto la
+/// floating nav bar (64h + 10 margin + ~24 safe area gesture) quando
+/// Scaffold.extendBody=true.
+const double kBottomNavClearance = 110;
+
 class ProfilesListScreen extends ConsumerWidget {
   const ProfilesListScreen({super.key});
 
@@ -13,11 +18,22 @@ class ProfilesListScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profilesAsync = ref.watch(profilesProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Profiles')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/profiles/new'),
-        icon: const Icon(Icons.add),
-        label: const Text('New profile'),
+      appBar: AppBar(
+        title: const Text('Profiles'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: IconButton.filled(
+              tooltip: 'New profile',
+              onPressed: () => context.push('/profiles/new'),
+              icon: const Icon(Icons.add),
+              style: IconButton.styleFrom(
+                backgroundColor: KoruColors.primary,
+                foregroundColor: KoruColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
       ),
       body: profilesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -25,7 +41,7 @@ class ProfilesListScreen extends ConsumerWidget {
         data: (profiles) {
           if (profiles.isEmpty) return const _EmptyProfilesHint();
           return ListView.separated(
-            padding: const EdgeInsets.symmetric(vertical: 8),
+            padding: const EdgeInsets.fromLTRB(0, 8, 0, kBottomNavClearance),
             itemCount: profiles.length,
             separatorBuilder: (_, _) => const Divider(height: 1),
             itemBuilder: (context, i) => _ProfileTile(profile: profiles[i]),
@@ -74,7 +90,7 @@ class _EmptyProfilesHint extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.fromLTRB(32, 32, 32, kBottomNavClearance),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -87,7 +103,8 @@ class _EmptyProfilesHint extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Create a profile to define when and which apps to block.',
+              'Tap + to create your first profile and pick when and which '
+              'apps to block.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: KoruColors.textSecondary,

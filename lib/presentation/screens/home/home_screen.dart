@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/koru_colors.dart';
+import '../../../core/constants/layout.dart';
 import '../../../data/models/profile_model.dart';
 import '../../providers/active_profile_provider.dart';
 import '../../providers/statistics_providers.dart';
@@ -33,7 +34,7 @@ class HomeScreen extends ConsumerWidget {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, kBottomNavClearance),
         children: [
           const _GreetingCard(),
           const SizedBox(height: 12),

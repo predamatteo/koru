@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/koru_colors.dart';
+import '../../../core/constants/layout.dart';
 import '../../../domain/entities/statistics_period.dart';
 import '../../providers/mood_provider.dart';
 import '../../providers/statistics_providers.dart';
@@ -35,7 +36,7 @@ class StatisticsScreen extends ConsumerWidget {
           ref.invalidate(todayMoodProvider);
         },
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, kBottomNavClearance),
           children: [
             SegmentedButton<StatisticsPeriod>(
               segments: [

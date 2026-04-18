@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/koru_colors.dart';
+import '../../../core/constants/layout.dart';
 import '../../providers/focus_session_provider.dart';
 
 class FocusScreen extends ConsumerWidget {
@@ -16,7 +17,7 @@ class FocusScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Focus')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, kBottomNavClearance),
         children: [
           if (isActive) _ActiveBanner(tick: tickAsync.valueOrNull!),
           if (isActive) const SizedBox(height: 16),

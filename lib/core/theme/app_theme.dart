@@ -51,7 +51,7 @@ class AppTheme {
         backgroundColor: KoruColors.surfaceElevated,
         surfaceTintColor: Colors.transparent,
         indicatorColor: KoruColors.primary.withValues(alpha: 0.22),
-        indicatorShape: const StadiumBorder(),
+        indicatorShape: const CircleBorder(),
         height: 64,
         elevation: 0,
         // Icon-only floating pill nav bar. Label nascosta sempre; il pill

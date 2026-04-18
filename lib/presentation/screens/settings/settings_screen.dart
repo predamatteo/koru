@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/koru_colors.dart';
+import '../../../core/constants/layout.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -12,6 +13,7 @@ class SettingsScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
+        padding: const EdgeInsets.only(bottom: kBottomNavClearance),
         children: [
           const _SectionLabel('Appearance'),
           ListTile(
