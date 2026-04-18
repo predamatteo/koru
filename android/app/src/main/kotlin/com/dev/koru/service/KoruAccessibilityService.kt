@@ -104,7 +104,17 @@ class KoruAccessibilityService : AccessibilityService() {
                 }
             }
             onBypassOpen = { pkg ->
-                // bypass è già registrato in OverlayManager.Companion via markBypassed.
+                // bypass già registrato in OverlayManager.Companion via markBypassed.
+                // Logga BLOCK_SKIPPED per analytics.
+                try {
+                    NativeDatabase.insertRestrictedAccessEvent(
+                        applicationContext,
+                        pkg,
+                        eventType = 1, // SKIPPED
+                        restrictionType = 0, // APP
+                        timestamp = System.currentTimeMillis(),
+                    )
+                } catch (_: Exception) {}
                 dismiss()
                 val intent = packageManager.getLaunchIntentForPackage(pkg)
                 if (intent != null) {
@@ -213,11 +223,15 @@ class KoruAccessibilityService : AccessibilityService() {
                     )
                 }
                 performGlobalAction(GLOBAL_ACTION_HOME)
+                val now = System.currentTimeMillis()
                 try {
-                    NativeDatabase.insertBlockSession(
+                    NativeDatabase.insertBlockSession(applicationContext, packageName, now)
+                    NativeDatabase.insertRestrictedAccessEvent(
                         applicationContext,
                         packageName,
-                        System.currentTimeMillis(),
+                        eventType = 0, // TRIGGERED
+                        restrictionType = 0, // APP
+                        timestamp = now,
                     )
                 } catch (_: Exception) {}
                 sendBlockingStateEvent(true, packageName, profile)
@@ -277,6 +291,13 @@ class KoruAccessibilityService : AccessibilityService() {
                     "$packageName/${detected.wireId}",
                     now,
                 )
+                NativeDatabase.insertRestrictedAccessEvent(
+                    applicationContext,
+                    packageName,
+                    eventType = 0,
+                    restrictionType = 1, // SECTION
+                    timestamp = now,
+                )
             } catch (_: Exception) {}
             sendSectionEvent(packageName, detected.wireId, profile)
             return true
@@ -303,11 +324,15 @@ class KoruAccessibilityService : AccessibilityService() {
                     )
                 }
                 performGlobalAction(GLOBAL_ACTION_HOME)
+                val now = System.currentTimeMillis()
                 try {
-                    NativeDatabase.insertBlockSession(
+                    NativeDatabase.insertBlockSession(applicationContext, detected.domain, now)
+                    NativeDatabase.insertRestrictedAccessEvent(
                         applicationContext,
-                        detected.domain,
-                        System.currentTimeMillis(),
+                        packageName,
+                        eventType = 0,
+                        restrictionType = 2, // WEBSITE
+                        timestamp = now,
                     )
                 } catch (_: Exception) {}
                 return

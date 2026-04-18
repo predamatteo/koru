@@ -7,6 +7,7 @@ import '../../../core/constants/layout.dart';
 import '../../../data/models/profile_model.dart';
 import '../../providers/active_profile_provider.dart';
 import '../../providers/app_list_provider.dart';
+import '../../providers/events_refresher.dart';
 import '../../providers/profile_providers.dart';
 import '../../providers/statistics_providers.dart';
 
@@ -28,6 +29,9 @@ class HomeScreen extends ConsumerWidget {
     // Pre-warm della lista app così quando l'utente entra in
     // "Select apps" dentro un profilo la risposta native è già cached.
     ref.watch(installedAppsProvider);
+
+    // Ascolta gli eventi native di blocking → invalida i count in real-time.
+    ref.watch(blockingEventsRefresherProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Koru')),
@@ -115,6 +119,11 @@ class _ActiveProfileCard extends StatelessWidget {
       title = 'Create one to get started';
     }
 
+    final primaryActive = activeProfiles.isNotEmpty ? activeProfiles.first : null;
+    final primaryActiveColor = primaryActive == null
+        ? KoruColors.textSecondary
+        : _parseHex(primaryActive.colorHex);
+
     return Card(
       color: hasActive ? KoruColors.primaryContainer : KoruColors.surface,
       child: InkWell(
@@ -124,14 +133,22 @@ class _ActiveProfileCard extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Icon(
-                hasActive
-                    ? Icons.shield
-                    : (hasAny ? Icons.shield_outlined : Icons.add_circle_outline),
-                color:
-                    hasActive ? KoruColors.primary : KoruColors.textSecondary,
-                size: 32,
-              ),
+              if (hasActive)
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: primaryActiveColor.withValues(alpha: 0.2),
+                  foregroundColor: primaryActiveColor,
+                  child: Text(
+                    primaryActive!.emoji == 'NoIcon' ? '🌱' : primaryActive.emoji,
+                    style: const TextStyle(fontSize: 18),
+                  ),
+                )
+              else
+                Icon(
+                  hasAny ? Icons.shield_outlined : Icons.add_circle_outline,
+                  color: KoruColors.textSecondary,
+                  size: 32,
+                ),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
@@ -159,6 +176,11 @@ class _ActiveProfileCard extends StatelessWidget {
       ),
     );
   }
+}
+
+Color _parseHex(String hex) {
+  final clean = hex.replaceFirst('#', '');
+  return Color(0xFF000000 | int.parse(clean, radix: 16));
 }
 
 class _TodayStatsRow extends StatelessWidget {

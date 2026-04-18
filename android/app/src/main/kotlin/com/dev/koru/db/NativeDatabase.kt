@@ -216,6 +216,30 @@ object NativeDatabase {
     }
 
     /**
+     * Event type: 0 = BLOCK_TRIGGERED, 1 = BLOCK_SKIPPED.
+     * Restriction type: 0 = APP, 1 = SECTION, 2 = WEBSITE, 3 = USAGE_LIMIT, 4 = FOCUS_MODE.
+     */
+    fun insertRestrictedAccessEvent(
+        context: Context,
+        packageName: String,
+        eventType: Int,
+        restrictionType: Int,
+        timestamp: Long,
+    ) {
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = timestamp }
+        val y = cal.get(java.util.Calendar.YEAR).toString().padStart(4, '0')
+        val m = (cal.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')
+        val d = cal.get(java.util.Calendar.DAY_OF_MONTH).toString().padStart(2, '0')
+        val dayKey = "$y-$m-$d"
+        open(context).execSQL(
+            "INSERT INTO restricted_access_events " +
+                "(occurred_at, day_start_date, package_name, event_type, restriction_type) " +
+                "VALUES (?, ?, ?, ?, ?)",
+            arrayOf(timestamp, dayKey, packageName, eventType, restrictionType),
+        )
+    }
+
+    /**
      * Log di una intention scelta dall'utente sull'overlay di blocco.
      * Alimenta il "Top intentions" nelle statistiche.
      */
