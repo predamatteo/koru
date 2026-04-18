@@ -115,17 +115,27 @@ class _PermTile extends StatelessWidget {
         granted ? Icons.check_circle : Icons.radio_button_unchecked,
         color: granted ? KoruColors.success : KoruColors.textSecondary,
       ),
-      title: Row(
+      title: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        runSpacing: 4,
         children: [
           Text(title),
-          if (required && !granted) ...[
-            const SizedBox(width: 8),
-            Chip(
-              label: const Text('Required'),
-              padding: EdgeInsets.zero,
-              labelStyle: const TextStyle(fontSize: 10),
+          if (required && !granted)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: KoruColors.secondaryContainer,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                'Required',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: KoruColors.textPrimary,
+                      letterSpacing: 1,
+                    ),
+              ),
             ),
-          ],
         ],
       ),
       subtitle: Text(subtitle),
