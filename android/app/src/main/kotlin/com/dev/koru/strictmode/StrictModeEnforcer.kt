@@ -32,6 +32,34 @@ object StrictModeEnforcer {
         "com.miui.packageinstaller",
     )
 
+    /// Activity di Settings considerate "permission grant pages": il
+     /// blocco BLOCK_SETTINGS le lascia passare anche con strict mode on,
+     /// così l'utente può concedere i permessi richiesti da Koru (notif
+     /// listener, accessibility, usage stats, overlay, battery opt,
+     /// default launcher). Match è substring case-insensitive sul className
+     /// dell'activity per funzionare cross-OEM.
+    private val SETTINGS_PERMISSION_ALLOWLIST = listOf(
+        "NotificationAccess",              // notification listener detail + list
+        "NotificationListener",
+        "AccessibilityDetails",            // enable specific accessibility service
+        "AccessibilityServiceDetail",
+        "UsageAccess",                     // package usage stats
+        "AppUsageAccess",
+        "ManageAppOverlay",                // draw over other apps
+        "AppOverlayPermission",
+        "HighPowerApplication",            // battery optimization whitelist
+        "RequestIgnoreBatteryOptimization",
+        "IgnoreBatteryOptimization",
+        "HomeSettings",                    // default launcher picker
+    )
+
+    private fun isPermissionGrantPage(className: String): Boolean {
+        if (className.isEmpty()) return false
+        return SETTINGS_PERMISSION_ALLOWLIST.any {
+            className.contains(it, ignoreCase = true)
+        }
+    }
+
     private var cachedMask: Int = -1
     private var lastReadTime = 0L
     private const val CACHE_MS = 3_000L
@@ -54,7 +82,11 @@ object StrictModeEnforcer {
         val className = event.className?.toString() ?: ""
 
         if (mask and BLOCK_SETTINGS != 0 && SETTINGS_PACKAGES.contains(packageName)) {
-            Log.w(TAG, "STRICT: Blocked settings: $packageName")
+            if (isPermissionGrantPage(className)) {
+                Log.d(TAG, "STRICT: allowlisted permission page $className")
+                return false
+            }
+            Log.w(TAG, "STRICT: Blocked settings: $packageName/$className")
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
             return true
         }

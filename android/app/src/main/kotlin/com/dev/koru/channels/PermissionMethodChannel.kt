@@ -7,6 +7,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.PowerManager
 import android.os.Process
 import android.provider.Settings
@@ -23,17 +24,17 @@ object PermissionMethodChannel {
                 when (call.method) {
                     "checkAccessibilityService" -> result.success(isAccessibilityEnabled(activity))
                     "openAccessibilitySettings" -> {
-                        activity.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+activity.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                         result.success(null)
                     }
                     "checkUsageStatsPermission" -> result.success(hasUsageStats(activity))
                     "openUsageStatsSettings" -> {
-                        activity.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+activity.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                         result.success(null)
                     }
                     "checkOverlayPermission" -> result.success(Settings.canDrawOverlays(activity))
                     "openOverlaySettings" -> {
-                        activity.startActivity(
+activity.startActivity(
                             Intent(
                                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                                 Uri.parse("package:${activity.packageName}")
@@ -46,7 +47,7 @@ object PermissionMethodChannel {
                         result.success(pm.isIgnoringBatteryOptimizations(activity.packageName))
                     }
                     "requestDisableBatteryOptimization" -> {
-                        activity.startActivity(
+activity.startActivity(
                             Intent(
                                 Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
                                 Uri.parse("package:${activity.packageName}")
@@ -56,12 +57,12 @@ object PermissionMethodChannel {
                     }
                     "checkNotificationListener" -> result.success(isNotificationListenerEnabled(activity))
                     "openNotificationListenerSettings" -> {
-                        activity.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+openNotificationListenerSettingsSafe(activity)
                         result.success(null)
                     }
                     "isDefaultLauncher" -> result.success(isDefaultLauncher(activity))
                     "openDefaultLauncherSettings" -> {
-                        activity.startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
+activity.startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
                         result.success(null)
                     }
                     "setLauncherModeEnabled" -> {
@@ -136,5 +137,43 @@ object PermissionMethodChannel {
         }
         val resolve = context.packageManager.resolveActivity(intent, 0)
         return resolve?.activityInfo?.packageName == context.packageName
+    }
+
+    /// Apre "Notification access" con 3 fallback progressivi. Su alcuni
+    /// OEM (OnePlus/Oppo/ColorOS/MIUI) l'intent generico può non essere
+    /// risolvibile e `startActivity` solleva ActivityNotFoundException
+    /// che, se non catturata, termina il processo Flutter.
+    private fun openNotificationListenerSettingsSafe(activity: Activity) {
+        val component = ComponentName(
+            activity.packageName,
+            "com.dev.koru.notification.KoruNotificationListenerService",
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                val intent = Intent(
+                    Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS,
+                )
+                    .putExtra(
+                        Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME,
+                        component.flattenToString(),
+                    )
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                activity.startActivity(intent)
+                return
+            } catch (_: Exception) {}
+        }
+        try {
+            activity.startActivity(
+                Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            return
+        } catch (_: Exception) {}
+        try {
+            activity.startActivity(
+                Intent(Settings.ACTION_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        } catch (_: Exception) {}
     }
 }

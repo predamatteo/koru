@@ -164,11 +164,8 @@ object BlockingMethodChannel {
                         result.success(flat.contains(expected))
                     }
                     "openNotificationAccessSettings" -> {
-                        val intent = Intent(
-                            android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS
-                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        activity.startActivity(intent)
-                        result.success(true)
+                        val ok = openNotificationAccessSettings(activity)
+                        result.success(ok)
                     }
                     "getCurrentWifiSsid" -> {
                         result.success(getCurrentWifiSsid(activity))
@@ -226,6 +223,56 @@ object BlockingMethodChannel {
                 .filter { it.packageName == pkg }
                 .sumOf { it.totalTimeInForeground }
         } catch (_: Exception) { 0L }
+    }
+
+    /// Apre le Settings di "Notification access" con fallback robusto:
+    /// prima prova il deep-link diretto al component di Koru
+    /// (ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS, API 30+), poi
+    /// la action generica, poi Settings root. Ciascun tentativo è
+    /// wrapped in try/catch per evitare crash su device dove l'intent
+    /// non è disponibile o è bloccato da policy OEM.
+    private fun openNotificationAccessSettings(activity: Activity): Boolean {
+        val component = android.content.ComponentName(
+            activity.packageName,
+            "com.dev.koru.notification.KoruNotificationListenerService",
+        )
+
+        // Tentativo 1: deep-link al detail (Android 11+).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                val intent = Intent(
+                    android.provider.Settings
+                        .ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS,
+                )
+                    .putExtra(
+                        android.provider.Settings
+                            .EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME,
+                        component.flattenToString(),
+                    )
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                activity.startActivity(intent)
+                return true
+            } catch (_: Exception) {}
+        }
+
+        // Tentativo 2: lista generica di notification listeners.
+        try {
+            val intent = Intent(
+                android.provider.Settings
+                    .ACTION_NOTIFICATION_LISTENER_SETTINGS,
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            activity.startActivity(intent)
+            return true
+        } catch (_: Exception) {}
+
+        // Fallback finale: Settings root.
+        try {
+            val intent = Intent(android.provider.Settings.ACTION_SETTINGS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            activity.startActivity(intent)
+            return true
+        } catch (_: Exception) {}
+        return false
     }
 
     /// Legge il SSID della rete WiFi corrente. Su Android 10+ richiede
