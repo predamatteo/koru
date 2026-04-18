@@ -221,8 +221,11 @@ class KoruAccessibilityService : AccessibilityService() {
         if (OverlayManager.isBypassed(packageName)) return false
 
         // Quick-block / Pomodoro-work: blocca tutto tranne whitelist.
-        val qb = LockForegroundService.quickBlockManager
-        if (qb.shouldBlockEverythingExceptWhitelist(packageName)) {
+        // Lo stato è letto da QuickBlockStore (file su disco) perché
+        // QuickBlockManager vive nel processo main e qui siamo in
+        // `:accessibility` → memory isolation fra JVM.
+        val qbSnapshot = QuickBlockStore.read(applicationContext)
+        if (qbSnapshot.shouldBlock(packageName, System.currentTimeMillis())) {
             Log.w(TAG, ">>> BLOCKING APP (focus): $packageName")
             currentlyBlockingPackage = packageName
             val appLabel = getAppLabel(packageName)

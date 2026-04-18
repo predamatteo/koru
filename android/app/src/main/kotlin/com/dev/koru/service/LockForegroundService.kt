@@ -58,6 +58,7 @@ class LockForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        quickBlockManager.attachContext(applicationContext)
         overlayManager = OverlayManager(applicationContext)
         overlayManager?.onReturnHome = {
             performGoHome()

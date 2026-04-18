@@ -69,6 +69,10 @@ object BlockingMethodChannel {
                         val durationMs = call.longArg("durationMs")
                         val whitelist = (call.argument<List<String>>("whitelist") ?: emptyList())
                             .toSet()
+                        // Il context va attaccato anche se il service non è
+                        // mai stato istanziato: serve per persistere lo
+                        // snapshot letto dal processo :accessibility.
+                        LockForegroundService.quickBlockManager.attachContext(activity.applicationContext)
                         LockForegroundService.quickBlockManager.startQuickBlock(
                             durationMs,
                             whitelist,
@@ -85,6 +89,7 @@ object BlockingMethodChannel {
                         val cycles = call.argument<Int>("cycles") ?: 4
                         val whitelist = (call.argument<List<String>>("whitelist") ?: emptyList())
                             .toSet()
+                        LockForegroundService.quickBlockManager.attachContext(activity.applicationContext)
                         LockForegroundService.quickBlockManager.startPomodoro(
                             workMs,
                             breakMs,

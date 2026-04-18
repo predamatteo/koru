@@ -1,5 +1,6 @@
 package com.dev.koru.service
 
+import android.content.Context
 import android.os.CountDownTimer
 import android.util.Log
 import com.dev.koru.channels.ServiceEventChannel
@@ -8,6 +9,18 @@ import org.json.JSONObject
 class QuickBlockManager {
     companion object {
         private const val TAG = "QuickBlockManager"
+    }
+
+    /// applicationContext iniettato da [LockForegroundService.onCreate] per
+    /// poter persistere lo snapshot di stato via [QuickBlockStore]. Lo store
+    /// è necessario perché [KoruAccessibilityService] vive in un altro
+    /// processo (`:accessibility`) e non vede la static state di questo
+    /// oggetto: deve leggerla da disco.
+    @Volatile
+    private var appContext: Context? = null
+
+    fun attachContext(context: Context) {
+        appContext = context.applicationContext
     }
 
     private var timer: CountDownTimer? = null
@@ -25,6 +38,7 @@ class QuickBlockManager {
     private var totalCycles: Int = 0
     private var currentCycle: Int = 0
     private var isBreakPhase = false
+    private var phaseStartedAt: Long = 0
 
     /// Package whitelist corrente (app che restano usabili durante
     /// quick-block / pomodoro-work). Tutte le altre app sono bloccate.
@@ -37,6 +51,9 @@ class QuickBlockManager {
      * NON è nella whitelist → AccessibilityService deve bloccarla.
      * Durante la fase break del pomodoro ritorna false (l'utente può
      * usare il telefono normalmente nei break).
+     *
+     * NB: funziona solo nel processo main. Dal processo `:accessibility`
+     * usare [QuickBlockStore.read] e [QuickBlockStore.Snapshot.shouldBlock].
      */
     fun shouldBlockEverythingExceptWhitelist(packageName: String): Boolean {
         if (!isActive) return false
@@ -51,6 +68,8 @@ class QuickBlockManager {
         remainingMs = durationMs
         this.whitelist = whitelist
         isActive = true
+        phaseStartedAt = System.currentTimeMillis()
+        persistSnapshot(durationMs)
         startTimer(durationMs)
         Log.i(TAG, "Quick block started: ${durationMs}ms, whitelist=${whitelist.size} apps")
     }
@@ -72,6 +91,8 @@ class QuickBlockManager {
         totalMs = workMs
         remainingMs = workMs
         isActive = true
+        phaseStartedAt = System.currentTimeMillis()
+        persistSnapshot(workMs)
         startTimer(workMs)
         Log.i(TAG, "Pomodoro started: ${workMs}ms work, ${breakMs}ms break, $cycles cycles, whitelist=${whitelist.size}")
     }
@@ -83,6 +104,7 @@ class QuickBlockManager {
         remainingMs = 0
         isPomodoroMode = false
         whitelist = emptySet()
+        clearSnapshot()
         sendTickEvent()
         Log.i(TAG, "Quick block/pomodoro stopped")
     }
@@ -101,6 +123,7 @@ class QuickBlockManager {
                     handlePomodoroPhaseEnd()
                 } else {
                     isActive = false
+                    clearSnapshot()
                     sendTickEvent()
                     Log.i(TAG, "Quick block finished")
                 }
@@ -113,6 +136,7 @@ class QuickBlockManager {
             currentCycle++
             if (currentCycle > totalCycles) {
                 isActive = false
+                clearSnapshot()
                 sendTickEvent()
                 Log.i(TAG, "Pomodoro complete: all $totalCycles cycles done")
                 return
@@ -120,11 +144,14 @@ class QuickBlockManager {
             isBreakPhase = false
             totalMs = workMs
             remainingMs = workMs
+            phaseStartedAt = System.currentTimeMillis()
+            persistSnapshot(workMs)
             startTimer(workMs)
             Log.i(TAG, "Pomodoro cycle $currentCycle: focus phase")
         } else {
             if (currentCycle >= totalCycles) {
                 isActive = false
+                clearSnapshot()
                 sendTickEvent()
                 Log.i(TAG, "Pomodoro complete")
                 return
@@ -132,10 +159,35 @@ class QuickBlockManager {
             isBreakPhase = true
             totalMs = breakMs
             remainingMs = breakMs
+            phaseStartedAt = System.currentTimeMillis()
+            persistSnapshot(breakMs)
             startTimer(breakMs)
             Log.i(TAG, "Pomodoro cycle $currentCycle: break phase")
         }
         sendTickEvent()
+    }
+
+    private fun persistSnapshot(phaseDurationMs: Long) {
+        val ctx = appContext ?: run {
+            Log.w(TAG, "appContext not attached — cannot persist snapshot")
+            return
+        }
+        val expiresAt = if (phaseDurationMs > 0) System.currentTimeMillis() + phaseDurationMs else 0L
+        QuickBlockStore.save(
+            ctx,
+            QuickBlockStore.Snapshot(
+                isActive = isActive,
+                isPomodoroMode = isPomodoroMode,
+                isBreakPhase = isBreakPhase,
+                expiresAt = expiresAt,
+                whitelist = whitelist,
+            ),
+        )
+    }
+
+    private fun clearSnapshot() {
+        val ctx = appContext ?: return
+        QuickBlockStore.clear(ctx)
     }
 
     private fun sendTickEvent() {
