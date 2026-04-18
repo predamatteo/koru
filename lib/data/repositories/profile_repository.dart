@@ -110,6 +110,16 @@ class ProfileRepository {
     await _channel.notifyProfileChanged(profileId);
   }
 
+  Future<List<String>> getWifisForProfile(int profileId) async {
+    final rows = await _db.getWifisForProfile(profileId);
+    return rows.map((w) => w.ssid).toList(growable: false);
+  }
+
+  Future<void> setWifisForProfile(int profileId, List<String> ssids) async {
+    await _db.setWifisForProfile(profileId, ssids);
+    await _channel.notifyProfileChanged(profileId);
+  }
+
   Future<void> setIntervalsForProfile(
     int profileId,
     List<({int from, int to})> timeRanges,

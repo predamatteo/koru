@@ -288,6 +288,22 @@ object NativeDatabase {
         )
     }
 
+    /// SSID WiFi vincolate per ogni profilo: profileId → Set<ssid>.
+    /// Profilo senza entry → nessun vincolo wifi.
+    fun getWifiSsidsByProfile(context: Context): Map<Int, Set<String>> {
+        val out = mutableMapOf<Int, MutableSet<String>>()
+        open(context).rawQuery(
+            "SELECT profile_id, ssid FROM wifi_networks", null
+        ).use { c ->
+            while (c.moveToNext()) {
+                val pid = c.getInt(0)
+                val ssid = c.getString(1)
+                out.getOrPut(pid) { mutableSetOf() }.add(ssid)
+            }
+        }
+        return out
+    }
+
     fun getWebsiteRulesForProfile(context: Context, profileId: Int): List<NativeWebsiteRule> {
         val out = mutableListOf<NativeWebsiteRule>()
         open(context).rawQuery(

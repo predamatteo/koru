@@ -57,6 +57,7 @@ class KoruAccessibilityService : AccessibilityService() {
     private var profiles = emptyList<NativeProfile>()
     private var profileApps = mutableMapOf<Int, List<NativeAppRelation>>()
     private var websiteRulesCache = mutableMapOf<Int, List<NativeWebsiteRule>>()
+    private var profileWifis = mapOf<Int, Set<String>>()
     private var lastProfileLoadTime = 0L
     private var currentlyBlockingPackage: String? = null
     private var lastForegroundPackage: String? = null
@@ -492,6 +493,16 @@ class KoruAccessibilityService : AccessibilityService() {
         }
         if (profile.dayFlags and todayFlag == 0) return false
         if (profile.onUntil > 0 && System.currentTimeMillis() > profile.onUntil) return false
+
+        // Wifi constraint (Phase 2): se il profilo ha almeno un SSID
+        // configurato, attivo solo se l'SSID corrente matcha. Se non
+        // possiamo leggere il SSID (permesso location non concesso)
+        // trattiamo come "no match" → profilo inattivo per sicurezza.
+        val wifiSet = profileWifis[profile.id]
+        if (wifiSet != null && wifiSet.isNotEmpty()) {
+            val current = getCurrentWifiSsid()
+            if (current == null || !wifiSet.contains(current)) return false
+        }
         return true
     }
 
@@ -505,13 +516,35 @@ class KoruAccessibilityService : AccessibilityService() {
                 profileApps[p.id] = NativeDatabase.getAppRelationsForProfile(applicationContext, p.id)
             }
             websiteRulesCache.putAll(NativeDatabase.getAllWebsiteRulesForEnabledProfiles(applicationContext))
+            profileWifis = NativeDatabase.getWifiSsidsByProfile(applicationContext)
             lastProfileLoadTime = System.currentTimeMillis()
-            Log.d(TAG, "Loaded ${profiles.size} profiles")
+            Log.d(TAG, "Loaded ${profiles.size} profiles, ${profileWifis.size} with wifi constraints")
         } catch (e: Exception) {
             Log.e(TAG, "Error loading profiles: ${e.message}")
             profiles = emptyList()
             profileApps.clear()
             websiteRulesCache.clear()
+            profileWifis = emptyMap()
+        }
+    }
+
+    /// Legge il SSID corrente via WifiManager (stesso pattern di
+    /// BlockingMethodChannel.getCurrentWifiSsid). Ritorna null se
+    /// non connessi o mancano permessi.
+    private fun getCurrentWifiSsid(): String? {
+        return try {
+            val wm = applicationContext
+                .getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+            val info = wm?.connectionInfo ?: return null
+            val ssid = info.ssid
+            if (ssid == null || ssid == "<unknown ssid>") return null
+            if (ssid.length >= 2 && ssid.startsWith("\"") && ssid.endsWith("\"")) {
+                ssid.substring(1, ssid.length - 1)
+            } else {
+                ssid
+            }
+        } catch (_: Exception) {
+            null
         }
     }
 

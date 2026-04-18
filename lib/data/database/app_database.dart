@@ -187,6 +187,26 @@ class AppDatabase extends _$AppDatabase {
   Future<List<Interval>> getIntervalsForProfile(int profileId) =>
       (select(intervals)..where((i) => i.profileId.equals(profileId))).get();
 
+  // --- Wifi network queries (Phase 2) ---
+  Future<List<WifiNetwork>> getWifisForProfile(int profileId) =>
+      (select(wifiNetworks)..where((w) => w.profileId.equals(profileId))).get();
+
+  Future<void> setWifisForProfile(int profileId, List<String> ssids) async {
+    await transaction(() async {
+      await (delete(wifiNetworks)..where((w) => w.profileId.equals(profileId)))
+          .go();
+      for (final ssid in ssids) {
+        if (ssid.trim().isEmpty) continue;
+        await into(wifiNetworks).insert(
+          WifiNetworksCompanion.insert(
+            profileId: profileId,
+            ssid: ssid.trim(),
+          ),
+        );
+      }
+    });
+  }
+
   // --- Usage limit queries ---
   Future<List<UsageLimit>> getUsageLimitsForProfile(int profileId) =>
       (select(usageLimits)..where((u) => u.profileId.equals(profileId))).get();

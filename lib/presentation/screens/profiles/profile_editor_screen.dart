@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/day_flags.dart';
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/profile_types.dart';
+import '../../../core/di/providers.dart';
 import '../../providers/achievements_provider.dart';
 import '../../providers/profile_providers.dart';
 
@@ -36,6 +37,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
   TimeOfDay _to = const TimeOfDay(hour: 17, minute: 0);
   bool _timeEnabled = true;
   bool _loaded = false;
+  List<String> _wifiSsids = const [];
 
   @override
   void dispose() {
@@ -47,6 +49,8 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
     if (_loaded) return;
     final profile = await ref.read(profileByIdProvider(id).future);
     if (profile == null || !mounted) return;
+    final wifis = await ref.read(profileRepositoryProvider).getWifisForProfile(id);
+    if (!mounted) return;
     setState(() {
       _loaded = true;
       _titleController.text = profile.title;
@@ -60,7 +64,74 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
         _from = TimeOfDay(hour: iv.fromMinutes ~/ 60, minute: iv.fromMinutes % 60);
         _to = TimeOfDay(hour: iv.toMinutes ~/ 60, minute: iv.toMinutes % 60);
       }
+      _wifiSsids = wifis;
     });
+  }
+
+  Future<void> _addCurrentWifi() async {
+    final blocking = ref.read(profileRepositoryProvider);
+    // Leggi SSID via blocking channel (stesso namespace).
+    // Usiamo reference indiretto via provider container per evitare
+    // import diretto di platform service.
+    final ssid = await ProfilesWifiHelper.readCurrentSsid(ref);
+    if (ssid == null || ssid.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(
+            'Could not read current SSID. Ensure WiFi is on and location permission is granted.',
+          )),
+        );
+      }
+      return;
+    }
+    if (_wifiSsids.contains(ssid)) return;
+    setState(() => _wifiSsids = [..._wifiSsids, ssid]);
+    // persist immediato se non è un nuovo profilo
+    if (!widget.isNew && widget.profileId != null) {
+      await blocking.setWifisForProfile(widget.profileId!, _wifiSsids);
+    }
+  }
+
+  Future<void> _addManualWifi() async {
+    final controller = TextEditingController();
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add WiFi SSID'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'e.g. Home_WiFi'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || result.isEmpty) return;
+    if (_wifiSsids.contains(result)) return;
+    setState(() => _wifiSsids = [..._wifiSsids, result]);
+    if (!widget.isNew && widget.profileId != null) {
+      await ref
+          .read(profileRepositoryProvider)
+          .setWifisForProfile(widget.profileId!, _wifiSsids);
+    }
+  }
+
+  Future<void> _removeWifi(String ssid) async {
+    setState(() => _wifiSsids = _wifiSsids.where((s) => s != ssid).toList());
+    if (!widget.isNew && widget.profileId != null) {
+      await ref
+          .read(profileRepositoryProvider)
+          .setWifisForProfile(widget.profileId!, _wifiSsids);
+    }
   }
 
   Future<void> _save() async {
@@ -104,6 +175,8 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
     } else {
       await repo.setIntervalsForProfile(profileId, const []);
     }
+
+    await repo.setWifisForProfile(profileId, _wifiSsids);
 
     await ref.read(achievementEvaluationProvider.notifier).trigger();
     if (mounted) context.pop();
@@ -266,6 +339,52 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
               trailing: const Icon(Icons.chevron_right),
               onTap: () => context.push('/profiles/${widget.profileId}/websites'),
             ),
+            const SizedBox(height: 24),
+            _SectionHeader(title: 'Only on WiFi'),
+            const SizedBox(height: 4),
+            Text(
+              _wifiSsids.isEmpty
+                  ? 'No WiFi filter. Profile activates regardless of network.'
+                  : 'Profile activates only when connected to these networks.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: KoruColors.textSecondary,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            for (final ssid in _wifiSsids)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.wifi, color: KoruColors.primary),
+                  title: Text(ssid),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.close,
+                        color: KoruColors.textSecondary),
+                    onPressed: () => _removeWifi(ssid),
+                  ),
+                ),
+              ),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _addCurrentWifi,
+                    icon: const Icon(Icons.my_location, size: 18),
+                    label: const Text('Add current'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _addManualWifi,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Add by name'),
+                  ),
+                ),
+              ],
+            ),
           ] else ...[
             const SizedBox(height: 16),
             Text(
@@ -339,4 +458,11 @@ class _TimeTile extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Helper per leggere il SSID corrente da dentro la UI profili senza
+/// creare dipendenze pesanti fra screen e platform channel.
+class ProfilesWifiHelper {
+  static Future<String?> readCurrentSsid(WidgetRef ref) =>
+      ref.read(platformChannelServiceProvider).blocking.getCurrentWifiSsid();
 }

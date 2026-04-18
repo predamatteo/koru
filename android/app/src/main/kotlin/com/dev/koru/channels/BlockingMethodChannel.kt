@@ -170,6 +170,9 @@ object BlockingMethodChannel {
                         activity.startActivity(intent)
                         result.success(true)
                     }
+                    "getCurrentWifiSsid" -> {
+                        result.success(getCurrentWifiSsid(activity))
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -223,6 +226,27 @@ object BlockingMethodChannel {
                 .filter { it.packageName == pkg }
                 .sumOf { it.totalTimeInForeground }
         } catch (_: Exception) { 0L }
+    }
+
+    /// Legge il SSID della rete WiFi corrente. Su Android 10+ richiede
+    /// ACCESS_FINE_LOCATION; se permesso non concesso ritorna null o
+    /// "<unknown ssid>". L'UI gestisce la degradazione gentilmente.
+    private fun getCurrentWifiSsid(context: Context): String? {
+        return try {
+            val wm = context.applicationContext
+                .getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+            val info = wm?.connectionInfo ?: return null
+            val ssid = info.ssid
+            if (ssid == null || ssid == "<unknown ssid>") return null
+            // SSID è restituito wrapped tra virgolette.
+            if (ssid.length >= 2 && ssid.startsWith("\"") && ssid.endsWith("\"")) {
+                ssid.substring(1, ssid.length - 1)
+            } else {
+                ssid
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     /// Risolve il package del dialer di sistema (telecom + fallback su

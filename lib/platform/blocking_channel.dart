@@ -165,4 +165,7 @@ class BlockingChannel {
   Future<void> openNotificationAccessSettings() async {
     await _channel.invokeMethod<bool>('openNotificationAccessSettings');
   }
+
+  Future<String?> getCurrentWifiSsid() async =>
+      _channel.invokeMethod<String>('getCurrentWifiSsid');
 }
