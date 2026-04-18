@@ -61,4 +61,5 @@ enum class BlockReason {
     SECTION_BLOCKED,
     WEBSITE_BLOCKED,
     FOCUS_MODE,
+    USAGE_LIMIT,
 }

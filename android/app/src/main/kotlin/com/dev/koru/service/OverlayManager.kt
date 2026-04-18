@@ -464,6 +464,7 @@ private fun reasonEmoji(reason: BlockReason): String = when (reason) {
     BlockReason.SECTION_BLOCKED -> "\uD83D\uDED1"  // 🛑
     BlockReason.WEBSITE_BLOCKED -> "\uD83C\uDF10"  // 🌐
     BlockReason.APP_BLOCKED -> "\uD83C\uDF3F"      // 🌿
+    BlockReason.USAGE_LIMIT -> "\u23F3"            // ⏳
 }
 
 private fun reasonTitle(reason: BlockReason, config: OverlayConfig): String =
@@ -472,4 +473,5 @@ private fun reasonTitle(reason: BlockReason, config: OverlayConfig): String =
         BlockReason.SECTION_BLOCKED -> "Section paused"
         BlockReason.WEBSITE_BLOCKED -> "Website paused"
         BlockReason.APP_BLOCKED -> "Take a breath"
+        BlockReason.USAGE_LIMIT -> "Daily limit reached"
     }

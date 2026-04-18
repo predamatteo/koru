@@ -127,4 +127,23 @@ class BlockingChannel {
 
   Future<String?> getDefaultCameraPackage() async =>
       _channel.invokeMethod<String>('getDefaultCameraPackage');
+
+  Future<Map<String, int>> getAppDailyLimits() async {
+    final raw = await _channel
+        .invokeMapMethod<String, dynamic>('getAppDailyLimits');
+    if (raw == null) return const {};
+    return raw.map((k, v) => MapEntry(k, (v as num).toInt()));
+  }
+
+  Future<bool> setAppDailyLimits(Map<String, int> limits) async =>
+      (await _channel.invokeMethod<bool>('setAppDailyLimits', {
+        'limits': limits,
+      })) ??
+      false;
+
+  Future<int> getUsageTodayMs(String packageName) async =>
+      (await _channel.invokeMethod<int>('getUsageTodayMs', {
+        'packageName': packageName,
+      })) ??
+      0;
 }

@@ -24,6 +24,7 @@ import '../../presentation/screens/profiles/sub_screens/set_blocked_apps_screen.
 import '../../presentation/screens/profiles/sub_screens/websites_screen.dart';
 import '../../presentation/screens/settings/settings_screen.dart';
 import '../../presentation/screens/settings/sub_screens/about_screen.dart';
+import '../../presentation/screens/settings/sub_screens/app_limits_screen.dart';
 import '../../presentation/screens/settings/sub_screens/backdoor_codes_screen.dart';
 import '../../presentation/screens/settings/sub_screens/font_screen.dart';
 import '../../presentation/screens/settings/sub_screens/launcher_settings_screen.dart';
@@ -264,6 +265,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'about',
                     builder: (context, state) => const AboutScreen(),
+                  ),
+                  GoRoute(
+                    path: 'app-limits',
+                    builder: (context, state) => const AppLimitsScreen(),
                   ),
                   GoRoute(
                     path: 'permissions',

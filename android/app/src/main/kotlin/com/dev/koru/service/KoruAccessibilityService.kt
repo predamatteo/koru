@@ -298,6 +298,42 @@ class KoruAccessibilityService : AccessibilityService() {
                 return true
             }
         }
+
+        // Daily usage limit (globale, non legato a profili): se l'utente ha
+        // superato i minuti concessi per questo pkg oggi → overlay.
+        val limitMinutes = AppUsageLimitsStore.limitMinutesFor(applicationContext, packageName)
+        if (limitMinutes > 0) {
+            val todayMs = getTodayForegroundMs(packageName)
+            if (todayMs >= limitMinutes * 60_000L) {
+                Log.w(TAG, ">>> BLOCKING APP (daily limit): $packageName " +
+                    "${todayMs / 60_000}min used, cap=${limitMinutes}min")
+                currentlyBlockingPackage = packageName
+                val appLabel = getAppLabel(packageName)
+                mainHandler.post {
+                    overlayManager?.show(
+                        packageName = packageName,
+                        appLabel = appLabel,
+                        profileTitle = "Daily limit",
+                        reason = BlockReason.USAGE_LIMIT,
+                        config = OverlayConfig.DEFAULT,
+                        profileEmoji = "\u23F3", // ⏳
+                    )
+                }
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                val now = System.currentTimeMillis()
+                try {
+                    NativeDatabase.insertRestrictedAccessEvent(
+                        applicationContext,
+                        packageName,
+                        eventType = 0,
+                        restrictionType = 3, // USAGE_LIMIT
+                        timestamp = now,
+                    )
+                } catch (_: Exception) {}
+                return true
+            }
+        }
+
         // Nessun profilo blocca questo pkg — se avevamo un overlay, dismiss.
         if (currentlyBlockingPackage != null) {
             currentlyBlockingPackage = null
@@ -305,6 +341,28 @@ class KoruAccessibilityService : AccessibilityService() {
             sendBlockingStateEvent(false, "", null)
         }
         return false
+    }
+
+    /// Tempo trascorso oggi (dall'inizio del giorno locale) in foreground
+    /// per `packageName`, in ms. Usa UsageStatsManager.queryUsageStats.
+    private fun getTodayForegroundMs(packageName: String): Long {
+        val usm = applicationContext
+            .getSystemService(Context.USAGE_STATS_SERVICE) as? android.app.usage.UsageStatsManager
+            ?: return 0L
+        val cal = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val from = cal.timeInMillis
+        val now = System.currentTimeMillis()
+        val stats = try {
+            usm.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY, from, now)
+        } catch (_: Exception) { return 0L }
+        return stats
+            .filter { it.packageName == packageName }
+            .sumOf { it.totalTimeInForeground }
     }
 
     private fun checkInAppContentBlocking(

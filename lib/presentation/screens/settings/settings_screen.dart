@@ -57,6 +57,13 @@ class SettingsScreen extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/settings/backdoor'),
           ),
+          ListTile(
+            leading: const Icon(Icons.hourglass_bottom_outlined),
+            title: const Text('App daily limits'),
+            subtitle: const Text('Set a minutes cap per app'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/settings/app-limits'),
+          ),
           const Divider(height: 1),
           const _SectionLabel('About'),
           ListTile(

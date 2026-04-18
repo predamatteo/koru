@@ -11,6 +11,7 @@ import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
+import com.dev.koru.service.AppUsageLimitsStore
 import com.dev.koru.service.LockForegroundService
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -127,6 +128,21 @@ object BlockingMethodChannel {
                     "getDefaultCameraPackage" -> {
                         result.success(resolveDefaultCamera(activity))
                     }
+                    "getAppDailyLimits" -> {
+                        result.success(AppUsageLimitsStore.read(activity.applicationContext))
+                    }
+                    "setAppDailyLimits" -> {
+                        @Suppress("UNCHECKED_CAST")
+                        val raw = call.argument<Map<String, Any>>("limits") ?: emptyMap()
+                        val parsed = raw.mapValues { (it.value as? Number)?.toInt() ?: 0 }
+                        AppUsageLimitsStore.save(activity.applicationContext, parsed)
+                        result.success(true)
+                    }
+                    "getUsageTodayMs" -> {
+                        val pkg = call.argument<String>("packageName")
+                            ?: return@setMethodCallHandler result.error("MISSING_ARG", "packageName required", null)
+                        result.success(getTodayForegroundMs(activity, pkg))
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -161,6 +177,25 @@ object BlockingMethodChannel {
                     "lastTimeUsed" to it.lastTimeUsed,
                 )
             }
+    }
+
+    /// Tempo oggi in foreground per `pkg` (dalla mezzanotte locale).
+    private fun getTodayForegroundMs(context: Context, pkg: String): Long {
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE)
+            as? UsageStatsManager ?: return 0L
+        val cal = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val from = cal.timeInMillis
+        val now = System.currentTimeMillis()
+        return try {
+            usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, from, now)
+                .filter { it.packageName == pkg }
+                .sumOf { it.totalTimeInForeground }
+        } catch (_: Exception) { 0L }
     }
 
     /// Risolve il package del dialer di sistema (telecom + fallback su
