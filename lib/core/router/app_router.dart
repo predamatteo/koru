@@ -17,7 +17,10 @@ import '../../presentation/screens/profiles/sub_screens/block_in_app_content_scr
 import '../../presentation/screens/profiles/sub_screens/overlay_designer_screen.dart';
 import '../../presentation/screens/profiles/sub_screens/set_blocked_apps_screen.dart';
 import '../../presentation/screens/settings/settings_screen.dart';
+import '../../presentation/screens/settings/sub_screens/about_screen.dart';
 import '../../presentation/screens/settings/sub_screens/backdoor_codes_screen.dart';
+import '../../presentation/screens/settings/sub_screens/font_screen.dart';
+import '../../presentation/screens/settings/sub_screens/launcher_settings_screen.dart';
 import '../../presentation/screens/settings/sub_screens/strict_mode_screen.dart';
 import '../../presentation/screens/statistics/statistics_screen.dart';
 
@@ -166,6 +169,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'backdoor',
                     builder: (context, state) => const BackdoorCodesScreen(),
+                  ),
+                  GoRoute(
+                    path: 'font',
+                    builder: (context, state) => const FontScreen(),
+                  ),
+                  GoRoute(
+                    path: 'launcher',
+                    builder: (context, state) => const LauncherSettingsScreen(),
+                  ),
+                  GoRoute(
+                    path: 'about',
+                    builder: (context, state) => const AboutScreen(),
                   ),
                 ],
               ),
