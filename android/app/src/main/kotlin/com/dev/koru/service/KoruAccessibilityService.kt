@@ -82,6 +82,11 @@ class KoruAccessibilityService : AccessibilityService() {
     private var overlayManager: OverlayManager? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /// Throttle per TYPE_WINDOW_CONTENT_CHANGED nei browser: limita la lettura
+    /// della URL bar (operazione relativamente costosa) a max 2/s.
+    private var lastBrowserContentCheckMs = 0L
+    private var lastBrowserContentPkg: String? = null
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
@@ -153,6 +158,25 @@ class KoruAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         val pkg = event.packageName?.toString() ?: return
+
+        // Content change dentro un browser → ricontrolla la URL bar.
+        // Chrome & co. cambiano tab o navigano senza emettere
+        // WINDOW_STATE_CHANGED, quindi serve intercettare anche
+        // WINDOW_CONTENT_CHANGED. Debounce 500ms + skip se pkg non è
+        // un browser tracciato.
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+            if (!BrowserConfigLoader.isBrowser(applicationContext, pkg)) return
+            val now = System.currentTimeMillis()
+            val samePkg = pkg == lastBrowserContentPkg
+            if (samePkg && now - lastBrowserContentCheckMs < 500) return
+            lastBrowserContentCheckMs = now
+            lastBrowserContentPkg = pkg
+            if (now - lastProfileLoadTime > 10_000) loadProfiles()
+            val root = try { rootInActiveWindow } catch (_: Exception) { null }
+            if (root != null) checkWebsiteBlocking(pkg, root)
+            return
+        }
+
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
 
         // Strict Mode check (blocks settings/recent/uninstall based on mask)
