@@ -28,6 +28,7 @@ data class NativeProfile(
     val blockUnsupportedBrowsers: Boolean,
     val blockAdultContent: Boolean,
     val colorHex: String,
+    val emoji: String,
 )
 
 data class NativeAppRelation(
@@ -116,7 +117,7 @@ object NativeDatabase {
             "SELECT id, title, type_combinations, on_conditions, operator, day_flags, " +
                 "block_notifications, block_launch, is_enabled, is_locked, on_until, " +
                 "locked_until, paused_until, blocking_mode, block_unsupported_browsers, " +
-                "block_adult_content, color_hex " +
+                "block_adult_content, color_hex, emoji " +
                 "FROM profiles WHERE is_enabled = 1 AND paused_until >= 0",
             null
         ).use { c ->
@@ -140,6 +141,7 @@ object NativeDatabase {
                         blockUnsupportedBrowsers = c.getInt(14) == 1,
                         blockAdultContent = c.getInt(15) == 1,
                         colorHex = c.getString(16) ?: "#5C8262",
+                        emoji = c.getString(17) ?: "NoIcon",
                     )
                 )
             }
