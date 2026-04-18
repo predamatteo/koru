@@ -17,6 +17,7 @@ import '../../presentation/screens/profiles/profiles_list_screen.dart';
 import '../../presentation/screens/profiles/sub_screens/block_in_app_content_screen.dart';
 import '../../presentation/screens/profiles/sub_screens/overlay_designer_screen.dart';
 import '../../presentation/screens/profiles/sub_screens/set_blocked_apps_screen.dart';
+import '../../presentation/screens/profiles/sub_screens/websites_screen.dart';
 import '../../presentation/screens/settings/settings_screen.dart';
 import '../../presentation/screens/settings/sub_screens/about_screen.dart';
 import '../../presentation/screens/settings/sub_screens/backdoor_codes_screen.dart';
@@ -154,6 +155,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                         path: 'sections',
                         parentNavigatorKey: rootNavigatorKey,
                         builder: (context, state) => BlockInAppContentScreen(
+                          profileId: int.parse(state.pathParameters['id']!),
+                        ),
+                      ),
+                      GoRoute(
+                        path: 'websites',
+                        parentNavigatorKey: rootNavigatorKey,
+                        builder: (context, state) => WebsitesScreen(
                           profileId: int.parse(state.pathParameters['id']!),
                         ),
                       ),
