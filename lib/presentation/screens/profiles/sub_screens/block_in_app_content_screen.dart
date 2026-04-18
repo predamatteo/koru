@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
 import '../../../../data/database/app_database.dart';
+import '../../../../data/models/profile_model.dart';
 import '../../../../domain/entities/blocked_section.dart';
 import '../../../providers/profile_providers.dart';
 
@@ -38,32 +40,21 @@ class _BlockInAppContentScreenState
     if (profile == null) return;
 
     for (final pkg in BlockedSection.supportedPackages) {
-      final relation = profile.apps.firstWhere(
+      final relation = profile.apps.firstWhereOrNull(
         (r) => r.packageName == pkg,
-        orElse: () => AppProfileRelation(
-          id: 0,
-          profileId: widget.profileId,
-          packageName: pkg,
-          isEnabled: false,
-          overlayConfigJson: null,
-          blockedSectionsJson: null,
-        ),
       );
-      _perApp[pkg] = BlockedSection.decodeSet(relation.blockedSectionsJson);
+      _perApp[pkg] = BlockedSection.decodeSet(relation?.blockedSectionsJson);
     }
 
     setState(() => _loaded = true);
   }
 
-  /// Un'app è "interamente bloccata" se presente nelle relations con isEnabled=true
-  /// E il profilo è in modalità blocklist. In allowlist, "non presente" = bloccata.
-  bool _isFullyBlocked(String packageName, dynamic profile) {
-    final relation = profile.apps.firstWhere(
+  /// Un'app è "interamente bloccata" se presente nelle relations con isEnabled=true.
+  bool _isFullyBlocked(String packageName, ProfileModel profile) {
+    final relation = profile.apps.firstWhereOrNull(
       (r) => r.packageName == packageName,
-      orElse: () => null,
     );
-    if (relation == null) return false;
-    return relation.isEnabled as bool;
+    return relation?.isEnabled ?? false;
   }
 
   Future<void> _save() async {

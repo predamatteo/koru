@@ -126,31 +126,39 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: KoruRoutes.profiles,
                 builder: (context, state) => const ProfilesListScreen(),
+                // Le route di editing profile escono dallo shell
+                // (parentNavigatorKey=rootNavigatorKey) così la floating nav
+                // bar non è visibile mentre si modifica un profilo.
                 routes: [
                   GoRoute(
                     path: 'new',
+                    parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) => const ProfileEditorScreen(),
                   ),
                   GoRoute(
                     path: ':id',
+                    parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) => ProfileEditorScreen(
                       profileId: int.tryParse(state.pathParameters['id'] ?? ''),
                     ),
                     routes: [
                       GoRoute(
                         path: 'apps',
+                        parentNavigatorKey: rootNavigatorKey,
                         builder: (context, state) => SetBlockedAppsScreen(
                           profileId: int.parse(state.pathParameters['id']!),
                         ),
                       ),
                       GoRoute(
                         path: 'sections',
+                        parentNavigatorKey: rootNavigatorKey,
                         builder: (context, state) => BlockInAppContentScreen(
                           profileId: int.parse(state.pathParameters['id']!),
                         ),
                       ),
                       GoRoute(
                         path: 'overlay/:pkg',
+                        parentNavigatorKey: rootNavigatorKey,
                         builder: (context, state) => OverlayDesignerScreen(
                           profileId: int.parse(state.pathParameters['id']!),
                           packageName: state.pathParameters['pkg']!,

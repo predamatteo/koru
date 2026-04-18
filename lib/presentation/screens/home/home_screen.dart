@@ -6,6 +6,7 @@ import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
 import '../../../data/models/profile_model.dart';
 import '../../providers/active_profile_provider.dart';
+import '../../providers/profile_providers.dart';
 import '../../providers/statistics_providers.dart';
 
 /// Tab Home dell'app: dashboard con greeting, profilo attivo ora, quick stats,
@@ -18,27 +19,22 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final allProfiles = ref.watch(profilesProvider).valueOrNull ?? [];
     final activeProfiles = ref.watch(activeProfilesProvider).valueOrNull ?? [];
     final blocksToday = ref.watch(blockTriggeredCountProvider).valueOrNull ?? 0;
     final focusMs = ref.watch(focusTimeMsProvider).valueOrNull ?? 0;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Koru'),
-        actions: [
-          IconButton(
-            tooltip: 'All apps',
-            icon: const Icon(Icons.apps_outlined),
-            onPressed: () => context.push('/home/drawer'),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Koru')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, kBottomNavClearance),
         children: [
           const _GreetingCard(),
           const SizedBox(height: 12),
-          _ActiveProfileCard(profiles: activeProfiles),
+          _ActiveProfileCard(
+            totalProfiles: allProfiles.length,
+            activeProfiles: activeProfiles,
+          ),
           const SizedBox(height: 12),
           _TodayStatsRow(blocksToday: blocksToday, focusMs: focusMs),
           const SizedBox(height: 12),
@@ -88,13 +84,32 @@ class _GreetingCard extends StatelessWidget {
 }
 
 class _ActiveProfileCard extends StatelessWidget {
-  const _ActiveProfileCard({required this.profiles});
+  const _ActiveProfileCard({
+    required this.totalProfiles,
+    required this.activeProfiles,
+  });
 
-  final List<ProfileModel> profiles;
+  final int totalProfiles;
+  final List<ProfileModel> activeProfiles;
 
   @override
   Widget build(BuildContext context) {
-    final hasActive = profiles.isNotEmpty;
+    final hasActive = activeProfiles.isNotEmpty;
+    final hasAny = totalProfiles > 0;
+
+    final String eyebrow;
+    final String title;
+    if (hasActive) {
+      eyebrow = 'Active right now';
+      title = activeProfiles.map((p) => p.title).join(' · ');
+    } else if (hasAny) {
+      eyebrow = 'No profile active now';
+      title = '$totalProfiles ${totalProfiles == 1 ? 'profile' : 'profiles'} configured';
+    } else {
+      eyebrow = 'No profiles yet';
+      title = 'Create one to get started';
+    }
+
     return Card(
       color: hasActive ? KoruColors.primaryContainer : KoruColors.surface,
       child: InkWell(
@@ -105,7 +120,9 @@ class _ActiveProfileCard extends StatelessWidget {
           child: Row(
             children: [
               Icon(
-                hasActive ? Icons.shield : Icons.shield_outlined,
+                hasActive
+                    ? Icons.shield
+                    : (hasAny ? Icons.shield_outlined : Icons.add_circle_outline),
                 color:
                     hasActive ? KoruColors.primary : KoruColors.textSecondary,
                 size: 32,
@@ -116,7 +133,7 @@ class _ActiveProfileCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      hasActive ? 'Active right now' : 'No active profile',
+                      eyebrow,
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             color: KoruColors.textSecondary,
                             letterSpacing: 2,
@@ -124,9 +141,7 @@ class _ActiveProfileCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      hasActive
-                          ? profiles.map((p) => p.title).join(' · ')
-                          : 'Create a profile to get started',
+                      title,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ],
