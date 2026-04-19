@@ -56,12 +56,17 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
+        <!-- Main + HOME intent-filter tutti su MainActivity direttamente
+             (pattern MP). L'attività appare come launcher option nel picker
+             di sistema; l'utente può sceglierla come default via toggle in
+             Settings che apre ACTION_HOME_SETTINGS. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:stateNotNeeded="true"
             android:taskAffinity=""
+            android:screenOrientation="portrait"
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
@@ -71,35 +76,23 @@
                 android:resource="@style/NormalTheme" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- HOME launcher alias: disabled by default. Abilitato runtime via
-             PackageManager.setComponentEnabledSetting quando l'utente sceglie
-             "Usa Koru come launcher" in Settings. launchMode=singleTask +
-             stateNotNeeded allineati a MainActivity per evitare flash
-             wallpaper durante la transizione di ritorno alla home (swipe up
-             gesture) e ricreazione dell'activity. -->
-        <activity-alias
-            android:name=".MainActivityHome"
-            android:targetActivity=".MainActivity"
-            android:enabled="false"
-            android:exported="true"
-            android:launchMode="singleTask">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.HOME" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity-alias>
-
-        <!-- Core blocking engine (event-driven via accessibility events). -->
+        <!-- Core blocking engine (event-driven via accessibility events).
+             In main process (non :accessibility) come MP: il binding del
+             service mantiene il processo del launcher a priority alto →
+             resume più rapido della home e niente flash wallpaper durante
+             la gesture swipe-up. Gli store cross-process (QuickBlockStore,
+             AppUsageLimitsStore, NotificationFilterStore) funzionano
+             comunque perché basati su file. -->
         <service
             android:name=".service.KoruAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:exported="false"
-            android:process=":accessibility">
+            android:exported="false">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
