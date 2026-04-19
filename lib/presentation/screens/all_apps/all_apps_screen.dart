@@ -13,14 +13,36 @@ class AllAppsScreen extends ConsumerStatefulWidget {
   ConsumerState<AllAppsScreen> createState() => _AllAppsScreenState();
 }
 
-class _AllAppsScreenState extends ConsumerState<AllAppsScreen> {
+class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
+    with WidgetsBindingObserver {
   late final ScrollController _scrollController = ScrollController();
   final Map<String, double> _sectionOffsets = {};
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Reset query quando il drawer torna in foreground dopo che l'utente
+    // ha lanciato un'app. Il reset inline al tap causava flash della lista
+    // completa prima che la transition a Instagram/altro completasse;
+    // resettare su resume evita il flash e dà lista pulita al ritorno.
+    if (state == AppLifecycleState.resumed && mounted) {
+      final current = ref.read(appSearchQueryProvider);
+      if (current.isNotEmpty) {
+        ref.read(appSearchQueryProvider.notifier).state = '';
+      }
+    }
   }
 
   void _computeSectionOffsets(Map<String, dynamic> grouped) {

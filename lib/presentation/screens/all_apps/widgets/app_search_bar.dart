@@ -22,6 +22,11 @@ class _AppSearchBarState extends ConsumerState<AppSearchBar> {
 
   @override
   Widget build(BuildContext context) {
+    // Sync esterno: se qualcuno (es. tap su una app) resetta la query,
+    // svuota anche il TextField senza causare loop (controllo testo attuale).
+    ref.listen<String>(appSearchQueryProvider, (prev, next) {
+      if (_controller.text != next) _controller.text = next;
+    });
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: TextField(

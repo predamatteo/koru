@@ -1,3 +1,4 @@
+import 'package:async/async.dart';
 import 'package:drift/drift.dart';
 
 import '../../platform/profile_channel.dart';
@@ -15,7 +16,17 @@ class ProfileRepository {
   // ─── Watchers / reads ─────────────────────────────────────────────────────
 
   Stream<List<ProfileModel>> watchAllProfiles() {
-    return _db.watchAllProfiles().asyncMap((profiles) async {
+    // Merge di 3 watch: profiles + app_profile_relations + intervals.
+    // Ogni mutazione su relations/intervals rigenera i ProfileModel
+    // (count app, in-app sections, orari) senza aspettare che cambi la
+    // riga `profiles` stessa.
+    final trigger = StreamGroup.merge<dynamic>([
+      _db.watchAllProfiles(),
+      _db.select(_db.appProfileRelations).watch(),
+      _db.select(_db.intervals).watch(),
+    ]);
+    return trigger.asyncMap((_) async {
+      final profiles = await _db.getAllProfiles();
       final models = <ProfileModel>[];
       for (final p in profiles) {
         models.add(await _loadRelations(p));

@@ -16,6 +16,12 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
 
+    <!-- Launcher role: concede l'ownership del wallpaper layer al nostro
+         activity quando Koru è il launcher di default. Senza questa
+         permission il compositor può mostrare il wallpaper di sistema
+         durante la gesture swipe-up da un'app verso home. -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
+
     <!-- Foreground service (blocking engine) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
@@ -53,7 +59,8 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
+            android:stateNotNeeded="true"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
@@ -70,13 +77,16 @@
 
         <!-- HOME launcher alias: disabled by default. Abilitato runtime via
              PackageManager.setComponentEnabledSetting quando l'utente sceglie
-             "Usa Koru come launcher" in Settings (Step 14). -->
+             "Usa Koru come launcher" in Settings. launchMode=singleTask +
+             stateNotNeeded allineati a MainActivity per evitare flash
+             wallpaper durante la transizione di ritorno alla home (swipe up
+             gesture) e ricreazione dell'activity. -->
         <activity-alias
             android:name=".MainActivityHome"
             android:targetActivity=".MainActivity"
             android:enabled="false"
             android:exported="true"
-            android:launchMode="singleTop">
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />

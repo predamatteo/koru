@@ -46,6 +46,10 @@ class KoruAccessibilityService : AccessibilityService() {
         const val ACTION_GO_HOME = "com.dev.koru.ACTION_GO_HOME"
         const val ACTION_RELOAD_PROFILES = "com.dev.koru.ACTION_RELOAD_PROFILES"
 
+        /// Profile typeCombinations bit per "time interval enabled".
+        /// Allineato a [ProfileType.time] in lib/core/constants/profile_types.dart.
+        const val PROFILE_TYPE_TIME = 1
+
         @Volatile
         var instance: KoruAccessibilityService? = null
             private set
@@ -58,6 +62,7 @@ class KoruAccessibilityService : AccessibilityService() {
     private var profileApps = mutableMapOf<Int, List<NativeAppRelation>>()
     private var websiteRulesCache = mutableMapOf<Int, List<NativeWebsiteRule>>()
     private var profileWifis = mapOf<Int, Set<String>>()
+    private var profileIntervals = mapOf<Int, List<com.dev.koru.db.NativeInterval>>()
     private var lastProfileLoadTime = 0L
     private var currentlyBlockingPackage: String? = null
     private var lastForegroundPackage: String? = null
@@ -494,6 +499,29 @@ class KoruAccessibilityService : AccessibilityService() {
         if (profile.dayFlags and todayFlag == 0) return false
         if (profile.onUntil > 0 && System.currentTimeMillis() > profile.onUntil) return false
 
+        // Time interval check: se il profilo ha typeCombinations con bit
+        // PROFILE_TYPE_TIME e ci sono intervals enabled, l'orario corrente
+        // deve cadere in almeno uno di essi (cross-midnight supportato).
+        val hasTimeType = (profile.typeCombinations and PROFILE_TYPE_TIME) != 0
+        val intervals = profileIntervals[profile.id] ?: emptyList()
+        if (hasTimeType && intervals.isNotEmpty()) {
+            val nowMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 +
+                cal.get(Calendar.MINUTE)
+            val inAny = intervals.any { iv ->
+                val from = iv.fromMinutes
+                val to = iv.toMinutes
+                if (from == to) {
+                    true // 24h
+                } else if (from < to) {
+                    nowMinutes in from until to
+                } else {
+                    // cross-midnight (es. 22:00 → 06:00)
+                    nowMinutes >= from || nowMinutes < to
+                }
+            }
+            if (!inAny) return false
+        }
+
         // Wifi constraint (Phase 2): se il profilo ha almeno un SSID
         // configurato, attivo solo se l'SSID corrente matcha. Se non
         // possiamo leggere il SSID (permesso location non concesso)
@@ -512,19 +540,24 @@ class KoruAccessibilityService : AccessibilityService() {
             profiles = NativeDatabase.getEnabledProfiles(applicationContext)
             profileApps.clear()
             websiteRulesCache.clear()
+            val intervalsByProfile = mutableMapOf<Int, List<com.dev.koru.db.NativeInterval>>()
             for (p in profiles) {
                 profileApps[p.id] = NativeDatabase.getAppRelationsForProfile(applicationContext, p.id)
+                intervalsByProfile[p.id] = NativeDatabase.getIntervalsForProfile(applicationContext, p.id)
             }
+            profileIntervals = intervalsByProfile
             websiteRulesCache.putAll(NativeDatabase.getAllWebsiteRulesForEnabledProfiles(applicationContext))
             profileWifis = NativeDatabase.getWifiSsidsByProfile(applicationContext)
             lastProfileLoadTime = System.currentTimeMillis()
-            Log.d(TAG, "Loaded ${profiles.size} profiles, ${profileWifis.size} with wifi constraints")
+            Log.d(TAG, "Loaded ${profiles.size} profiles, ${profileWifis.size} with wifi constraints, " +
+                "${profileIntervals.values.sumOf { it.size }} intervals")
         } catch (e: Exception) {
             Log.e(TAG, "Error loading profiles: ${e.message}")
             profiles = emptyList()
             profileApps.clear()
             websiteRulesCache.clear()
             profileWifis = emptyMap()
+            profileIntervals = emptyMap()
         }
     }
 

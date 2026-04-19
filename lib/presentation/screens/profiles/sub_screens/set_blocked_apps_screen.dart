@@ -45,11 +45,23 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
 
   Future<void> _hydrate() async {
     if (_loaded) return;
-    final profile = await ref.read(profileByIdProvider(widget.profileId).future);
+    // refresh forzato: profileByIdProvider è una FutureProvider cached,
+    // quindi senza invalidation espliciva ritornerebbe stale data tra
+    // visite ripetute.
+    final profile = await ref
+        .refresh(profileByIdProvider(widget.profileId).future);
     if (!mounted) return;
     setState(() {
       _loaded = true;
-      _selected = profile?.apps.map((a) => a.packageName).toSet() ?? <String>{};
+      // Filtra solo le relations effettivamente attive: senza filtro
+      // includevamo anche relations create per in-app sections o overlay
+      // custom (isEnabled=false), che apparivano "pre-selezionate" senza
+      // essere realmente bloccate.
+      _selected = profile?.apps
+              .where((a) => a.isEnabled)
+              .map((a) => a.packageName)
+              .toSet() ??
+          <String>{};
     });
   }
 
@@ -57,6 +69,10 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
     await ref
         .read(profileRepositoryProvider)
         .setAppsForProfile(widget.profileId, _selected.toList(growable: false));
+    // Invalidate profileByIdProvider: l'editor (e ulteriori visite a
+    // questa screen) devono vedere i dati appena salvati, non lo snapshot
+    // cached.
+    ref.invalidate(profileByIdProvider(widget.profileId));
     if (mounted) context.pop();
   }
 
@@ -136,6 +152,12 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
               final checked = _selected.contains(app.packageName);
               return CheckboxListTile(
                 value: checked,
+                activeColor: KoruColors.primary,
+                checkColor: Colors.white,
+                side: const BorderSide(
+                  color: KoruColors.textSecondary,
+                  width: 1.5,
+                ),
                 secondary: app.iconBytes != null
                     ? Image.memory(app.iconBytes!, width: 40, height: 40)
                     : const SizedBox(width: 40),

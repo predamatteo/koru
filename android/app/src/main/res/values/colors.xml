@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Koru dark palette base. Allineato a KoruColors.backgroundBase
+         lato Dart (#0E100F). Usato come window background per evitare
+         flash bianchi/wallpaper durante le transizioni Activity. -->
+    <color name="koru_background_base">#FF0E100F</color>
+    <color name="koru_surface">#FF1A1D1B</color>
+    <color name="koru_primary">#FF5C8262</color>
+</resources>

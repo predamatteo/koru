@@ -166,17 +166,59 @@ class AppDatabase extends _$AppDatabase {
     int profileId,
     List<String> packageNames,
   ) async {
-    await (delete(appProfileRelations)
-          ..where((r) => r.profileId.equals(profileId)))
-        .go();
-    for (final pkg in packageNames) {
-      await into(appProfileRelations).insert(
-        AppProfileRelationsCompanion.insert(
-          profileId: profileId,
-          packageName: pkg,
-        ),
-      );
-    }
+    // Non-destructive: preserva eventuali blockedSectionsJson e
+    // overlayConfigJson per pkg che hanno config in-app o overlay
+    // custom anche quando l'utente non li blocca interamente.
+    // - pkg presente in lista: ensure isEnabled=true (insert se non
+    //   esiste, update isEnabled se esiste).
+    // - pkg non in lista: se relation ha sections o overlay config →
+    //   set isEnabled=false (mantieni la config); altrimenti elimina.
+    await transaction(() async {
+      final wanted = packageNames.toSet();
+      final existing = await (select(appProfileRelations)
+            ..where((r) => r.profileId.equals(profileId)))
+          .get();
+      for (final rel in existing) {
+        if (wanted.contains(rel.packageName)) {
+          if (!rel.isEnabled) {
+            await (update(appProfileRelations)
+                  ..where((r) => r.id.equals(rel.id)))
+                .write(const AppProfileRelationsCompanion(
+                  isEnabled: Value(true),
+                ));
+          }
+          wanted.remove(rel.packageName);
+        } else {
+          final hasConfig = (rel.blockedSectionsJson?.trim().isNotEmpty ??
+                  false) ||
+              (rel.overlayConfigJson?.trim().isNotEmpty ?? false);
+          if (hasConfig) {
+            // Mantieni la riga ma disattiva il blocco "intero".
+            if (rel.isEnabled) {
+              await (update(appProfileRelations)
+                    ..where((r) => r.id.equals(rel.id)))
+                  .write(const AppProfileRelationsCompanion(
+                    isEnabled: Value(false),
+                  ));
+            }
+          } else {
+            await (delete(appProfileRelations)
+                  ..where((r) => r.id.equals(rel.id)))
+                .go();
+          }
+        }
+      }
+      // wanted contiene ora solo i pkg "nuovi" (non avevano relation).
+      for (final pkg in wanted) {
+        await into(appProfileRelations).insert(
+          AppProfileRelationsCompanion.insert(
+            profileId: profileId,
+            packageName: pkg,
+            isEnabled: const Value(true),
+          ),
+        );
+      }
+    });
   }
 
   // --- Website rule queries ---

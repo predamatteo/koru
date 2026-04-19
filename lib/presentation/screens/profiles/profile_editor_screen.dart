@@ -329,6 +329,30 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
       _loadExisting(widget.profileId!);
     }
 
+    // Listen reattivo a profilesProvider (StreamProvider, reattivo ai
+    // cambi DB via Drift): quando una sub-screen salva (blocked apps,
+    // in-app sections, websites) il numero mostrato nelle card qui deve
+    // aggiornarsi senza richiedere di uscire/rientrare dall'editor.
+    ref.listen(profilesProvider, (prev, next) {
+      if (widget.isNew) return;
+      final list = next.valueOrNull;
+      if (list == null) return;
+      final profile = list.where((p) => p.id == widget.profileId).firstOrNull;
+      if (profile == null || !mounted) return;
+      final newAppsCount = profile.apps.where((a) => a.isEnabled).length;
+      final newSections = <BlockedSection>{};
+      for (final rel in profile.apps) {
+        if (rel.isEnabled) continue;
+        newSections.addAll(BlockedSection.decodeSet(rel.blockedSectionsJson));
+      }
+      if (newAppsCount != _appsCount || newSections != _blockedSections) {
+        setState(() {
+          _appsCount = newAppsCount;
+          _blockedSections = newSections;
+        });
+      }
+    });
+
     return Scaffold(
       appBar: AppBar(
         title: Text(

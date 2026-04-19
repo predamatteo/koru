@@ -25,13 +25,6 @@ class FocusScreen extends ConsumerWidget {
         title: const Text('Focus'),
         elevation: 0,
         scrolledUnderElevation: 0,
-        actions: [
-          IconButton(
-            tooltip: 'Session history',
-            icon: const Icon(Icons.history_toggle_off_outlined),
-            onPressed: () => context.push('/stats'),
-          ),
-        ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, kBottomNavClearance),
@@ -128,6 +121,7 @@ class _QuickBlockCard extends ConsumerWidget {
 
     return _Card(
       onTap: () => context.push('/focus/quick'),
+      trailing: _EditButton(onTap: () => context.push('/focus/quick')),
       children: [
         const _SectionLabel('Quick block'),
         const SizedBox(height: 10),
@@ -197,6 +191,7 @@ class _PomodoroCard extends ConsumerWidget {
 
     return _Card(
       onTap: () => context.push('/focus/pomodoro'),
+      trailing: _EditButton(onTap: () => context.push('/focus/pomodoro')),
       children: [
         const _SectionLabel('Pomodoro'),
         const SizedBox(height: 10),
@@ -243,9 +238,16 @@ class _PomodoroCard extends ConsumerWidget {
 // ─── Shared primitives ──────────────────────────────────────────────────────
 
 class _Card extends StatelessWidget {
-  const _Card({required this.children, required this.onTap});
+  const _Card({
+    required this.children,
+    required this.onTap,
+    this.trailing,
+  });
   final List<Widget> children;
   final VoidCallback onTap;
+
+  /// Widget overlay top-right (es. edit gear / close button).
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -253,13 +255,69 @@ class _Card extends StatelessWidget {
       color: KoruColors.surface,
       borderRadius: BorderRadius.circular(22),
       clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: children,
+              ),
+            ),
+          ),
+          if (trailing != null)
+            Positioned(top: 8, right: 8, child: trailing!),
+        ],
+      ),
+    );
+  }
+}
+
+class _EditButton extends StatelessWidget {
+  const _EditButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
       child: InkWell(
         onTap: onTap,
+        customBorder: const CircleBorder(),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: children,
+          padding: const EdgeInsets.all(8),
+          child: Icon(
+            Icons.tune,
+            size: 18,
+            color: KoruColors.textSecondary.withAlpha(200),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CloseButton extends StatelessWidget {
+  const _CloseButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: KoruColors.danger.withAlpha(40),
+      shape: const CircleBorder(),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: const Padding(
+          padding: EdgeInsets.all(8),
+          child: Icon(
+            Icons.close,
+            size: 18,
+            color: KoruColors.danger,
           ),
         ),
       ),
@@ -357,7 +415,7 @@ class _PlayButton extends StatelessWidget {
 
 // ─── Active banner (while a session is running) ─────────────────────────────
 
-class _ActiveBanner extends StatelessWidget {
+class _ActiveBanner extends ConsumerWidget {
   const _ActiveBanner({required this.tick});
   final dynamic tick;
 
@@ -368,14 +426,23 @@ class _ActiveBanner extends StatelessWidget {
     return '${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
   }
 
+  Future<void> _stop(WidgetRef ref) async {
+    final blocking = ref.read(platformChannelServiceProvider).blocking;
+    // Una sola chiamata gestisce sia quick block che pomodoro: il
+    // QuickBlockManager nativo lavora sullo stesso state machine.
+    await blocking.stopQuickBlock();
+    await blocking.stopPomodoro();
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final remainingMs = tick.remainingMs as int;
     final totalMs = tick.totalMs as int;
     final phase = tick.isPomodoroBreak as bool ? 'Break' : 'Focus';
     final progress = totalMs == 0 ? 0.0 : 1 - (remainingMs / totalMs);
     return _Card(
       onTap: () {},
+      trailing: _CloseButton(onTap: () => _stop(ref)),
       children: [
         _SectionLabel(phase),
         const SizedBox(height: 10),
