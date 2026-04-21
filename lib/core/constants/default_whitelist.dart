@@ -37,10 +37,21 @@ const Set<String> kDefaultFocusWhitelist = {
   'com.samsung.android.messaging',
   'com.android.mms',
 
-  // Clock / Alarm.
+  // Clock / Alarm — incluse tutte le varianti OEM per evitare che le sveglie
+  // restino bloccate. Gli allarmi di sistema suonano comunque (AlarmManager),
+  // ma l'utente deve poter aprire l'app per spegnerli o snoozarli.
   'com.google.android.deskclock',
   'com.sec.android.app.clockpackage',
   'com.android.deskclock',
+  'com.android.alarmclock',
+  'com.oneplus.deskclock',
+  'com.oplus.alarmclock',
+  'com.coloros.alarmclock',
+  'com.huawei.deskclock',
+  'com.asus.deskclock',
+  'com.sonyericsson.alarm',
+  'com.htc.android.worldclock',
+  'com.motorola.blur.alarmclock',
 
   // Emergency / safety.
   'com.android.emergency',

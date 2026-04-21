@@ -17,7 +17,10 @@ class _FocusWhitelistNotifier extends FamilyNotifier<Set<String>, FocusMode> {
     final hive = ref.watch(hiveSettingsServiceProvider);
     final saved = hive.getStringList(HiveKeys.uiStateBox, _keyFor(arg));
     if (saved.isEmpty) return kDefaultFocusWhitelist;
-    return saved.toSet();
+    // Merge: se l'utente ha già una whitelist salvata, uniamo i nuovi package
+    // di default (es. clock app OEM aggiunte in release successive) per non
+    // lasciare sveglie/emergenze bloccate dopo un update.
+    return {...saved, ...kDefaultFocusWhitelist};
   }
 
   Future<void> add(String packageName) async {
