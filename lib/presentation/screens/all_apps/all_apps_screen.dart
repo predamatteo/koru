@@ -22,6 +22,18 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Reset query al mount: copre il caso in cui il drawer sia stato
+    // chiuso senza passare da `resumed` (es. HOME intent che naviga a
+    // /launcher e smonta AllAppsScreen prima che l'observer scatti).
+    // Senza questo, la query stale filtra già la lista alla riapertura
+    // mentre il TextField è vuoto.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final current = ref.read(appSearchQueryProvider);
+      if (current.isNotEmpty) {
+        ref.read(appSearchQueryProvider.notifier).state = '';
+      }
+    });
   }
 
   @override
