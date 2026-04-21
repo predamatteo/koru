@@ -80,8 +80,12 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
         private const val TAG = "OverlayManager"
 
         /// Package name → timestamp ms fino a cui il blocco è bypassato
-        /// (dopo click "Open anyway"). TTL 30s.
-        private const val BYPASS_TTL_MS = 30_000L
+        /// (dopo click "Open anyway"). Il bypass vale "per questa sessione":
+        /// viene rimosso quando l'utente esce dall'app (gestito dal service
+        /// accessibility via [clearBypass]). Il TTL massimo funge da
+        /// safety-net nel caso in cui il service non riesca a rilevare
+        /// l'uscita (es. crash, restart).
+        private const val BYPASS_TTL_MS = 10 * 60_000L // 10 min safety cap
         private val bypassedPackages = mutableMapOf<String, Long>()
 
         fun isBypassed(packageName: String): Boolean {
@@ -91,6 +95,12 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
 
         fun markBypassed(packageName: String) {
             bypassedPackages[packageName] = System.currentTimeMillis() + BYPASS_TTL_MS
+        }
+
+        /// Rimuove immediatamente il bypass per questo pacchetto.
+        /// Chiamato dal service accessibility quando l'utente lascia l'app.
+        fun clearBypass(packageName: String) {
+            bypassedPackages.remove(packageName)
         }
     }
 
