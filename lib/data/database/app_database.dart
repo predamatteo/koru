@@ -281,7 +281,7 @@ class AppDatabase extends _$AppDatabase {
   Future<MoodCheckIn?> getMoodForDate(String day) =>
       (select(moodCheckIns)..where((m) => m.day.equals(day))).getSingleOrNull();
   Future<int> upsertMood(MoodCheckInsCompanion mood) =>
-      into(moodCheckIns).insertOnConflictUpdate(mood);
+      into(moodCheckIns).insert(mood, mode: InsertMode.insertOrReplace);
 
   // --- Favorites queries (Koru launcher) ---
   Stream<List<Favorite>> watchFavorites() => (select(favorites)
