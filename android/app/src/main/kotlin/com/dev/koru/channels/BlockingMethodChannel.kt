@@ -1,6 +1,7 @@
 package com.dev.koru.channels
 
 import android.app.Activity
+import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
@@ -193,23 +194,21 @@ object BlockingMethodChannel {
     }
 
     private fun getUsageStats(context: Context, startMs: Long, endMs: Long): List<Map<String, Any>> {
-        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
-            ?: return emptyList()
-        return usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startMs, endMs)
-            .filter { it.totalTimeInForeground > 0 }
-            .map {
+        val totals = computeForegroundMsPerPackage(context, startMs, endMs)
+        val lastUsed = queryLastTimeUsedPerPackage(context, startMs, endMs)
+        return totals.entries
+            .filter { it.value > 0 }
+            .map { (pkg, ms) ->
                 mapOf(
-                    "packageName" to it.packageName,
-                    "totalTimeMs" to it.totalTimeInForeground,
-                    "lastTimeUsed" to it.lastTimeUsed,
+                    "packageName" to pkg,
+                    "totalTimeMs" to ms,
+                    "lastTimeUsed" to (lastUsed[pkg] ?: 0L),
                 )
             }
     }
 
     /// Tempo oggi in foreground per `pkg` (dalla mezzanotte locale).
     private fun getTodayForegroundMs(context: Context, pkg: String): Long {
-        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE)
-            as? UsageStatsManager ?: return 0L
         val cal = java.util.Calendar.getInstance().apply {
             set(java.util.Calendar.HOUR_OF_DAY, 0)
             set(java.util.Calendar.MINUTE, 0)
@@ -219,10 +218,104 @@ object BlockingMethodChannel {
         val from = cal.timeInMillis
         val now = System.currentTimeMillis()
         return try {
-            usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, from, now)
-                .filter { it.packageName == pkg }
-                .sumOf { it.totalTimeInForeground }
+            computeForegroundMsPerPackage(context, from, now)[pkg] ?: 0L
         } catch (_: Exception) { 0L }
+    }
+
+    /// Calcola il tempo in foreground (ms) per ogni package nella finestra
+    /// [startMs, endMs] usando `queryEvents` e facendo il pairing
+    /// RESUMED (1) → PAUSED (2) / STOPPED (23).
+    ///
+    /// Perché non usare `queryUsageStats().totalTimeInForeground`:
+    /// - Instagram e altre app "social" triggerano overlay (PiP, notifiche,
+    ///   stories) che NON sempre generano il MOVE_TO_BACKGROUND event; il
+    ///   counter interno di Android si gonfia e non torna mai indietro.
+    /// - `queryUsageStats(INTERVAL_DAILY)` può restituire più bucket per lo
+    ///   stesso giorno (dopo reboot, cambio timezone), sommati double-count.
+    /// - `totalTimeInForeground` riflette il bucket intero, non la finestra.
+    ///
+    /// Questo approccio ricalcola dai singoli eventi, che sono la source of
+    /// truth affidabile. Ispirato a minimalist_phone (decompiled: a.java).
+    private fun computeForegroundMsPerPackage(
+        context: Context,
+        startMs: Long,
+        endMs: Long,
+    ): Map<String, Long> {
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE)
+            as? UsageStatsManager ?: return emptyMap()
+        // Query da 24h prima di startMs per catturare sessioni ancora aperte
+        // all'inizio della finestra. Lo span verrà poi clippato a [startMs, endMs].
+        val queryStart = startMs - 24L * 60 * 60 * 1000
+        val events = try {
+            usm.queryEvents(queryStart, endMs)
+        } catch (_: Exception) { return emptyMap() }
+
+        val resumeByPkg = HashMap<String, Long>()
+        val totals = HashMap<String, Long>()
+        val ev = UsageEvents.Event()
+
+        while (events.hasNextEvent()) {
+            events.getNextEvent(ev)
+            val pkg = ev.packageName ?: continue
+            val ts = ev.timeStamp
+            when (ev.eventType) {
+                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                    // Se c'era già un resume pending per questo pkg senza
+                    // pause (es. evento perso), chiudilo qui difensivamente.
+                    val prev = resumeByPkg[pkg]
+                    if (prev != null) {
+                        totals[pkg] = (totals[pkg] ?: 0L) + clippedSpan(prev, ts, startMs, endMs)
+                    }
+                    resumeByPkg[pkg] = ts
+                }
+                UsageEvents.Event.MOVE_TO_BACKGROUND,
+                23, // ACTIVITY_STOPPED — API 29+; costante non esposta in UsageEvents.Event
+                -> {
+                    val prev = resumeByPkg.remove(pkg) ?: continue
+                    totals[pkg] = (totals[pkg] ?: 0L) + clippedSpan(prev, ts, startMs, endMs)
+                }
+                else -> {}
+            }
+        }
+
+        // Chiudi sessioni ancora aperte al momento di endMs (o ora, se endMs
+        // è nel futuro). Sanity: se l'ultimo evento è molto più recente del
+        // resume, usa endMs; altrimenti la sessione potrebbe essere davvero
+        // in corso e va chiusa all'ora corrente.
+        val now = System.currentTimeMillis()
+        val closeTs = minOf(endMs, now)
+        for ((pkg, resumeTs) in resumeByPkg) {
+            totals[pkg] = (totals[pkg] ?: 0L) + clippedSpan(resumeTs, closeTs, startMs, endMs)
+        }
+
+        return totals
+    }
+
+    private fun clippedSpan(
+        from: Long,
+        to: Long,
+        windowStart: Long,
+        windowEnd: Long,
+    ): Long {
+        val s = maxOf(from, windowStart)
+        val e = minOf(to, windowEnd)
+        return (e - s).coerceAtLeast(0)
+    }
+
+    /// Ultima volta in cui ciascun package è stato visto come evento
+    /// RESUMED/PAUSED nella finestra. Usato per l'UI "lastTimeUsed".
+    private fun queryLastTimeUsedPerPackage(
+        context: Context,
+        startMs: Long,
+        endMs: Long,
+    ): Map<String, Long> {
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE)
+            as? UsageStatsManager ?: return emptyMap()
+        return try {
+            usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startMs, endMs)
+                .groupBy { it.packageName }
+                .mapValues { (_, list) -> list.maxOf { it.lastTimeUsed } }
+        } catch (_: Exception) { emptyMap() }
     }
 
     /// Apre le Settings di "Notification access" con fallback robusto:
