@@ -22,33 +22,48 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * Se l'intent launching è HOME (utente ha premuto il tasto home con Koru
-     * come launcher di default), avvia Flutter direttamente sulla route
-     * `/launcher` — la Koru launcher UI full-screen, senza bottom nav.
-     * Altrimenti comportamento standard (Flutter parte su `/` e GoRouter
-     * redirige a `/home`).
+     * Route iniziale Flutter: `/launcher` SOLO quando l'intent di lancio è
+     * HOME E Koru è effettivamente il launcher di default del sistema.
+     * Altrimenti (aperta da drawer, task switcher, o HOME intent residuo
+     * dopo che l'utente ha cambiato default launcher) partiamo da `/` →
+     * GoRouter redirige a `/home`.
      */
     override fun getInitialRoute(): String? {
         val current = intent ?: return super.getInitialRoute()
-        return if (isHomeIntent(current)) "/launcher" else super.getInitialRoute()
+        return if (isHomeIntent(current) && isDefaultLauncher()) {
+            "/launcher"
+        } else {
+            super.getInitialRoute()
+        }
     }
 
     /**
-     * MainActivity è `singleTop`: un HOME intent mentre l'app è già in
-     * foreground non ricrea l'activity, fa partire onNewIntent. In quel caso
-     * Flutter è ancora sulla route precedente (es. /settings). Notifichiamo
-     * il lato Dart via [NavigationMethodChannel] così GoRouter salta sulla
-     * /launcher immediatamente invece di aspettare un'interazione utente.
+     * MainActivity è `singleTask`: un nuovo intent non ricrea l'activity,
+     * fa partire onNewIntent. Due casi:
+     * - HOME intent + Koru default launcher → naviga Flutter a `/launcher`.
+     * - Qualsiasi altro intent (drawer / task switcher / HOME senza essere
+     *   default) → se Flutter è parcheggiato su `/launcher` (residuo di
+     *   una sessione in cui Koru era default), uscine verso `/home`.
      */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (isHomeIntent(intent)) {
+        if (isHomeIntent(intent) && isDefaultLauncher()) {
             NavigationMethodChannel.goToLauncher()
+        } else {
+            NavigationMethodChannel.goToHomeIfOnLauncher()
         }
     }
 
     private fun isHomeIntent(intent: Intent): Boolean =
         intent.action == Intent.ACTION_MAIN &&
             intent.categories?.contains(Intent.CATEGORY_HOME) == true
+
+    private fun isDefaultLauncher(): Boolean {
+        val probe = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_HOME)
+        }
+        val resolve = packageManager.resolveActivity(probe, 0)
+        return resolve?.activityInfo?.packageName == packageName
+    }
 }

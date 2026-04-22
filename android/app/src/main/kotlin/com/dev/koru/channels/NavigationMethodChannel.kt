@@ -19,4 +19,8 @@ object NavigationMethodChannel {
     fun goToLauncher() {
         channel?.invokeMethod("goToLauncher", null)
     }
+
+    fun goToHomeIfOnLauncher() {
+        channel?.invokeMethod("goToHomeIfOnLauncher", null)
+    }
 }
