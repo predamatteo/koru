@@ -79,13 +79,12 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
     companion object {
         private const val TAG = "OverlayManager"
 
-        /// Package name → timestamp ms fino a cui il blocco è bypassato
-        /// (dopo click "Open anyway"). Il bypass vale "per questa sessione":
-        /// viene rimosso quando l'utente esce dall'app (gestito dal service
-        /// accessibility via [clearBypass]). Il TTL massimo funge da
-        /// safety-net nel caso in cui il service non riesca a rilevare
-        /// l'uscita (es. crash, restart).
-        private const val BYPASS_TTL_MS = 10 * 60_000L // 10 min safety cap
+        /// Package name → timestamp ms fino a cui il blocco è bypassato.
+        /// Dopo che l'utente tocca "Open anyway" sull'overlay, sceglie
+        /// esplicitamente una durata (1/5/15/30 min) dal duration picker;
+        /// il bypass resta valido per quella durata indipendentemente dal
+        /// fatto che l'utente esca e rientri nell'app. Scaduta la durata,
+        /// al prossimo ingresso il blocco si riattiva.
         private val bypassedPackages = mutableMapOf<String, Long>()
 
         fun isBypassed(packageName: String): Boolean {
@@ -93,12 +92,13 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
             return System.currentTimeMillis() < until
         }
 
-        fun markBypassed(packageName: String) {
-            bypassedPackages[packageName] = System.currentTimeMillis() + BYPASS_TTL_MS
+        fun markBypassed(packageName: String, durationMs: Long) {
+            bypassedPackages[packageName] = System.currentTimeMillis() + durationMs
         }
 
         /// Rimuove immediatamente il bypass per questo pacchetto.
-        /// Chiamato dal service accessibility quando l'utente lascia l'app.
+        /// Usato per debug / reset manuale — il flusso normale fa
+        /// affidamento sulla scadenza naturale via TTL.
         fun clearBypass(packageName: String) {
             bypassedPackages.remove(packageName)
         }
@@ -128,8 +128,9 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
     /// Callback invocato quando l'utente sceglie una intention (per logging).
     var onIntentionChosen: ((pkg: String, intention: String) -> Unit)? = null
 
-    /// Callback quando l'utente tocca "Open anyway" → overlay bypass + app launch.
-    var onBypassOpen: ((pkg: String) -> Unit)? = null
+    /// Callback quando l'utente sceglie una durata dal duration picker
+    /// (dopo aver toccato "Open anyway" sul countdown) → bypass timed + app launch.
+    var onBypassOpen: ((pkg: String, durationMs: Long) -> Unit)? = null
 
     init {
         savedStateRegistryController.performRestore(null)
@@ -191,9 +192,9 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
                                 onIntentionChosen?.invoke(currentPackageName, intention)
                             },
                             onGoHome = { onReturnHome?.invoke() },
-                            onBypass = {
-                                markBypassed(currentPackageName)
-                                onBypassOpen?.invoke(currentPackageName)
+                            onBypass = { durationMs ->
+                                markBypassed(currentPackageName, durationMs)
+                                onBypassOpen?.invoke(currentPackageName, durationMs)
                             },
                         )
                     }
@@ -243,6 +244,15 @@ private val mindfulIntentions = listOf(
     "Not sure",
 )
 
+/// Opzioni di durata esposte nel duration picker. Allineate ai pattern
+/// comuni delle app di digital wellbeing (minimalist_phone, Opal, Screen Zen).
+private val bypassDurationOptions = listOf(
+    "1 min" to 1L * 60_000L,
+    "5 min" to 5L * 60_000L,
+    "15 min" to 15L * 60_000L,
+    "30 min" to 30L * 60_000L,
+)
+
 @Composable
 private fun BlockedScreen(
     packageName: String,
@@ -253,7 +263,7 @@ private fun BlockedScreen(
     profileEmoji: String?,
     onIntentionChosen: (String) -> Unit,
     onGoHome: () -> Unit,
-    onBypass: () -> Unit,
+    onBypass: (durationMs: Long) -> Unit,
 ) {
     // Overlay completamente opaco (niente bleed-through dall'app bloccata
      // sottostante) + gradiente sottile dal colore palette al base dark.
@@ -262,6 +272,9 @@ private fun BlockedScreen(
 
     var countdownFinished by remember { mutableStateOf(false) }
     var chosenIntention by remember { mutableStateOf<String?>(null) }
+    // Step "duration picker": quando true, sostituisce il contenuto
+    // principale con il picker di durata per il bypass.
+    var showDurationPicker by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -269,6 +282,19 @@ private fun BlockedScreen(
             .background(gradient),
         contentAlignment = Alignment.Center,
     ) {
+        if (showDurationPicker) {
+            DurationPickerSection(
+                appLabel = appLabel,
+                config = config,
+                onDurationChosen = { durationMs ->
+                    showDurationPicker = false
+                    onBypass(durationMs)
+                },
+                onCancel = { showDurationPicker = false },
+            )
+            return@Box
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -321,7 +347,7 @@ private fun BlockedScreen(
                 finishedText = "Open $appLabel",
                 onFinished = { countdownFinished = true },
                 onTapAfterFinish = {
-                    if (config.allowBypassAfterCountdown) onBypass()
+                    if (config.allowBypassAfterCountdown) showDurationPicker = true
                 },
             )
             Spacer(Modifier.height(16.dp))
@@ -345,7 +371,7 @@ private fun BlockedScreen(
                 enter = fadeIn(),
                 exit = fadeOut(),
             ) {
-                TextButton(onClick = onBypass) {
+                TextButton(onClick = { showDurationPicker = true }) {
                     Text(
                         "Open anyway",
                         color = KoruTextPrimary.copy(alpha = 0.78f),
@@ -354,6 +380,86 @@ private fun BlockedScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DurationPickerSection(
+    appLabel: String,
+    config: OverlayConfig,
+    onDurationChosen: (Long) -> Unit,
+    onCancel: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 32.dp, vertical = 48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(Modifier.weight(1f))
+
+        Text(
+            text = "\u23F1\uFE0F", // ⏱️
+            fontSize = 56.sp,
+        )
+        Spacer(Modifier.height(24.dp))
+        Text(
+            text = "How long?",
+            color = KoruTextPrimary,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "$appLabel will be blocked again after this time.",
+            color = KoruTextPrimary.copy(alpha = 0.78f),
+            fontSize = 16.sp,
+            textAlign = TextAlign.Center,
+        )
+
+        Spacer(Modifier.height(40.dp))
+
+        bypassDurationOptions.forEach { (label, durationMs) ->
+            DurationOptionButton(
+                label = label,
+                onClick = { onDurationChosen(durationMs) },
+            )
+            Spacer(Modifier.height(12.dp))
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        TextButton(onClick = onCancel) {
+            Text(
+                "Cancel",
+                color = KoruTextPrimary.copy(alpha = 0.78f),
+                fontSize = 14.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DurationOptionButton(
+    label: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(KoruTextPrimary.copy(alpha = 0.10f))
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            color = KoruTextPrimary,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }
 

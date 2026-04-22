@@ -50,13 +50,6 @@ class KoruAccessibilityService : AccessibilityService() {
         /// Allineato a [ProfileType.time] in lib/core/constants/profile_types.dart.
         const val PROFILE_TYPE_TIME = 1
 
-        /// Grace period prima di clearare il bypass dopo che l'utente
-        /// esce dall'app bypassata. Breve per evitare che flash/transizioni
-        /// del sistema (es. task switcher) rimuovano il bypass per errore,
-        /// ma corto abbastanza da riattivare il blocco subito se l'utente
-        /// torna indietro per riaprire l'app.
-        private const val BYPASS_CLEAR_GRACE_MS = 1_500L
-
         @Volatile
         var instance: KoruAccessibilityService? = null
             private set
@@ -95,12 +88,6 @@ class KoruAccessibilityService : AccessibilityService() {
     private var overlayManager: OverlayManager? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    /// Package correntemente bypassato (utente ha toccato "Open anyway").
-    /// Rimane settato finché l'utente resta dentro l'app; viene clearato
-    /// ~1.5s dopo che l'utente passa a un'altra app o al launcher.
-    private var activeBypassedPackage: String? = null
-    private var pendingBypassClear: Runnable? = null
-
     /// Throttle per TYPE_WINDOW_CONTENT_CHANGED nei browser: limita la lettura
     /// della URL bar (operazione relativamente costosa) a max 2/s.
     private var lastBrowserContentCheckMs = 0L
@@ -127,14 +114,12 @@ class KoruAccessibilityService : AccessibilityService() {
                     Log.w(TAG, "Failed to log intention: ${e.message}")
                 }
             }
-            onBypassOpen = { pkg ->
-                // bypass già registrato in OverlayManager.Companion via markBypassed.
-                // Tracciamo il pacchetto bypassato per poterlo clearare
-                // quando l'utente esce dall'app (vedi handleBypassLifecycle).
-                activeBypassedPackage = pkg
-                pendingBypassClear?.let { mainHandler.removeCallbacks(it) }
-                pendingBypassClear = null
-                // Logga BLOCK_SKIPPED per analytics.
+            onBypassOpen = { pkg, durationMs ->
+                // Il bypass è stato registrato in OverlayManager.Companion via
+                // markBypassed(pkg, durationMs) — resterà valido per la
+                // durata scelta dall'utente indipendentemente dal fatto che
+                // esca e rientri nell'app. Nessuna cleanup on-exit necessaria.
+                Log.i(TAG, "Bypass granted for $pkg: ${durationMs / 60_000}min")
                 try {
                     NativeDatabase.insertRestrictedAccessEvent(
                         applicationContext,
@@ -204,12 +189,6 @@ class KoruAccessibilityService : AccessibilityService() {
 
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
 
-        // Bypass lifecycle: se l'utente esce dall'app bypassata per più di
-        // BYPASS_CLEAR_GRACE_MS, cancella il bypass così che al rientro il
-        // blocco si riattivi. Va eseguito PRIMA dello skipPackages check
-        // perché anche il launcher conta come "uscita dall'app bypassata".
-        handleBypassLifecycle(pkg)
-
         // Strict Mode check (blocks settings/recent/uninstall based on mask)
         if (StrictModeEnforcer.handleEvent(this, event)) return
 
@@ -244,38 +223,11 @@ class KoruAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Gestisce la scadenza del bypass "per sessione".
-     *
-     * - Se `pkg` è lo stesso dell'app bypassata → l'utente è (ancora) dentro
-     *   l'app: cancella un eventuale clear pending.
-     * - Se `pkg` è diverso (altra app o launcher) → schedula un clear dopo
-     *   [BYPASS_CLEAR_GRACE_MS]. Se l'utente torna entro il grace period, il
-     *   clear viene cancellato; altrimenti il bypass scade e al prossimo
-     *   ingresso nell'app scatta di nuovo il blocco.
-     */
-    private fun handleBypassLifecycle(pkg: String) {
-        val bypassed = activeBypassedPackage ?: return
-        if (pkg == bypassed) {
-            pendingBypassClear?.let { mainHandler.removeCallbacks(it) }
-            pendingBypassClear = null
-            return
-        }
-        if (pendingBypassClear != null) return
-        val r = Runnable {
-            OverlayManager.clearBypass(bypassed)
-            activeBypassedPackage = null
-            pendingBypassClear = null
-            Log.i(TAG, "Bypass cleared for $bypassed (user left app)")
-        }
-        pendingBypassClear = r
-        mainHandler.postDelayed(r, BYPASS_CLEAR_GRACE_MS)
-    }
-
-    /**
      * Ritorna true se ha bloccato l'app (overlay mostrato + HOME).
      */
     private fun checkAppBlocking(packageName: String): Boolean {
-        // Bypass temporaneo (utente ha toccato "Open anyway" sull'overlay).
+        // Bypass timed: l'utente ha scelto una durata esplicita dal duration
+        // picker. Finché quella durata non scade, non mostriamo l'overlay.
         if (OverlayManager.isBypassed(packageName)) return false
 
         // Quick-block / Pomodoro-work: blocca tutto tranne whitelist.
@@ -680,9 +632,6 @@ class KoruAccessibilityService : AccessibilityService() {
         instance = null
         actionReceiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
         actionReceiver = null
-        pendingBypassClear?.let { mainHandler.removeCallbacks(it) }
-        pendingBypassClear = null
-        activeBypassedPackage = null
         overlayManager?.destroy()
         overlayManager = null
         NativeDatabase.close()
