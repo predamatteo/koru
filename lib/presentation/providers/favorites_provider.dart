@@ -28,7 +28,8 @@ class FavoritesController {
 
   final AppDatabase _db;
 
-  Future<void> add(String packageName) => _db.addFavorite(packageName);
+  Future<void> add(String packageName, {String? label}) =>
+      _db.addFavorite(packageName, label: label);
   Future<void> remove(String packageName) => _db.removeFavorite(packageName);
   Future<void> reorder(List<String> orderedPackageNames) =>
       _db.reorderFavorites(orderedPackageNames);

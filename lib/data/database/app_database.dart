@@ -290,7 +290,20 @@ class AppDatabase extends _$AppDatabase {
   Future<List<Favorite>> getFavorites() => (select(favorites)
         ..orderBy([(f) => OrderingTerm.asc(f.orderIndex)]))
       .get();
-  Future<void> addFavorite(String packageName) async {
+  Future<void> addFavorite(String packageName, {String? label}) async {
+    // Garantisce che la riga in `applications` esista: la FK del favorito
+    // punta lì e Drift 2.x ha foreign_keys=ON di default, quindi senza
+    // questa upsert l'insert fallirebbe silenziosamente con FK violation
+    // (insertOrIgnore NON copre FK, solo PK/UNIQUE).
+    final resolvedLabel = label ?? packageName;
+    await into(applications).insert(
+      ApplicationsCompanion.insert(
+        packageName: packageName,
+        label: resolvedLabel,
+        labelForSearch: resolvedLabel.toLowerCase(),
+      ),
+      mode: InsertMode.insertOrIgnore,
+    );
     final existing = await (select(favorites)..limit(1)).get();
     final nextIndex = existing.isEmpty
         ? 0

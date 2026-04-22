@@ -38,11 +38,34 @@ class AppListView extends ConsumerWidget {
           app: app,
           isFavorite: favs.contains(app.packageName),
           onTap: () => blocking.launchApp(app.packageName),
-          onToggleFavorite: () {
-            if (favs.contains(app.packageName)) {
-              favoritesController.remove(app.packageName);
-            } else {
-              favoritesController.add(app.packageName);
+          onToggleFavorite: () async {
+            final wasFav = favs.contains(app.packageName);
+            final messenger = ScaffoldMessenger.maybeOf(context);
+            try {
+              if (wasFav) {
+                await favoritesController.remove(app.packageName);
+              } else {
+                await favoritesController.add(
+                  app.packageName,
+                  label: app.label,
+                );
+              }
+              messenger?.hideCurrentSnackBar();
+              messenger?.showSnackBar(
+                SnackBar(
+                  content: Text(wasFav
+                      ? 'Removed ${app.label} from favorites'
+                      : 'Added ${app.label} to favorites'),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            } catch (e) {
+              messenger?.showSnackBar(
+                SnackBar(
+                  content: Text('Favorites update failed: $e'),
+                  duration: const Duration(seconds: 3),
+                ),
+              );
             }
           },
         ),
