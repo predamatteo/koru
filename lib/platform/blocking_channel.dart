@@ -116,6 +116,18 @@ class BlockingChannel {
       })) ??
       false;
 
+  Future<bool> uninstallApp(String packageName) async =>
+      (await _channel.invokeMethod<bool>('uninstallApp', {
+        'packageName': packageName,
+      })) ??
+      false;
+
+  Future<bool> openAppInfo(String packageName) async =>
+      (await _channel.invokeMethod<bool>('openAppInfo', {
+        'packageName': packageName,
+      })) ??
+      false;
+
   Future<int> getBatteryLevel() async =>
       (await _channel.invokeMethod<int>('getBatteryLevel')) ?? -1;
 

@@ -5,8 +5,9 @@ import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
 import '../../../../platform/blocking_channel.dart';
 import '../../../providers/favorites_provider.dart';
+import '../../all_apps/widgets/app_list_view.dart';
 
-/// Lista favoriti reorderable. Tap = lancia app, long press = rimuovi.
+/// Lista favoriti reorderable. Tap = lancia app, long press = menu contestuale.
 class FavoritesList extends ConsumerWidget {
   const FavoritesList({super.key});
 
@@ -40,7 +41,13 @@ class FavoritesList extends ConsumerWidget {
           index: index,
           child: InkWell(
             onTap: () => blocking.launchApp(app.packageName),
-            onLongPress: () => _showRemoveSheet(context, app, controller),
+            onLongPress: () => showAppContextMenu(
+              context: context,
+              app: app,
+              isFavorite: true,
+              favoritesController: controller,
+              blocking: blocking,
+            ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
               child: Row(
@@ -57,31 +64,6 @@ class FavoritesList extends ConsumerWidget {
           ),
         );
       },
-    );
-  }
-
-  void _showRemoveSheet(
-    BuildContext context,
-    InstalledAppInfo app,
-    FavoritesController controller,
-  ) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.star_border, color: KoruColors.danger),
-              title: const Text('Remove from favorites'),
-              onTap: () {
-                controller.remove(app.packageName);
-                Navigator.pop(ctx);
-              },
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

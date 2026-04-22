@@ -116,6 +116,32 @@ object BlockingMethodChannel {
                             result.success(false)
                         }
                     }
+                    "uninstallApp" -> {
+                        val pkg = call.argument<String>("packageName") ?: return@setMethodCallHandler result.error("MISSING_ARG", "packageName required", null)
+                        try {
+                            val intent = Intent(Intent.ACTION_DELETE).apply {
+                                data = android.net.Uri.parse("package:$pkg")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            activity.startActivity(intent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("UNINSTALL_FAILED", e.message, null)
+                        }
+                    }
+                    "openAppInfo" -> {
+                        val pkg = call.argument<String>("packageName") ?: return@setMethodCallHandler result.error("MISSING_ARG", "packageName required", null)
+                        try {
+                            val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = android.net.Uri.parse("package:$pkg")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            activity.startActivity(intent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("APP_INFO_FAILED", e.message, null)
+                        }
+                    }
                     "getBatteryLevel" -> {
                         val bm = activity.getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
                         result.success(bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY))

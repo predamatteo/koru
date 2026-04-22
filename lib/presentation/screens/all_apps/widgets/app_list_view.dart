@@ -38,36 +38,13 @@ class AppListView extends ConsumerWidget {
           app: app,
           isFavorite: favs.contains(app.packageName),
           onTap: () => blocking.launchApp(app.packageName),
-          onToggleFavorite: () async {
-            final wasFav = favs.contains(app.packageName);
-            final messenger = ScaffoldMessenger.maybeOf(context);
-            try {
-              if (wasFav) {
-                await favoritesController.remove(app.packageName);
-              } else {
-                await favoritesController.add(
-                  app.packageName,
-                  label: app.label,
-                );
-              }
-              messenger?.hideCurrentSnackBar();
-              messenger?.showSnackBar(
-                SnackBar(
-                  content: Text(wasFav
-                      ? 'Removed ${app.label} from favorites'
-                      : 'Added ${app.label} to favorites'),
-                  duration: const Duration(seconds: 2),
-                ),
-              );
-            } catch (e) {
-              messenger?.showSnackBar(
-                SnackBar(
-                  content: Text('Favorites update failed: $e'),
-                  duration: const Duration(seconds: 3),
-                ),
-              );
-            }
-          },
+          onLongPress: () => showAppContextMenu(
+            context: context,
+            app: app,
+            isFavorite: favs.contains(app.packageName),
+            favoritesController: favoritesController,
+            blocking: blocking,
+          ),
         ),
       ));
     }
@@ -78,6 +55,96 @@ class AppListView extends ConsumerWidget {
       children: items,
     );
   }
+}
+
+/// Bottom sheet contestuale per un'app: favorite/unfavorite, app info, uninstall.
+/// Condiviso tra drawer e lista favoriti.
+Future<void> showAppContextMenu({
+  required BuildContext context,
+  required InstalledAppInfo app,
+  required bool isFavorite,
+  required FavoritesController favoritesController,
+  required BlockingChannel blocking,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    builder: (ctx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    app.label,
+                    style: Theme.of(ctx).textTheme.titleMedium,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: Icon(
+              isFavorite ? Icons.star_border : Icons.star,
+              color: KoruColors.primary,
+            ),
+            title: Text(
+              isFavorite ? 'Remove from favorites' : 'Add to favorites',
+            ),
+            onTap: () async {
+              final messenger = ScaffoldMessenger.maybeOf(context);
+              Navigator.pop(ctx);
+              try {
+                if (isFavorite) {
+                  await favoritesController.remove(app.packageName);
+                } else {
+                  await favoritesController.add(
+                    app.packageName,
+                    label: app.label,
+                  );
+                }
+                messenger?.hideCurrentSnackBar();
+                messenger?.showSnackBar(
+                  SnackBar(
+                    content: Text(isFavorite
+                        ? 'Removed ${app.label} from favorites'
+                        : 'Added ${app.label} to favorites'),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              } catch (e) {
+                messenger?.showSnackBar(
+                  SnackBar(
+                    content: Text('Favorites update failed: $e'),
+                    duration: const Duration(seconds: 3),
+                  ),
+                );
+              }
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('App info'),
+            onTap: () {
+              Navigator.pop(ctx);
+              blocking.openAppInfo(app.packageName);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline, color: KoruColors.danger),
+            title: const Text('Uninstall'),
+            onTap: () {
+              Navigator.pop(ctx);
+              blocking.uninstallApp(app.packageName);
+            },
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _SectionHeader extends StatelessWidget {
@@ -108,19 +175,19 @@ class _AppTile extends StatelessWidget {
     required this.app,
     required this.isFavorite,
     required this.onTap,
-    required this.onToggleFavorite,
+    required this.onLongPress,
   });
 
   final InstalledAppInfo app;
   final bool isFavorite;
   final VoidCallback onTap;
-  final VoidCallback onToggleFavorite;
+  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      onLongPress: onToggleFavorite,
+      onLongPress: onLongPress,
       child: SizedBox(
         height: 50,
         child: Padding(
