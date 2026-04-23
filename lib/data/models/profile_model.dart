@@ -52,8 +52,10 @@ class ProfileModel {
     parts.add('${apps.length} apps');
     if (websites.isNotEmpty) parts.add('${websites.length} sites');
     if (hasTimeCondition && intervals.isNotEmpty) {
-      final interval = intervals.first;
-      parts.add('${_formatMinutes(interval.fromMinutes)} - ${_formatMinutes(interval.toMinutes)}');
+      parts.add(intervals
+          .map((iv) =>
+              '${_formatMinutes(iv.fromMinutes)} - ${_formatMinutes(iv.toMinutes)}')
+          .join(', '));
     }
     parts.add(dayFlagsLabel);
     return parts.join(' \u00b7 ');

@@ -58,10 +58,9 @@ class _ProfileCard extends ConsumerWidget {
   String _buildSubtitle() {
     final parts = <String>[profile.dayFlagsLabel];
     if (profile.hasTimeCondition && profile.intervals.isNotEmpty) {
-      final iv = profile.intervals.first;
-      parts.add(
-        '${_fmt(iv.fromMinutes)}\u2013${_fmt(iv.toMinutes)}',
-      );
+      parts.add(profile.intervals
+          .map((iv) => '${_fmt(iv.fromMinutes)}\u2013${_fmt(iv.toMinutes)}')
+          .join(', '));
     }
     return parts.join(' \u00b7 ');
   }

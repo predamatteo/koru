@@ -35,8 +35,12 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
   int _dayFlags = DayFlags.allDays;
   int _blockingMode = BlockingMode.blocklist;
   int _typeCombinations = ProfileType.time;
-  TimeOfDay _from = const TimeOfDay(hour: 9, minute: 0);
-  TimeOfDay _to = const TimeOfDay(hour: 17, minute: 0);
+  List<_TimeSlotData> _slots = [
+    _TimeSlotData(
+      from: const TimeOfDay(hour: 9, minute: 0),
+      to: const TimeOfDay(hour: 17, minute: 0),
+    ),
+  ];
   bool _timeEnabled = true;
   bool _loaded = false;
   List<String> _wifiSsids = const [];
@@ -79,9 +83,15 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
       _typeCombinations = profile.typeCombinations;
       _timeEnabled = ProfileType.hasType(_typeCombinations, ProfileType.time);
       if (profile.intervals.isNotEmpty) {
-        final iv = profile.intervals.first;
-        _from = TimeOfDay(hour: iv.fromMinutes ~/ 60, minute: iv.fromMinutes % 60);
-        _to = TimeOfDay(hour: iv.toMinutes ~/ 60, minute: iv.toMinutes % 60);
+        _slots = [
+          for (final iv in profile.intervals)
+            _TimeSlotData(
+              from: TimeOfDay(
+                  hour: iv.fromMinutes ~/ 60, minute: iv.fromMinutes % 60),
+              to: TimeOfDay(
+                  hour: iv.toMinutes ~/ 60, minute: iv.toMinutes % 60),
+            ),
+        ];
       }
       _wifiSsids = wifis;
       _blockedSections = sections;
@@ -236,7 +246,11 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
 
     if (_timeEnabled) {
       await repo.setIntervalsForProfile(profileId, [
-        (from: _from.hour * 60 + _from.minute, to: _to.hour * 60 + _to.minute),
+        for (final s in _slots)
+          (
+            from: s.from.hour * 60 + s.from.minute,
+            to: s.to.hour * 60 + s.to.minute,
+          ),
       ]);
     } else {
       await repo.setIntervalsForProfile(profileId, const []);
@@ -269,20 +283,42 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
     if (mounted) context.pop();
   }
 
-  Future<void> _pickTime(bool isStart) async {
+  Future<void> _pickTime(int slotIndex, bool isStart) async {
+    final slot = _slots[slotIndex];
     final picked = await showTimePicker(
       context: context,
-      initialTime: isStart ? _from : _to,
+      initialTime: isStart ? slot.from : slot.to,
     );
-    if (picked != null) {
-      setState(() {
-        if (isStart) {
-          _from = picked;
-        } else {
-          _to = picked;
-        }
-      });
-    }
+    if (picked == null) return;
+    setState(() {
+      _slots[slotIndex] = isStart
+          ? slot.copyWith(from: picked)
+          : slot.copyWith(to: picked);
+    });
+  }
+
+  void _addSlot() {
+    // Suggerisce una finestra pomeridiana plausibile se non confligge,
+    // altrimenti un semplice slot 1h dopo l'ultimo.
+    final last = _slots.last;
+    final suggestedStart = TimeOfDay(
+      hour: (last.to.hour + 1) % 24,
+      minute: last.to.minute,
+    );
+    final suggestedEnd = TimeOfDay(
+      hour: (suggestedStart.hour + 2) % 24,
+      minute: suggestedStart.minute,
+    );
+    setState(() {
+      _slots = [..._slots, _TimeSlotData(from: suggestedStart, to: suggestedEnd)];
+    });
+  }
+
+  void _removeSlot(int index) {
+    if (_slots.length <= 1) return;
+    setState(() {
+      _slots = [..._slots]..removeAt(index);
+    });
   }
 
   Future<void> _pickEmoji() async {
@@ -418,30 +454,59 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                 ),
                 const SizedBox(height: 18),
                 Container(height: 1, color: KoruColors.surfaceElevated),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _TimeSlot(
-                        label: 'Start',
-                        time: _from,
-                        onTap: () => _pickTime(true),
+                for (var i = 0; i < _slots.length; i++) ...[
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _TimeSlot(
+                          label: 'Start',
+                          time: _slots[i].from,
+                          onTap: () => _pickTime(i, true),
+                        ),
                       ),
-                    ),
+                      Container(
+                        width: 24,
+                        height: 1,
+                        color: KoruColors.surfaceElevated,
+                      ),
+                      Expanded(
+                        child: _TimeSlot(
+                          label: 'End',
+                          time: _slots[i].to,
+                          onTap: () => _pickTime(i, false),
+                          alignEnd: _slots.length == 1,
+                        ),
+                      ),
+                      if (_slots.length > 1)
+                        IconButton(
+                          icon: const Icon(Icons.close,
+                              size: 18, color: KoruColors.textSecondary),
+                          onPressed: () => _removeSlot(i),
+                          tooltip: 'Remove time slot',
+                          visualDensity: VisualDensity.compact,
+                        ),
+                    ],
+                  ),
+                  if (i < _slots.length - 1)
                     Container(
-                      width: 24,
+                      margin: const EdgeInsets.only(top: 14),
                       height: 1,
                       color: KoruColors.surfaceElevated,
                     ),
-                    Expanded(
-                      child: _TimeSlot(
-                        label: 'End',
-                        time: _to,
-                        onTap: () => _pickTime(false),
-                        alignEnd: true,
-                      ),
+                ],
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: _addSlot,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Add time slot'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: KoruColors.primary,
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
                     ),
-                  ],
+                  ),
                 ),
               ],
             ),
@@ -921,6 +986,15 @@ class _SectionSwitchRow extends StatelessWidget {
       ),
     );
   }
+}
+
+class _TimeSlotData {
+  const _TimeSlotData({required this.from, required this.to});
+  final TimeOfDay from;
+  final TimeOfDay to;
+
+  _TimeSlotData copyWith({TimeOfDay? from, TimeOfDay? to}) =>
+      _TimeSlotData(from: from ?? this.from, to: to ?? this.to);
 }
 
 /// Helper per leggere il SSID corrente da dentro la UI profili senza
