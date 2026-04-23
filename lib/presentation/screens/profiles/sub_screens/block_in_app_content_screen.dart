@@ -214,8 +214,11 @@ class _AppGroup extends StatelessWidget {
           ),
           ...sections.map((s) {
             final label = s.displayName.replaceFirst('$_appLabel ', '');
+            // Se l'app è fully blocked, la sezione è implicitamente ON anche
+            // se blockedSectionsJson è null/vuoto: il blocco totale copre
+            // tutte le sezioni dell'app.
             return SwitchListTile(
-              value: selected.contains(s),
+              value: isFullyBlocked || selected.contains(s),
               onChanged: isFullyBlocked ? null : (v) => onToggle(s, v),
               title: Text(label),
               subtitle: isFullyBlocked
