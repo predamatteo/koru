@@ -56,7 +56,11 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
 
   Future<void> _loadExisting(int id) async {
     if (_loaded) return;
-    final profile = await ref.read(profileByIdProvider(id).future);
+    // refresh forzato: profileByIdProvider e' un FutureProvider cached, quindi
+    // senza ricaricare esplicitamente l'editor riaperto dopo un save vedrebbe
+    // lo snapshot precedente (intervals di prima dell'aggiunta slot, ecc.)
+    // e un successivo salvataggio sovrascriverebbe i dati freschi in DB.
+    final profile = await ref.refresh(profileByIdProvider(id).future);
     if (profile == null || !mounted) return;
     final wifis = await ref.read(profileRepositoryProvider).getWifisForProfile(id);
     if (!mounted) return;
@@ -280,6 +284,10 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
     }
 
     await ref.read(achievementEvaluationProvider.notifier).trigger();
+    // Invalidate cache del profilo: ri-aprire l'editor (o una sub-screen che
+    // watcha profileByIdProvider) deve vedere i nuovi intervals/wifi/sezioni,
+    // non lo snapshot cached in memoria.
+    ref.invalidate(profileByIdProvider(profileId));
     if (mounted) context.pop();
   }
 
