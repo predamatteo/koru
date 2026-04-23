@@ -88,6 +88,13 @@ class KoruAccessibilityService : AccessibilityService() {
     private var overlayManager: OverlayManager? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /// Runnable schedulati a tempo di scadenza del bypass, uno per ogni
+    /// package attualmente bypassato. Servono a riattivare il blocco se
+    /// l'utente resta dentro l'app anche dopo lo scadere della durata
+    /// scelta (in quel caso non arrivano TYPE_WINDOW_STATE_CHANGED e
+    /// checkAppBlocking non viene mai richiamato spontaneamente).
+    private val pendingBypassExpiryChecks = mutableMapOf<String, Runnable>()
+
     /// Throttle per TYPE_WINDOW_CONTENT_CHANGED nei browser: limita la lettura
     /// della URL bar (operazione relativamente costosa) a max 2/s.
     private var lastBrowserContentCheckMs = 0L
@@ -118,7 +125,7 @@ class KoruAccessibilityService : AccessibilityService() {
                 // Il bypass è stato registrato in OverlayManager.Companion via
                 // markBypassed(pkg, durationMs) — resterà valido per la
                 // durata scelta dall'utente indipendentemente dal fatto che
-                // esca e rientri nell'app. Nessuna cleanup on-exit necessaria.
+                // esca e rientri nell'app.
                 Log.i(TAG, "Bypass granted for $pkg: ${durationMs / 60_000}min")
                 try {
                     NativeDatabase.insertRestrictedAccessEvent(
@@ -129,6 +136,7 @@ class KoruAccessibilityService : AccessibilityService() {
                         timestamp = System.currentTimeMillis(),
                     )
                 } catch (_: Exception) {}
+                scheduleBypassExpiryCheck(pkg, durationMs)
                 dismiss()
                 val intent = packageManager.getLaunchIntentForPackage(pkg)
                 if (intent != null) {
@@ -220,6 +228,46 @@ class KoruAccessibilityService : AccessibilityService() {
             val root = try { rootInActiveWindow } catch (_: Exception) { null }
             if (root != null) checkWebsiteBlocking(pkg, root)
         }
+    }
+
+    /**
+     * Schedula un re-check dello stato di blocco per [pkg] quando scade il
+     * TTL del bypass (scelto dall'utente dal duration picker).
+     *
+     * Serve a coprire il caso in cui l'utente resti dentro l'app bypassata
+     * per l'intera durata scelta: senza cambio di window state il servizio
+     * accessibility non richiama [checkAppBlocking] spontaneamente, quindi
+     * il blocco non si riattiverebbe mai anche se il TTL è scaduto.
+     *
+     * Se al momento dello scadere l'utente è ancora dentro l'app ([lastForegroundPackage] == pkg),
+     * riattiviamo il blocco manualmente: HOME + overlay via [checkAppBlocking].
+     */
+    private fun scheduleBypassExpiryCheck(pkg: String, durationMs: Long) {
+        // Cancella eventuale runnable precedente per lo stesso pkg
+        // (es. utente ri-tocca "Open anyway" → nuova durata sostituisce la vecchia).
+        pendingBypassExpiryChecks.remove(pkg)?.let { mainHandler.removeCallbacks(it) }
+
+        val r = object : Runnable {
+            override fun run() {
+                pendingBypassExpiryChecks.remove(pkg)
+                // Double-check: il bypass potrebbe essere stato esteso nel frattempo.
+                if (OverlayManager.isBypassed(pkg)) {
+                    Log.d(TAG, "Bypass re-check for $pkg: still bypassed (renewed?), skipping")
+                    return
+                }
+                // Se l'utente non è più nell'app bypassata, non serve far nulla:
+                // al prossimo rientro scatterà normalmente checkAppBlocking.
+                if (lastForegroundPackage != pkg) {
+                    Log.d(TAG, "Bypass expired for $pkg but user not there (foreground=$lastForegroundPackage)")
+                    return
+                }
+                Log.i(TAG, "Bypass TTL expired and user still in $pkg → re-triggering block")
+                checkAppBlocking(pkg)
+            }
+        }
+        pendingBypassExpiryChecks[pkg] = r
+        // Piccolo grace (500ms) per evitare race col check `isBypassed`.
+        mainHandler.postDelayed(r, durationMs + 500L)
     }
 
     /**
@@ -632,6 +680,8 @@ class KoruAccessibilityService : AccessibilityService() {
         instance = null
         actionReceiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
         actionReceiver = null
+        pendingBypassExpiryChecks.values.forEach { mainHandler.removeCallbacks(it) }
+        pendingBypassExpiryChecks.clear()
         overlayManager?.destroy()
         overlayManager = null
         NativeDatabase.close()
