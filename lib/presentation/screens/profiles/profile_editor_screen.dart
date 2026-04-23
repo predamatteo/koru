@@ -41,6 +41,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
   bool _loaded = false;
   List<String> _wifiSsids = const [];
   Set<BlockedSection> _blockedSections = {};
+  Set<String> _fullyBlockedPkgs = const {};
   int _appsCount = 0;
 
   @override
@@ -56,10 +57,15 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
     final wifis = await ref.read(profileRepositoryProvider).getWifisForProfile(id);
     if (!mounted) return;
 
-    // Carica le sezioni in-app già bloccate (union di tutte le relations).
+    // Carica le sezioni in-app dalle relations del profilo. Includiamo anche
+    // le app interamente bloccate: per quelle le sezioni vengono
+    // auto-popolate (vedi ProfileRepository.setAppsForProfile) e la UI le
+    // mostra come ON + disabled, per comunicare che sono "implicate" dal
+    // blocco totale.
     final sections = <BlockedSection>{};
+    final fullyBlocked = <String>{};
     for (final rel in profile.apps) {
-      if (rel.isEnabled) continue; // se l'app è interamente bloccata non conta
+      if (rel.isEnabled) fullyBlocked.add(rel.packageName);
       sections.addAll(BlockedSection.decodeSet(rel.blockedSectionsJson));
     }
     final appsCount = profile.apps.where((a) => a.isEnabled).length;
@@ -79,6 +85,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
       }
       _wifiSsids = wifis;
       _blockedSections = sections;
+      _fullyBlockedPkgs = fullyBlocked;
       _appsCount = appsCount;
     });
   }
@@ -341,14 +348,18 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
       if (profile == null || !mounted) return;
       final newAppsCount = profile.apps.where((a) => a.isEnabled).length;
       final newSections = <BlockedSection>{};
+      final newFullyBlocked = <String>{};
       for (final rel in profile.apps) {
-        if (rel.isEnabled) continue;
+        if (rel.isEnabled) newFullyBlocked.add(rel.packageName);
         newSections.addAll(BlockedSection.decodeSet(rel.blockedSectionsJson));
       }
-      if (newAppsCount != _appsCount || newSections != _blockedSections) {
+      if (newAppsCount != _appsCount ||
+          newSections != _blockedSections ||
+          newFullyBlocked != _fullyBlockedPkgs) {
         setState(() {
           _appsCount = newAppsCount;
           _blockedSections = newSections;
+          _fullyBlockedPkgs = newFullyBlocked;
         });
       }
     });
@@ -503,12 +514,20 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
             child: Column(
               children: [
                 for (var i = 0; i < BlockedSection.values.length; i++) ...[
-                  _SectionSwitchRow(
-                    section: BlockedSection.values[i],
-                    value: _blockedSections.contains(BlockedSection.values[i]),
-                    onChanged: (v) =>
-                        _toggleSection(BlockedSection.values[i], v),
-                  ),
+                  () {
+                    final s = BlockedSection.values[i];
+                    final impliedByFullBlock =
+                        _fullyBlockedPkgs.contains(s.packageName);
+                    return _SectionSwitchRow(
+                      section: s,
+                      value: impliedByFullBlock ||
+                          _blockedSections.contains(s),
+                      impliedByFullBlock: impliedByFullBlock,
+                      onChanged: impliedByFullBlock
+                          ? null
+                          : (v) => _toggleSection(s, v),
+                    );
+                  }(),
                   if (i < BlockedSection.values.length - 1)
                     Padding(
                       padding: const EdgeInsets.only(left: 20),
@@ -850,10 +869,12 @@ class _SectionSwitchRow extends StatelessWidget {
     required this.section,
     required this.value,
     required this.onChanged,
+    this.impliedByFullBlock = false,
   });
   final BlockedSection section;
   final bool value;
-  final ValueChanged<bool> onChanged;
+  final ValueChanged<bool>? onChanged;
+  final bool impliedByFullBlock;
 
   @override
   Widget build(BuildContext context) {
@@ -862,12 +883,30 @@ class _SectionSwitchRow extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Text(
-              section.displayName,
-              style: const TextStyle(
-                color: KoruColors.textPrimary,
-                fontSize: 15,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  section.displayName,
+                  style: TextStyle(
+                    color: impliedByFullBlock
+                        ? KoruColors.textSecondary
+                        : KoruColors.textPrimary,
+                    fontSize: 15,
+                  ),
+                ),
+                if (impliedByFullBlock)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      'App fully blocked',
+                      style: TextStyle(
+                        color: KoruColors.textSecondary.withAlpha(180),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
           Switch(
