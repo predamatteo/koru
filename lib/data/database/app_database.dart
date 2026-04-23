@@ -221,6 +221,26 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
+  /// Scrive `blockedSectionsJson` per la relation (profileId, packageName)
+  /// SOLO se la relation esiste e il campo è attualmente null/vuoto.
+  /// Non sovrascrive scelte esplicite dell'utente.
+  Future<void> setDefaultBlockedSectionsIfEmpty({
+    required int profileId,
+    required String packageName,
+    required String json,
+  }) async {
+    final rel = await (select(appProfileRelations)
+          ..where((r) =>
+              r.profileId.equals(profileId) &
+              r.packageName.equals(packageName))
+          ..limit(1))
+        .getSingleOrNull();
+    if (rel == null) return;
+    if ((rel.blockedSectionsJson?.trim().isNotEmpty ?? false)) return;
+    await (update(appProfileRelations)..where((r) => r.id.equals(rel.id)))
+        .write(AppProfileRelationsCompanion(blockedSectionsJson: Value(json)));
+  }
+
   // --- Website rule queries ---
   Future<List<WebsiteRule>> getWebsiteRulesForProfile(int profileId) =>
       (select(websiteRules)..where((r) => r.profileId.equals(profileId))).get();

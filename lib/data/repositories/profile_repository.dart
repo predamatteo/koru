@@ -1,6 +1,7 @@
 import 'package:async/async.dart';
 import 'package:drift/drift.dart';
 
+import '../../domain/entities/blocked_section.dart';
 import '../../platform/profile_channel.dart';
 import '../database/app_database.dart';
 import '../models/profile_model.dart';
@@ -117,7 +118,26 @@ class ProfileRepository {
   }
 
   Future<void> setAppsForProfile(int profileId, List<String> packageNames) async {
+    // Detect pkg aggiunti ora (non avevano relation prima): per quelli con
+    // sezioni in-app supportate (Instagram → Reels/Stories/Explore,
+    // YouTube → Shorts) auto-popoliamo blockedSectionsJson. Non tocchiamo
+    // relations preesistenti né sezioni già configurate dall'utente.
+    final existingBefore = await _db.getAppsForProfile(profileId);
+    final existingPkgs = existingBefore.map((r) => r.packageName).toSet();
+    final newlyAdded = packageNames.toSet().difference(existingPkgs);
+
     await _db.setAppsForProfile(profileId, packageNames);
+
+    for (final pkg in newlyAdded) {
+      final sections = BlockedSection.forPackage(pkg);
+      if (sections.isEmpty) continue;
+      await _db.setDefaultBlockedSectionsIfEmpty(
+        profileId: profileId,
+        packageName: pkg,
+        json: BlockedSection.encodeSet(sections.toSet()),
+      );
+    }
+
     await _channel.notifyProfileChanged(profileId);
   }
 
