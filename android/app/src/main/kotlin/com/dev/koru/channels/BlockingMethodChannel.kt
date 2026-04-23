@@ -249,19 +249,38 @@ object BlockingMethodChannel {
     }
 
     /// Calcola il tempo in foreground (ms) per ogni package nella finestra
-    /// [startMs, endMs] usando `queryEvents` e facendo il pairing
-    /// RESUMED (1) → PAUSED (2) / STOPPED (23).
+    /// [startMs, endMs] usando `queryEvents` e una state machine
+    /// RESUMED (1) / PAUSED (2) / STOPPED (23).
+    ///
+    /// Algoritmo portato da minimalist_phone (decompiled: a.java:323-397)
+    /// dopo aver osservato sotto-conteggi fino a ~30 minuti con il
+    /// pairing naive RESUMED→(PAUSED|STOPPED):
+    ///
+    /// 1. **Sort per-pkg per timestamp**: `queryEvents()` NON garantisce
+    ///    l'ordine stretto dei ts sugli OEM customizzati (MIUI, ColorOS,
+    ///    One UI). Eventi fuori ordine causavano pairing sbagliato e
+    ///    sessioni perse. Minimalist_phone risolve raggruppando per
+    ///    pkg e sortando prima del pairing.
+    ///
+    /// 2. **STOPPED non chiude la sessione**: nei casi Activity multi-step
+    ///    (Chrome tabs, app con splash, giochi con ads) STOPPED può
+    ///    arrivare dell'Activity PRECEDENTE dopo che una nuova Activity
+    ///    dello stesso pkg è già RESUMED. Se lo uso per chiudere sessioni,
+    ///    conto tempo sbagliato o pairing sbagliato. Invece lo salvo come
+    ///    fallback per chiudere sessioni dove PAUSED manca proprio.
+    ///
+    /// 3. **Nuovo RESUMED con sessione aperta**: chiude con lo STOPPED
+    ///    intermedio (se presente), NON col ts del nuovo RESUMED. Evita
+    ///    di contare come "usage" il gap tra due RESUMED consecutivi
+    ///    quando Android perde il PAUSED intermedio.
     ///
     /// Perché non usare `queryUsageStats().totalTimeInForeground`:
-    /// - Instagram e altre app "social" triggerano overlay (PiP, notifiche,
-    ///   stories) che NON sempre generano il MOVE_TO_BACKGROUND event; il
-    ///   counter interno di Android si gonfia e non torna mai indietro.
-    /// - `queryUsageStats(INTERVAL_DAILY)` può restituire più bucket per lo
-    ///   stesso giorno (dopo reboot, cambio timezone), sommati double-count.
+    /// - Instagram e app "social" triggerano overlay (PiP, notifiche,
+    ///   stories) che NON sempre generano il MOVE_TO_BACKGROUND event;
+    ///   il counter interno di Android si gonfia e non torna mai indietro.
+    /// - `queryUsageStats(INTERVAL_DAILY)` può restituire più bucket per
+    ///   lo stesso giorno (dopo reboot, cambio timezone), double-count.
     /// - `totalTimeInForeground` riflette il bucket intero, non la finestra.
-    ///
-    /// Questo approccio ricalcola dai singoli eventi, che sono la source of
-    /// truth affidabile. Ispirato a minimalist_phone (decompiled: a.java).
     private fun computeForegroundMsPerPackage(
         context: Context,
         startMs: Long,
@@ -270,48 +289,85 @@ object BlockingMethodChannel {
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE)
             as? UsageStatsManager ?: return emptyMap()
         // Query da 24h prima di startMs per catturare sessioni ancora aperte
-        // all'inizio della finestra. Lo span verrà poi clippato a [startMs, endMs].
+        // all'inizio della finestra (app aperta dalle 22:00 di ieri chiusa
+        // alle 00:30 di oggi). Lo span viene clippato a [startMs, endMs].
         val queryStart = startMs - 24L * 60 * 60 * 1000
         val events = try {
             usm.queryEvents(queryStart, endMs)
         } catch (_: Exception) { return emptyMap() }
 
-        val resumeByPkg = HashMap<String, Long>()
-        val totals = HashMap<String, Long>()
+        // Raccogli eventi rilevanti per package.
+        val byPkg = HashMap<String, ArrayList<LongArray>>()
         val ev = UsageEvents.Event()
-
         while (events.hasNextEvent()) {
             events.getNextEvent(ev)
             val pkg = ev.packageName ?: continue
-            val ts = ev.timeStamp
-            when (ev.eventType) {
-                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
-                    // Se c'era già un resume pending per questo pkg senza
-                    // pause (es. evento perso), chiudilo qui difensivamente.
-                    val prev = resumeByPkg[pkg]
-                    if (prev != null) {
-                        totals[pkg] = (totals[pkg] ?: 0L) + clippedSpan(prev, ts, startMs, endMs)
-                    }
-                    resumeByPkg[pkg] = ts
-                }
-                UsageEvents.Event.MOVE_TO_BACKGROUND,
-                23, // ACTIVITY_STOPPED — API 29+; costante non esposta in UsageEvents.Event
-                -> {
-                    val prev = resumeByPkg.remove(pkg) ?: continue
-                    totals[pkg] = (totals[pkg] ?: 0L) + clippedSpan(prev, ts, startMs, endMs)
-                }
-                else -> {}
-            }
+            val type = ev.eventType
+            if (type != UsageEvents.Event.MOVE_TO_FOREGROUND &&
+                type != UsageEvents.Event.MOVE_TO_BACKGROUND &&
+                type != 23
+            ) continue
+            byPkg.getOrPut(pkg) { ArrayList() }
+                .add(longArrayOf(ev.timeStamp, type.toLong()))
         }
 
-        // Chiudi sessioni ancora aperte al momento di endMs (o ora, se endMs
-        // è nel futuro). Sanity: se l'ultimo evento è molto più recente del
-        // resume, usa endMs; altrimenti la sessione potrebbe essere davvero
-        // in corso e va chiusa all'ora corrente.
+        val totals = HashMap<String, Long>()
         val now = System.currentTimeMillis()
-        val closeTs = minOf(endMs, now)
-        for ((pkg, resumeTs) in resumeByPkg) {
-            totals[pkg] = (totals[pkg] ?: 0L) + clippedSpan(resumeTs, closeTs, startMs, endMs)
+        val windowClose = minOf(endMs, now)
+
+        for ((pkg, list) in byPkg) {
+            // Sort esplicito per timestamp — queryEvents non lo garantisce
+            // su tutti i device (soprattutto dopo reboot o cambio clock).
+            list.sortBy { it[0] }
+
+            var resumeTs = 0L
+            var pausedTs = 0L
+            var stoppedTs = 0L
+            var total = 0L
+
+            for (item in list) {
+                val ts = item[0]
+                when (item[1].toInt()) {
+                    UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                        // Sessione precedente ancora aperta + STOPPED
+                        // intermedio → chiudi con STOPPED (PAUSED perso).
+                        if (resumeTs != 0L && stoppedTs > resumeTs) {
+                            total += clippedSpan(resumeTs, stoppedTs, startMs, endMs)
+                            resumeTs = 0L
+                        }
+                        // Accetta RESUMED solo se non c'è sessione aperta
+                        // o se il ts è più recente dell'ultimo PAUSED.
+                        // Senza questa guardia, due RESUMED consecutivi
+                        // (event loss) porterebbero a conteggi errati.
+                        if (resumeTs == 0L || ts > pausedTs) {
+                            resumeTs = ts
+                        }
+                    }
+                    UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                        if (resumeTs != 0L) {
+                            pausedTs = ts
+                        }
+                    }
+                    23 -> {
+                        // STOPPED solo tracciato: non chiude la sessione,
+                        // serve come fallback per il prossimo RESUMED.
+                        stoppedTs = ts
+                    }
+                }
+                // Sessione completa: accumula span clippato.
+                if (resumeTs != 0L && pausedTs != 0L) {
+                    total += clippedSpan(resumeTs, pausedTs, startMs, endMs)
+                    resumeTs = 0L
+                    pausedTs = 0L
+                }
+            }
+            // Sessione ancora aperta al termine (utente sta usando l'app
+            // adesso, oppure evento PAUSED non è mai arrivato).
+            if (resumeTs != 0L) {
+                total += clippedSpan(resumeTs, windowClose, startMs, endMs)
+            }
+
+            if (total > 0) totals[pkg] = total
         }
 
         return totals
