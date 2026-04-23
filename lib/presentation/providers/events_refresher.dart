@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:flutter/widgets.dart';
@@ -5,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/di/providers.dart';
 import '../../platform/service_event_channel.dart';
+import 'app_list_provider.dart';
 import 'mood_provider.dart';
 import 'profile_providers.dart';
 import 'statistics_providers.dart';
@@ -75,3 +77,29 @@ class _LifecycleObserver with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) onResume();
   }
 }
+
+/// Ascolta i broadcast PACKAGE_ADDED / PACKAGE_REMOVED / PACKAGE_REPLACED
+/// emessi dal native e invalida la lista di app installate così launcher e
+/// all-apps drawer si rigenerano senza che l'utente debba riavviare Koru.
+///
+/// Debounce 400ms: un singolo install genera tipicamente ADDED + (eventuale)
+/// REPLACED in rapida successione — basta un solo refresh.
+final packageEventsRefresherProvider = Provider<void>((ref) {
+  final events = ref.watch(platformChannelServiceProvider).events.events();
+  Timer? debounce;
+  final sub = events.listen((event) {
+    if (event is! PackageChangedEvent) return;
+    developer.log(
+      'Package ${event.kind}: ${event.packageName} — scheduling refresh',
+      name: 'PackageEventsRefresher',
+    );
+    debounce?.cancel();
+    debounce = Timer(const Duration(milliseconds: 400), () {
+      ref.invalidate(installedAppsProvider);
+    });
+  });
+  ref.onDispose(() {
+    debounce?.cancel();
+    sub.cancel();
+  });
+});

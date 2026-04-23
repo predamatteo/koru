@@ -5,12 +5,15 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import com.dev.koru.channels.BlockingMethodChannel
 import com.dev.koru.channels.NavigationMethodChannel
+import com.dev.koru.channels.PackageEventsReceiver
 import com.dev.koru.channels.ProfileMethodChannel
 import com.dev.koru.channels.StrictModeMethodChannel
 import com.dev.koru.channels.ServiceEventChannel
 import com.dev.koru.channels.PermissionMethodChannel
 
 class MainActivity : FlutterActivity() {
+    private var packageEventsReceiver: PackageEventsReceiver? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         BlockingMethodChannel.register(flutterEngine, this)
@@ -19,6 +22,33 @@ class MainActivity : FlutterActivity() {
         ServiceEventChannel.register(flutterEngine)
         PermissionMethodChannel.register(flutterEngine, this)
         NavigationMethodChannel.register(flutterEngine)
+    }
+
+    /**
+     * Registriamo il receiver di PACKAGE_ADDED/REMOVED/REPLACED solo mentre
+     * l'activity è visibile (onStart/onStop): l'unico consumer è la UI della
+     * lista app. Android 8+ non consente la dichiarazione nel Manifest per
+     * questi broadcast, quindi la registrazione dev'essere dinamica.
+     */
+    override fun onStart() {
+        super.onStart()
+        if (packageEventsReceiver == null) {
+            val receiver = PackageEventsReceiver()
+            registerReceiver(receiver, PackageEventsReceiver.newFilter())
+            packageEventsReceiver = receiver
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        packageEventsReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (_: IllegalArgumentException) {
+                // già deregistrato — safe da ignorare
+            }
+        }
+        packageEventsReceiver = null
     }
 
     /**

@@ -27,6 +27,11 @@ sealed class KoruServiceEvent {
           currentCycle: json['currentCycle'] as int? ?? 0,
           totalCycles: json['totalCycles'] as int? ?? 0,
         );
+      case 'PACKAGE_CHANGED':
+        return PackageChangedEvent(
+          kind: json['kind'] as String? ?? '',
+          packageName: json['packageName'] as String? ?? '',
+        );
       default:
         return UnknownServiceEvent(raw: json);
     }
@@ -66,6 +71,13 @@ class QuickBlockTickEvent extends KoruServiceEvent {
   final bool isActive;
   final int currentCycle;
   final int totalCycles;
+}
+
+class PackageChangedEvent extends KoruServiceEvent {
+  const PackageChangedEvent({required this.kind, required this.packageName});
+  /// 'added' | 'removed' | 'replaced'
+  final String kind;
+  final String packageName;
 }
 
 class UnknownServiceEvent extends KoruServiceEvent {

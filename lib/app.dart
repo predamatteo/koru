@@ -22,6 +22,7 @@ class KoruApp extends ConsumerWidget {
     // ogni volta che l'app torna in foreground (no eventi persi durante bg).
     ref.watch(appLifecycleInvalidatorProvider);
     ref.watch(blockingEventsRefresherProvider);
+    ref.watch(packageEventsRefresherProvider);
     ref.watch(homeIntentListenerProvider);
     ref.watch(achievementEvaluatorProvider);
     final monochrome = ref.watch(monochromeProvider);
