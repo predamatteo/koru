@@ -282,6 +282,18 @@ private fun BlockedScreen(
             .background(gradient),
         contentAlignment = Alignment.Center,
     ) {
+        // Bypass TTL scaduto mentre utente era dentro l'app → non il
+        // blocco "entry" classico ma un prompt di estensione (stile
+        // minimalist_phone): "Time's up, vuoi altri N min o chiudi?"
+        if (reason == BlockReason.BYPASS_EXPIRED) {
+            ExtensionPromptSection(
+                appLabel = appLabel,
+                onDurationChosen = { durationMs -> onBypass(durationMs) },
+                onCloseApp = onGoHome,
+            )
+            return@Box
+        }
+
         if (showDurationPicker) {
             DurationPickerSection(
                 appLabel = appLabel,
@@ -463,6 +475,71 @@ private fun DurationOptionButton(
     }
 }
 
+/// Prompt mostrato quando scade il TTL di un bypass e l'utente e'
+/// ancora dentro l'app (BlockReason.BYPASS_EXPIRED). Copia dal pattern
+/// minimalist_phone: estensione granulare + "Close" esplicito.
+@Composable
+private fun ExtensionPromptSection(
+    appLabel: String,
+    onDurationChosen: (Long) -> Unit,
+    onCloseApp: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 32.dp, vertical = 48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(Modifier.weight(1f))
+
+        Text(
+            text = "\u23F0", // ⏰
+            fontSize = 56.sp,
+        )
+        Spacer(Modifier.height(24.dp))
+        Text(
+            text = "Time's up",
+            color = KoruTextPrimary,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "How much longer with $appLabel?",
+            color = KoruTextPrimary.copy(alpha = 0.78f),
+            fontSize = 16.sp,
+            textAlign = TextAlign.Center,
+        )
+
+        Spacer(Modifier.height(40.dp))
+
+        bypassDurationOptions.forEach { (label, durationMs) ->
+            DurationOptionButton(
+                label = "+$label",
+                onClick = { onDurationChosen(durationMs) },
+            )
+            Spacer(Modifier.height(12.dp))
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        Button(
+            onClick = onCloseApp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = KoruTextPrimary,
+                contentColor = KoruBgBase,
+            ),
+        ) {
+            Text("Close $appLabel", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+        }
+    }
+}
+
 @Composable
 private fun MindfulIntentionPrompt(
     selected: String?,
@@ -583,6 +660,7 @@ private fun reasonEmoji(reason: BlockReason): String = when (reason) {
     BlockReason.WEBSITE_BLOCKED -> "\uD83C\uDF10"  // 🌐
     BlockReason.APP_BLOCKED -> "\uD83C\uDF3F"      // 🌿
     BlockReason.USAGE_LIMIT -> "\u23F3"            // ⏳
+    BlockReason.BYPASS_EXPIRED -> "\u23F0"          // ⏰
 }
 
 private fun reasonTitle(reason: BlockReason, config: OverlayConfig): String =
@@ -592,4 +670,5 @@ private fun reasonTitle(reason: BlockReason, config: OverlayConfig): String =
         BlockReason.WEBSITE_BLOCKED -> "Website paused"
         BlockReason.APP_BLOCKED -> "Take a breath"
         BlockReason.USAGE_LIMIT -> "Daily limit reached"
+        BlockReason.BYPASS_EXPIRED -> "Time's up"
     }

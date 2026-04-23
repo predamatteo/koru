@@ -138,13 +138,20 @@ class KoruAccessibilityService : AccessibilityService() {
                 } catch (_: Exception) {}
                 scheduleBypassExpiryCheck(pkg, durationMs)
                 dismiss()
-                val intent = packageManager.getLaunchIntentForPackage(pkg)
-                if (intent != null) {
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    try {
-                        startActivity(intent)
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to launch $pkg: ${e.message}")
+                // Se siamo nel flusso di estensione (bypass scaduto + utente
+                // ancora dentro), l'app è già in foreground: basta dismissare
+                // l'overlay. Lanciarla di nuovo via startActivity farebbe un
+                // restart di activity fastidioso.
+                val alreadyInForeground = lastForegroundPackage == pkg
+                if (!alreadyInForeground) {
+                    val intent = packageManager.getLaunchIntentForPackage(pkg)
+                    if (intent != null) {
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        try {
+                            startActivity(intent)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to launch $pkg: ${e.message}")
+                        }
                     }
                 }
             }
@@ -231,16 +238,19 @@ class KoruAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Schedula un re-check dello stato di blocco per [pkg] quando scade il
-     * TTL del bypass (scelto dall'utente dal duration picker).
+     * Schedula un prompt di estensione per [pkg] allo scadere del TTL del
+     * bypass (scelto dall'utente dal duration picker).
      *
      * Serve a coprire il caso in cui l'utente resti dentro l'app bypassata
      * per l'intera durata scelta: senza cambio di window state il servizio
      * accessibility non richiama [checkAppBlocking] spontaneamente, quindi
      * il blocco non si riattiverebbe mai anche se il TTL è scaduto.
      *
-     * Se al momento dello scadere l'utente è ancora dentro l'app ([lastForegroundPackage] == pkg),
-     * riattiviamo il blocco manualmente: HOME + overlay via [checkAppBlocking].
+     * Allo scadere, se l'utente è ancora dentro l'app ([lastForegroundPackage] == pkg),
+     * mostriamo il prompt di estensione stile minimalist_phone: l'overlay
+     * con [BlockReason.BYPASS_EXPIRED] propone "+1/5/15/30 min" oppure
+     * "Close app" (HOME). Se l'utente è già uscito, no-op (al rientro
+     * scatterà spontaneamente [checkAppBlocking]).
      */
     private fun scheduleBypassExpiryCheck(pkg: String, durationMs: Long) {
         // Cancella eventuale runnable precedente per lo stesso pkg
@@ -261,13 +271,51 @@ class KoruAccessibilityService : AccessibilityService() {
                     Log.d(TAG, "Bypass expired for $pkg but user not there (foreground=$lastForegroundPackage)")
                     return
                 }
-                Log.i(TAG, "Bypass TTL expired and user still in $pkg → re-triggering block")
-                checkAppBlocking(pkg)
+                Log.i(TAG, "Bypass TTL expired and user still in $pkg → showing extension prompt")
+                showExtensionPrompt(pkg)
             }
         }
         pendingBypassExpiryChecks[pkg] = r
         // Piccolo grace (500ms) per evitare race col check `isBypassed`.
         mainHandler.postDelayed(r, durationMs + 500L)
+    }
+
+    /**
+     * Mostra l'overlay di estensione (time-up prompt) sopra l'app ancora
+     * in foreground. A differenza del blocco "entry", NON facciamo HOME:
+     * l'overlay vive sopra l'app; se l'utente sceglie un'estensione,
+     * dismiss e basta; se sceglie "Close", fa HOME manualmente via
+     * onReturnHome. Loggato come BLOCK_TRIGGERED per analytics.
+     */
+    private fun showExtensionPrompt(pkg: String) {
+        val appLabel = getAppLabel(pkg)
+        // Cerchiamo una relation app→profilo per ereditare la palette
+        // dell'overlay config; in assenza usiamo DEFAULT.
+        val relation = profileApps.values.asSequence().flatten()
+            .firstOrNull { it.packageName == pkg }
+        val config = OverlayConfig.fromJsonString(relation?.overlayConfigJson)
+        val matchingProfile = profiles.firstOrNull { p ->
+            profileApps[p.id]?.any { it.packageName == pkg } == true
+        }
+        mainHandler.post {
+            overlayManager?.show(
+                packageName = pkg,
+                appLabel = appLabel,
+                profileTitle = matchingProfile?.title ?: "Koru",
+                reason = BlockReason.BYPASS_EXPIRED,
+                config = config,
+                profileEmoji = matchingProfile?.emoji,
+            )
+        }
+        try {
+            NativeDatabase.insertRestrictedAccessEvent(
+                applicationContext,
+                pkg,
+                eventType = 0, // TRIGGERED
+                restrictionType = 0, // APP
+                timestamp = System.currentTimeMillis(),
+            )
+        } catch (_: Exception) {}
     }
 
     /**

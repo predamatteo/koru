@@ -62,4 +62,9 @@ enum class BlockReason {
     WEBSITE_BLOCKED,
     FOCUS_MODE,
     USAGE_LIMIT,
+    /// Il bypass TTL-based (dopo duration picker) e' scaduto mentre l'utente
+    /// era ancora dentro l'app. L'overlay mostra un prompt "Time's up" con
+    /// opzioni di estensione (+1/5/15/30 min) o close app — ispirato al
+    /// modello InAppTimeReminder di minimalist_phone.
+    BYPASS_EXPIRED,
 }
