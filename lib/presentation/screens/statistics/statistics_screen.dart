@@ -167,9 +167,9 @@ class _ScreenTimeCard extends ConsumerWidget {
   }
 
   static String _formatMs(int ms) {
-    final s = ms ~/ 1000;
-    final h = s ~/ 3600;
-    final m = (s % 3600) ~/ 60;
+    final totalMinutes = (ms / 60000).round();
+    final h = totalMinutes ~/ 60;
+    final m = totalMinutes % 60;
     if (h == 0) return '${m}m';
     if (m == 0) return '${h}h';
     return '${h}h ${m}m';
@@ -329,9 +329,9 @@ class _AppUsageRow extends StatelessWidget {
   }
 
   static String _formatMs(int ms) {
-    final s = ms ~/ 1000;
-    final h = s ~/ 3600;
-    final m = (s % 3600) ~/ 60;
+    final totalMinutes = (ms / 60000).round();
+    final h = totalMinutes ~/ 60;
+    final m = totalMinutes % 60;
     if (h == 0) return '${m}m';
     if (m == 0) return '${h}h';
     return '${h}h ${m}m';

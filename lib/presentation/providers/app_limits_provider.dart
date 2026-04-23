@@ -40,11 +40,15 @@ final appLimitsProvider =
 
 /// Minuti di utilizzo oggi (foreground) per `packageName`. Ricomputato a
 /// ogni rebuild del provider — invalidare per refresh.
+///
+/// Arrotondamento: round al minuto più vicino invece di floor. Il floor
+/// sottrae fino a 59s per display, facendo sembrare l'utilizzo reale
+/// sistematicamente minore del vero.
 final usageTodayMinutesProvider =
     FutureProvider.family<int, String>((ref, packageName) async {
   final ms = await ref
       .read(platformChannelServiceProvider)
       .blocking
       .getUsageTodayMs(packageName);
-  return (ms / 60000).floor();
+  return (ms / 60000).round();
 });
