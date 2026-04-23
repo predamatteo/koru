@@ -16,6 +16,12 @@ const Set<String> kDefaultFocusWhitelist = {
   'com.oppo.launcher',
   'com.oneplus.launcher',
 
+  // Google App (Search/Assistant/Discover feed). Il Pixel Launcher lo invoca
+  // come parte della transizione home (Discover feed a sinistra, widget
+  // Search): se non whitelisted, uscire da un'app durante focus fa apparire
+  // brevemente "Google" in foreground → overlay "Don't open Google".
+  'com.google.android.googlequicksearchbox',
+
   // Telefono / dialer.
   'com.android.dialer',
   'com.google.android.dialer',
