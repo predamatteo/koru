@@ -183,8 +183,12 @@ class KoruAccessibilityService : AccessibilityService() {
         if (event == null) return
         val pkg = event.packageName?.toString() ?: return
 
-        // Content change dentro un browser → ricontrolla la URL bar.
-        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+        // Content change / scroll dentro un browser → ricontrolla la URL bar.
+        // TYPE_VIEW_SCROLLED copre il caso in cui l'utente scrolla nella pagina
+        // o cambia tab (ascent pattern); TYPE_WINDOW_CONTENT_CHANGED è l'evento
+        // più rumoroso — throttle serve a non saturare l'albero accessibility.
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
+            event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
             if (!BrowserConfigLoader.isBrowser(applicationContext, pkg)) return
             val now = System.currentTimeMillis()
             val samePkg = pkg == lastBrowserContentPkg
@@ -192,17 +196,20 @@ class KoruAccessibilityService : AccessibilityService() {
             lastBrowserContentCheckMs = now
             lastBrowserContentPkg = pkg
             if (now - lastProfileLoadTime > 10_000) loadProfiles()
-            Log.d(TAG, "BROWSER CONTENT: pkg=$pkg rulesCache=${websiteRulesCache.values.flatten().size} rules")
             val root = try { rootInActiveWindow } catch (_: Exception) { null }
             if (root == null) {
-                Log.w(TAG, "  → rootInActiveWindow null")
+                Log.w(TAG, "BROWSER ${event.eventType}: rootInActiveWindow null for $pkg")
             } else {
                 checkWebsiteBlocking(pkg, root)
             }
             return
         }
 
-        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        // TYPE_WINDOWS_CHANGED: cambio tab nel browser, nuova finestra, ecc.
+        // Trattiamolo come uno state change (ri-check app + website).
+        val isWindowChange = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+            event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED
+        if (!isWindowChange) return
 
         // Strict Mode check (blocks settings/recent/uninstall based on mask)
         if (StrictModeEnforcer.handleEvent(this, event)) return
