@@ -296,8 +296,17 @@ object BlockingMethodChannel {
             usm.queryEvents(queryStart, endMs)
         } catch (_: Exception) { return emptyMap() }
 
-        // Raccogli eventi rilevanti per package.
-        val byPkg = HashMap<String, ArrayList<LongArray>>()
+        // Raccogli TUTTI gli eventi rilevanti in un'unica lista globale
+        // ordinata per timestamp. Processare pkg-per-pkg in isolamento
+        // era sbagliato: Trade Republic e altre app con foreground service
+        // non emettono MOVE_TO_BACKGROUND quando esci, quindi le sessioni
+        // restavano "aperte" fino al windowClose gonfiando enormemente
+        // il tempo (es. 10min reali contati come 1h10min).
+        // Solo UNA app può essere in foreground su Android: quando un
+        // pkg diverso fa RESUMED, qualunque sessione aperta di altri pkg
+        // DEVE essere chiusa con quel timestamp.
+        data class Ev(val ts: Long, val type: Int, val pkg: String)
+        val all = ArrayList<Ev>()
         val ev = UsageEvents.Event()
         while (events.hasNextEvent()) {
             events.getNextEvent(ev)
@@ -307,67 +316,86 @@ object BlockingMethodChannel {
                 type != UsageEvents.Event.MOVE_TO_BACKGROUND &&
                 type != 23
             ) continue
-            byPkg.getOrPut(pkg) { ArrayList() }
-                .add(longArrayOf(ev.timeStamp, type.toLong()))
+            all.add(Ev(ev.timeStamp, type, pkg))
         }
+        // Sort globale — queryEvents non garantisce ordine su tutti gli OEM.
+        all.sortBy { it.ts }
 
         val totals = HashMap<String, Long>()
         val now = System.currentTimeMillis()
         val windowClose = minOf(endMs, now)
 
-        for ((pkg, list) in byPkg) {
-            // Sort esplicito per timestamp — queryEvents non lo garantisce
-            // su tutti i device (soprattutto dopo reboot o cambio clock).
-            list.sortBy { it[0] }
+        // Un solo pkg può essere in foreground: manteniamo state globale.
+        var currentPkg: String? = null
+        var currentStart = 0L
+        // Ultimo STOPPED visto per pkg, usato come fallback quando PAUSED
+        // manca proprio e un altro pkg non va in foreground subito dopo.
+        val lastStopped = HashMap<String, Long>()
 
-            var resumeTs = 0L
-            var pausedTs = 0L
-            var stoppedTs = 0L
-            var total = 0L
+        fun closeCurrent(closeTs: Long) {
+            val pkg = currentPkg ?: return
+            if (closeTs > currentStart) {
+                val span = clippedSpan(currentStart, closeTs, startMs, endMs)
+                if (span > 0) totals[pkg] = (totals[pkg] ?: 0L) + span
+            }
+            currentPkg = null
+            currentStart = 0L
+        }
 
-            for (item in list) {
-                val ts = item[0]
-                when (item[1].toInt()) {
-                    UsageEvents.Event.MOVE_TO_FOREGROUND -> {
-                        // Sessione precedente ancora aperta + STOPPED
-                        // intermedio → chiudi con STOPPED (PAUSED perso).
-                        if (resumeTs != 0L && stoppedTs > resumeTs) {
-                            total += clippedSpan(resumeTs, stoppedTs, startMs, endMs)
-                            resumeTs = 0L
-                        }
-                        // Accetta RESUMED solo se non c'è sessione aperta
-                        // o se il ts è più recente dell'ultimo PAUSED.
-                        // Senza questa guardia, due RESUMED consecutivi
-                        // (event loss) porterebbero a conteggi errati.
-                        if (resumeTs == 0L || ts > pausedTs) {
-                            resumeTs = ts
-                        }
+        for (e in all) {
+            when (e.type) {
+                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                    if (currentPkg != null && currentPkg != e.pkg) {
+                        // Altro pkg prende il foreground → chiudi la
+                        // sessione precedente. Se c'era uno STOPPED
+                        // intermedio per quel pkg, usa quello (sessione
+                        // veramente finita prima). Altrimenti usa il ts
+                        // del nuovo RESUMED come boundary.
+                        val prev = currentPkg!!
+                        val stopped = lastStopped[prev] ?: 0L
+                        val closeAt = if (stopped in (currentStart + 1)..e.ts) stopped else e.ts
+                        closeCurrent(closeAt)
+                    } else if (currentPkg == e.pkg) {
+                        // Stesso pkg con doppio RESUMED senza PAUSED:
+                        // Android ha perso l'evento intermedio. Manteniamo
+                        // la sessione aperta con il currentStart originale
+                        // (ignora il duplicato).
+                        continue
                     }
-                    UsageEvents.Event.MOVE_TO_BACKGROUND -> {
-                        if (resumeTs != 0L) {
-                            pausedTs = ts
-                        }
-                    }
-                    23 -> {
-                        // STOPPED solo tracciato: non chiude la sessione,
-                        // serve come fallback per il prossimo RESUMED.
-                        stoppedTs = ts
+                    if (currentPkg == null) {
+                        currentPkg = e.pkg
+                        currentStart = e.ts
                     }
                 }
-                // Sessione completa: accumula span clippato.
-                if (resumeTs != 0L && pausedTs != 0L) {
-                    total += clippedSpan(resumeTs, pausedTs, startMs, endMs)
-                    resumeTs = 0L
-                    pausedTs = 0L
+                UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                    if (currentPkg == e.pkg) {
+                        closeCurrent(e.ts)
+                    }
+                    // BG di un pkg diverso da quello corrente: ignorato.
+                    // Può succedere dopo reboot/clock-change o quando un
+                    // RESUMED è stato perso.
+                }
+                23 -> {
+                    // STOPPED: salvato come fallback. Non chiude mai la
+                    // sessione corrente direttamente perché spesso arriva
+                    // dell'Activity PRECEDENTE dopo un nuovo RESUMED
+                    // (Chrome tabs, splash, ads).
+                    lastStopped[e.pkg] = e.ts
                 }
             }
-            // Sessione ancora aperta al termine (utente sta usando l'app
-            // adesso, oppure evento PAUSED non è mai arrivato).
-            if (resumeTs != 0L) {
-                total += clippedSpan(resumeTs, windowClose, startMs, endMs)
-            }
+        }
 
-            if (total > 0) totals[pkg] = total
+        // Sessione ancora aperta alla fine: l'utente sta usando l'app
+        // adesso, oppure PAUSED è stato perso e nessun altro pkg ha preso
+        // il foreground. Se abbiamo uno STOPPED più recente del start
+        // (app davvero chiusa ma nessun MOVE_TO_BACKGROUND emesso), lo
+        // usiamo come boundary — è il caso di app con foreground service
+        // come Trade Republic, Spotify, navigazione GPS.
+        if (currentPkg != null) {
+            val pkg = currentPkg!!
+            val stopped = lastStopped[pkg] ?: 0L
+            val closeAt = if (stopped > currentStart) stopped else windowClose
+            closeCurrent(closeAt)
         }
 
         return totals
