@@ -63,6 +63,11 @@ class LockForegroundService : Service() {
         quickBlockManager.attachContext(applicationContext)
         overlayManager = OverlayManager(applicationContext)
         overlayManager?.onReturnHome = {
+            // Tap "Don't open" sull'overlay: l'utente vuole tornare alla
+            // home del DISPOSITIVO (launcher di default), non a Koru.
+            // performGoHome qui usa Intent(ACTION_MAIN, CATEGORY_HOME)
+            // che il sistema dispatcha al default launcher — comportamento
+            // corretto: se Koru non e' default, va sul launcher di stock.
             performGoHome()
             overlayManager?.dismiss()
         }
