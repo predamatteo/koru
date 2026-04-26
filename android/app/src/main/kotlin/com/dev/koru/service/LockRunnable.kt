@@ -9,9 +9,24 @@ import com.dev.koru.db.NativeInterval
 import com.dev.koru.db.NativeProfile
 import java.util.Calendar
 
+/**
+ * Polling-based blocking engine eseguito da [LockForegroundService] come
+ * BACKUP indipendente dall'AccessibilityService.
+ *
+ * Architettura defense-in-depth: se [KoruAccessibilityService.instance] è
+ * vivo, lui fa tutto (event-driven, latenza ~0ms) e questo loop si tira da
+ * parte per non duplicare overlay/HOME. Se invece l'accessibility è morta
+ * (killata da OEM aggressive battery management, crash, disabilitazione
+ * manuale), questo loop continua a far rispettare profili E daily limits
+ * con polling 300ms — l'utente vede comunque il blocco.
+ *
+ * Senza questo backup il blocking è single-point-of-failure: una sola
+ * brick run del servizio accessibility = limiti completamente ignorati.
+ */
 class LockRunnable(
     private val context: Context,
     private val onBlock: (String, String, NativeProfile, NativeAppRelation?) -> Unit,
+    private val onLimitBlock: (pkg: String, appLabel: String, limitMinutes: Int, todayMs: Long) -> Unit,
     private val onUnblock: () -> Unit,
 ) : Runnable {
 
@@ -98,7 +113,9 @@ class LockRunnable(
     }
 
     private fun checkAndBlock() {
-        if (profiles.isEmpty()) return
+        // NOTE: rimosso il vecchio early-return su `profiles.isEmpty()`:
+        // i daily limits sono globali, non profile-scoped, quindi vanno
+        // controllati anche se l'utente ha 0 profili abilitati.
 
         val foreground = ForegroundDetector.detect(context) ?: run {
             if (iterationCount % 100 == 0) Log.w(TAG, "ForegroundDetector returned null")
@@ -114,8 +131,28 @@ class LockRunnable(
             return
         }
 
-        if (iterationCount % 33 == 0) Log.d(TAG, "Foreground: $pkg")
+        // BACKUP-ONLY: se l'AccessibilityService è vivo, lui è il path
+        // primario (event-driven, niente polling lag). Ci tiriamo da parte
+        // per evitare doppio overlay e doppia HOME. Manteniamo lo state
+        // pulito così, se in futuro accessibility cade, ripartiamo netti.
+        if (KoruAccessibilityService.instance != null) {
+            currentlyBlockingPackage = null
+            return
+        }
 
+        if (iterationCount % 33 == 0) Log.d(TAG, "[BACKUP] Foreground: $pkg")
+
+        // Bypass attivo (utente ha scelto "Open anyway" con TTL): rispetta
+        // il bypass come fa l'AccessibilityService, senza rifare HOME.
+        if (OverlayManager.isBypassed(pkg)) {
+            if (currentlyBlockingPackage != null) {
+                currentlyBlockingPackage = null
+                onUnblock()
+            }
+            return
+        }
+
+        // 1) Profile-based blocking (logica originale).
         for (profile in profiles) {
             if (!isProfileActiveNow(profile)) continue
 
@@ -123,7 +160,7 @@ class LockRunnable(
             if (currentlyBlockingPackage != pkg) {
                 currentlyBlockingPackage = pkg
                 val appLabel = getAppLabel(pkg)
-                Log.w(TAG, ">>> BLOCKING $pkg ($appLabel) by profile '${profile.title}'")
+                Log.w(TAG, ">>> [BACKUP] BLOCKING $pkg ($appLabel) by profile '${profile.title}'")
                 onBlock(pkg, appLabel, profile, relation)
                 try {
                     NativeDatabase.insertBlockSession(context, pkg, System.currentTimeMillis())
@@ -132,8 +169,33 @@ class LockRunnable(
             return
         }
 
+        // 2) Daily usage limit (backup di KoruAccessibilityService.checkAppBlocking
+        //    daily-limit branch). Stesso store, stesso UsageCounter.
+        val limitMinutes = AppUsageLimitsStore.limitMinutesFor(context, pkg)
+        if (limitMinutes > 0) {
+            val todayMs = UsageCounter.todayForegroundMs(context, pkg)
+            if (todayMs >= limitMinutes * 60_000L) {
+                if (currentlyBlockingPackage != pkg) {
+                    currentlyBlockingPackage = pkg
+                    val appLabel = getAppLabel(pkg)
+                    Log.w(TAG, ">>> [BACKUP] BLOCKING $pkg (daily limit ${todayMs / 60_000}/${limitMinutes}min)")
+                    onLimitBlock(pkg, appLabel, limitMinutes, todayMs)
+                    try {
+                        NativeDatabase.insertRestrictedAccessEvent(
+                            context,
+                            pkg,
+                            eventType = 0, // TRIGGERED
+                            restrictionType = 3, // USAGE_LIMIT
+                            timestamp = System.currentTimeMillis(),
+                        )
+                    } catch (_: Exception) {}
+                }
+                return
+            }
+        }
+
         if (currentlyBlockingPackage != null) {
-            Log.d(TAG, "<<< UNBLOCKING (switched to $pkg)")
+            Log.d(TAG, "<<< [BACKUP] UNBLOCKING (switched to $pkg)")
             currentlyBlockingPackage = null
             onUnblock()
         }

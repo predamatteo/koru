@@ -19,6 +19,8 @@ import com.dev.koru.channels.ProfileMethodChannel
 import com.dev.koru.channels.ServiceEventChannel
 import com.dev.koru.db.NativeAppRelation
 import com.dev.koru.db.NativeProfile
+import com.dev.koru.overlay.BlockReason
+import com.dev.koru.overlay.OverlayConfig
 import org.json.JSONObject
 
 class LockForegroundService : Service() {
@@ -135,13 +137,39 @@ class LockForegroundService : Service() {
 
         lockRunnable = LockRunnable(
             context = applicationContext,
-            onBlock = { packageName, appLabel, profile, _ ->
-                Log.d(TAG, "Blocking $packageName (${profile.title})")
-                overlayManager?.show(packageName, appLabel, profile.title)
+            onBlock = { packageName, appLabel, profile, relation ->
+                Log.d(TAG, "[BACKUP] Blocking $packageName (${profile.title})")
+                val config = OverlayConfig.fromJsonString(relation?.overlayConfigJson)
+                overlayManager?.show(
+                    packageName = packageName,
+                    appLabel = appLabel,
+                    profileTitle = profile.title,
+                    reason = BlockReason.APP_BLOCKED,
+                    config = config,
+                    profileEmoji = profile.emoji,
+                )
+                // Forziamo HOME anche dal foreground service: se siamo qui
+                // l'AccessibilityService è morto, quindi non ci possiamo
+                // più affidare al broadcast ACTION_GO_HOME (cadrebbe nel
+                // vuoto). Il launch HOME via Intent funziona da qualunque
+                // processo / device, indipendente da accessibility.
+                performGoHome()
                 sendBlockingEvent(true, packageName, profile)
             },
+            onLimitBlock = { packageName, appLabel, limitMinutes, todayMs ->
+                Log.d(TAG, "[BACKUP] Daily limit block $packageName (${todayMs / 60_000}/${limitMinutes}min)")
+                overlayManager?.show(
+                    packageName = packageName,
+                    appLabel = appLabel,
+                    profileTitle = "Daily limit",
+                    reason = BlockReason.USAGE_LIMIT,
+                    config = OverlayConfig.DEFAULT,
+                    profileEmoji = "⏳", // ⏳
+                )
+                performGoHome()
+            },
             onUnblock = {
-                Log.d(TAG, "Unblocking")
+                Log.d(TAG, "[BACKUP] Unblocking")
                 overlayManager?.dismiss()
                 sendBlockingEvent(false, "", null)
             },
@@ -176,8 +204,37 @@ class LockForegroundService : Service() {
         lockRunnable?.reloadProfiles()
     }
 
+    /**
+     * Manda l'utente alla home screen senza dipendere dall'AccessibilityService.
+     *
+     * Path primario: `Intent(ACTION_MAIN, CATEGORY_HOME)` con `NEW_TASK` →
+     * il sistema sa risolvere questo intent verso il default launcher
+     * (o il chooser se non impostato). Funziona da qualunque processo,
+     * non richiede privilegi speciali, indipendente dall'OEM.
+     *
+     * Fallback: il vecchio broadcast a `ACTION_GO_HOME` che l'AccessibilityService
+     * captura per chiamare `GLOBAL_ACTION_HOME`. Se il path primario fallisce
+     * per qualunque motivo (raro ma possibile su ROM custom), ci aggrappiamo
+     * a quello.
+     *
+     * Perché questa modifica: se l'utente è qui via foreground service
+     * di backup, è proprio perché l'AccessibilityService NON sta funzionando;
+     * il broadcast cadrebbe nel vuoto e l'utente resterebbe dentro l'app
+     * bloccata anche con l'overlay sopra.
+     */
     private fun performGoHome() {
-        sendBroadcast(Intent("com.dev.koru.ACTION_GO_HOME").apply { setPackage(packageName) })
+        try {
+            val home = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            startActivity(home)
+        } catch (e: Exception) {
+            Log.w(TAG, "Direct HOME intent failed, falling back to broadcast", e)
+            sendBroadcast(
+                Intent("com.dev.koru.ACTION_GO_HOME").apply { setPackage(packageName) },
+            )
+        }
     }
 
     private fun sendServiceStateEvent(running: Boolean) {
