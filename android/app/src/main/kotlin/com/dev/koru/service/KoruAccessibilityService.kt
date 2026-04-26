@@ -67,49 +67,55 @@ class KoruAccessibilityService : AccessibilityService() {
         fun triggerReload() { instance?.forceReloadProfiles() }
     }
 
-    /// Riporta l'utente fuori dall'app bloccata facendolo tornare alla
-    /// home del DISPOSITIVO (launcher di default del sistema).
+    /// Riporta l'utente fuori dall'app bloccata simulando il tasto BACK.
     ///
-    /// Comportamento intenzionale: NON aprire Koru. L'utente ha aperto
-    /// un'app bloccata, vuole essere riportato dove era prima — la home
-    /// di sistema. Se Koru e' il default launcher, e' Koru. Se non lo
-    /// e', e' il launcher di stock. In nessun caso forziamo il foreground
-    /// di MainActivity.
+    /// Perche' BACK e non HOME: vogliamo riportare l'utente alla pagina
+    /// del launcher dove si trovava l'icona dell'app appena aperta. HOME
+    /// porta sempre alla pagina principale del launcher, BACK invece
+    /// chiude la task dell'app e ripristina lo stato precedente — se
+    /// l'utente ha aperto l'app dalla pagina 3 del launcher, BACK lo
+    /// riporta lì. E' il comportamento "naturale" di Android quando
+    /// l'apertura dell'app e' fresh.
     ///
-    /// `performGlobalAction(GLOBAL_ACTION_HOME)` e' un'azione disponibile
-    /// agli AccessibilityService: il sistema dispatcha il HOME intent al
-    /// default launcher, indipendentemente dal processo chiamante.
+    /// Caveat: se l'app ha gia' uno stack interno (es. l'utente la stava
+    /// usando prima e l'aveva mandata in background), un singolo BACK
+    /// non chiude la task — torna all'activity precedente dell'app.
+    /// Pero' sopra l'overlay resta montato e al prossimo
+    /// TYPE_WINDOW_STATE_CHANGED rifacciamo BACK: nel giro di 1-2 step
+    /// l'utente esce dall'app e torna al launcher.
     ///
-    /// Manteniamo la `suppressLauncherNavigationUntilMs`: se Koru E' il
-    /// default launcher, MainActivity ricevera' un HOME intent → senza
-    /// soppressione `onNewIntent` chiamerebbe `goToLauncher()` resettando
-    /// GoRouter alla pagina launcher base, facendo perdere all'utente
-    /// l'eventuale sub-pagina del launcher su cui si trovava (es. app
-    /// drawer). Con la soppressione, Flutter resta sulla pagina corrente.
+    /// Fallback HOME: se `GLOBAL_ACTION_BACK` non e' disponibile o l'app
+    /// blocca BACK (raro, ma possibile con app full-screen che intercettano
+    /// il pulsante), Intent HOME standard al default launcher. NON apriamo
+    /// MainActivity — Koru non viene forzato in foreground.
+    ///
+    /// Manteniamo `suppressLauncherNavigationUntilMs`: nel fallback HOME,
+    /// se Koru E' il default launcher, MainActivity ricevera' un HOME
+    /// intent → senza soppressione `onNewIntent` chiamerebbe
+    /// `goToLauncher()` resettando GoRouter alla pagina launcher base.
     fun performGoHomeForBlock() {
         val until = System.currentTimeMillis() + 1_500L
         suppressLauncherNavigationUntilMs = until
-        Log.d(TAG, "GoHomeForBlock: suppressUntilMs=$until")
-        val ok = try {
-            performGlobalAction(GLOBAL_ACTION_HOME)
+        Log.d(TAG, "GoHomeForBlock: BACK + suppressUntilMs=$until")
+        val backOk = try {
+            performGlobalAction(GLOBAL_ACTION_BACK)
         } catch (e: Exception) {
-            Log.w(TAG, "GLOBAL_ACTION_HOME threw, falling back to Intent", e)
+            Log.w(TAG, "GLOBAL_ACTION_BACK threw, will fallback to HOME", e)
             false
         }
-        if (!ok) {
-            // Fallback raro: GLOBAL_ACTION_HOME non e' disponibile (servizio
-            // non ancora connesso, oppure throw). Usiamo l'Intent HOME
-            // standard che il sistema instrada al default launcher — stessa
-            // semantica, niente forzature su Koru.
-            try {
-                val home = Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_HOME)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                startActivity(home)
-            } catch (e: Exception) {
-                Log.e(TAG, "HOME intent fallback failed", e)
+        if (backOk) return
+
+        // Fallback: HOME standard via Intent. Va al default launcher senza
+        // forzare Koru.
+        Log.w(TAG, "BACK refused, falling back to HOME intent")
+        try {
+            val home = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
+            startActivity(home)
+        } catch (e: Exception) {
+            Log.e(TAG, "HOME intent fallback failed", e)
         }
     }
 
