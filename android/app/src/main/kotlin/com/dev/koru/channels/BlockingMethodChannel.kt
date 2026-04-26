@@ -1,7 +1,6 @@
 package com.dev.koru.channels
 
 import android.app.Activity
-import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
@@ -15,6 +14,7 @@ import android.os.Build
 import com.dev.koru.notification.NotificationFilterStore
 import com.dev.koru.service.AppUsageLimitsStore
 import com.dev.koru.service.LockForegroundService
+import com.dev.koru.service.UsageCounter
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -169,7 +169,7 @@ object BlockingMethodChannel {
                     "getUsageTodayMs" -> {
                         val pkg = call.argument<String>("packageName")
                             ?: return@setMethodCallHandler result.error("MISSING_ARG", "packageName required", null)
-                        result.success(getTodayForegroundMs(activity, pkg))
+                        result.success(UsageCounter.todayForegroundMs(activity.applicationContext, pkg))
                     }
                     "getSilencedPackages" -> {
                         result.success(
@@ -220,7 +220,7 @@ object BlockingMethodChannel {
     }
 
     private fun getUsageStats(context: Context, startMs: Long, endMs: Long): List<Map<String, Any>> {
-        val totals = computeForegroundMsPerPackage(context, startMs, endMs)
+        val totals = UsageCounter.foregroundMsPerPackage(context, startMs, endMs)
         val lastUsed = queryLastTimeUsedPerPackage(context, startMs, endMs)
         return totals.entries
             .filter { it.value > 0 }
@@ -231,185 +231,6 @@ object BlockingMethodChannel {
                     "lastTimeUsed" to (lastUsed[pkg] ?: 0L),
                 )
             }
-    }
-
-    /// Tempo oggi in foreground per `pkg` (dalla mezzanotte locale).
-    private fun getTodayForegroundMs(context: Context, pkg: String): Long {
-        val cal = java.util.Calendar.getInstance().apply {
-            set(java.util.Calendar.HOUR_OF_DAY, 0)
-            set(java.util.Calendar.MINUTE, 0)
-            set(java.util.Calendar.SECOND, 0)
-            set(java.util.Calendar.MILLISECOND, 0)
-        }
-        val from = cal.timeInMillis
-        val now = System.currentTimeMillis()
-        return try {
-            computeForegroundMsPerPackage(context, from, now)[pkg] ?: 0L
-        } catch (_: Exception) { 0L }
-    }
-
-    /// Calcola il tempo in foreground (ms) per ogni package nella finestra
-    /// [startMs, endMs] usando `queryEvents` e una state machine
-    /// RESUMED (1) / PAUSED (2) / STOPPED (23).
-    ///
-    /// Algoritmo portato da minimalist_phone (decompiled: a.java:323-397)
-    /// dopo aver osservato sotto-conteggi fino a ~30 minuti con il
-    /// pairing naive RESUMED→(PAUSED|STOPPED):
-    ///
-    /// 1. **Sort per-pkg per timestamp**: `queryEvents()` NON garantisce
-    ///    l'ordine stretto dei ts sugli OEM customizzati (MIUI, ColorOS,
-    ///    One UI). Eventi fuori ordine causavano pairing sbagliato e
-    ///    sessioni perse. Minimalist_phone risolve raggruppando per
-    ///    pkg e sortando prima del pairing.
-    ///
-    /// 2. **STOPPED non chiude la sessione**: nei casi Activity multi-step
-    ///    (Chrome tabs, app con splash, giochi con ads) STOPPED può
-    ///    arrivare dell'Activity PRECEDENTE dopo che una nuova Activity
-    ///    dello stesso pkg è già RESUMED. Se lo uso per chiudere sessioni,
-    ///    conto tempo sbagliato o pairing sbagliato. Invece lo salvo come
-    ///    fallback per chiudere sessioni dove PAUSED manca proprio.
-    ///
-    /// 3. **Nuovo RESUMED con sessione aperta**: chiude con lo STOPPED
-    ///    intermedio (se presente), NON col ts del nuovo RESUMED. Evita
-    ///    di contare come "usage" il gap tra due RESUMED consecutivi
-    ///    quando Android perde il PAUSED intermedio.
-    ///
-    /// Perché non usare `queryUsageStats().totalTimeInForeground`:
-    /// - Instagram e app "social" triggerano overlay (PiP, notifiche,
-    ///   stories) che NON sempre generano il MOVE_TO_BACKGROUND event;
-    ///   il counter interno di Android si gonfia e non torna mai indietro.
-    /// - `queryUsageStats(INTERVAL_DAILY)` può restituire più bucket per
-    ///   lo stesso giorno (dopo reboot, cambio timezone), double-count.
-    /// - `totalTimeInForeground` riflette il bucket intero, non la finestra.
-    private fun computeForegroundMsPerPackage(
-        context: Context,
-        startMs: Long,
-        endMs: Long,
-    ): Map<String, Long> {
-        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE)
-            as? UsageStatsManager ?: return emptyMap()
-        // Query da 24h prima di startMs per catturare sessioni ancora aperte
-        // all'inizio della finestra (app aperta dalle 22:00 di ieri chiusa
-        // alle 00:30 di oggi). Lo span viene clippato a [startMs, endMs].
-        val queryStart = startMs - 24L * 60 * 60 * 1000
-        val events = try {
-            usm.queryEvents(queryStart, endMs)
-        } catch (_: Exception) { return emptyMap() }
-
-        // Raccogli TUTTI gli eventi rilevanti in un'unica lista globale
-        // ordinata per timestamp. Processare pkg-per-pkg in isolamento
-        // era sbagliato: Trade Republic e altre app con foreground service
-        // non emettono MOVE_TO_BACKGROUND quando esci, quindi le sessioni
-        // restavano "aperte" fino al windowClose gonfiando enormemente
-        // il tempo (es. 10min reali contati come 1h10min).
-        // Solo UNA app può essere in foreground su Android: quando un
-        // pkg diverso fa RESUMED, qualunque sessione aperta di altri pkg
-        // DEVE essere chiusa con quel timestamp.
-        data class Ev(val ts: Long, val type: Int, val pkg: String)
-        val all = ArrayList<Ev>()
-        val ev = UsageEvents.Event()
-        while (events.hasNextEvent()) {
-            events.getNextEvent(ev)
-            val pkg = ev.packageName ?: continue
-            val type = ev.eventType
-            if (type != UsageEvents.Event.MOVE_TO_FOREGROUND &&
-                type != UsageEvents.Event.MOVE_TO_BACKGROUND &&
-                type != 23
-            ) continue
-            all.add(Ev(ev.timeStamp, type, pkg))
-        }
-        // Sort globale — queryEvents non garantisce ordine su tutti gli OEM.
-        all.sortBy { it.ts }
-
-        val totals = HashMap<String, Long>()
-        val now = System.currentTimeMillis()
-        val windowClose = minOf(endMs, now)
-
-        // Un solo pkg può essere in foreground: manteniamo state globale.
-        var currentPkg: String? = null
-        var currentStart = 0L
-        // Ultimo STOPPED visto per pkg, usato come fallback quando PAUSED
-        // manca proprio e un altro pkg non va in foreground subito dopo.
-        val lastStopped = HashMap<String, Long>()
-
-        fun closeCurrent(closeTs: Long) {
-            val pkg = currentPkg ?: return
-            if (closeTs > currentStart) {
-                val span = clippedSpan(currentStart, closeTs, startMs, endMs)
-                if (span > 0) totals[pkg] = (totals[pkg] ?: 0L) + span
-            }
-            currentPkg = null
-            currentStart = 0L
-        }
-
-        for (e in all) {
-            when (e.type) {
-                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
-                    if (currentPkg != null && currentPkg != e.pkg) {
-                        // Altro pkg prende il foreground → chiudi la
-                        // sessione precedente. Se c'era uno STOPPED
-                        // intermedio per quel pkg, usa quello (sessione
-                        // veramente finita prima). Altrimenti usa il ts
-                        // del nuovo RESUMED come boundary.
-                        val prev = currentPkg!!
-                        val stopped = lastStopped[prev] ?: 0L
-                        val closeAt = if (stopped in (currentStart + 1)..e.ts) stopped else e.ts
-                        closeCurrent(closeAt)
-                    } else if (currentPkg == e.pkg) {
-                        // Stesso pkg con doppio RESUMED senza PAUSED:
-                        // Android ha perso l'evento intermedio. Manteniamo
-                        // la sessione aperta con il currentStart originale
-                        // (ignora il duplicato).
-                        continue
-                    }
-                    if (currentPkg == null) {
-                        currentPkg = e.pkg
-                        currentStart = e.ts
-                    }
-                }
-                UsageEvents.Event.MOVE_TO_BACKGROUND -> {
-                    if (currentPkg == e.pkg) {
-                        closeCurrent(e.ts)
-                    }
-                    // BG di un pkg diverso da quello corrente: ignorato.
-                    // Può succedere dopo reboot/clock-change o quando un
-                    // RESUMED è stato perso.
-                }
-                23 -> {
-                    // STOPPED: salvato come fallback. Non chiude mai la
-                    // sessione corrente direttamente perché spesso arriva
-                    // dell'Activity PRECEDENTE dopo un nuovo RESUMED
-                    // (Chrome tabs, splash, ads).
-                    lastStopped[e.pkg] = e.ts
-                }
-            }
-        }
-
-        // Sessione ancora aperta alla fine: l'utente sta usando l'app
-        // adesso, oppure PAUSED è stato perso e nessun altro pkg ha preso
-        // il foreground. Se abbiamo uno STOPPED più recente del start
-        // (app davvero chiusa ma nessun MOVE_TO_BACKGROUND emesso), lo
-        // usiamo come boundary — è il caso di app con foreground service
-        // come Trade Republic, Spotify, navigazione GPS.
-        if (currentPkg != null) {
-            val pkg = currentPkg!!
-            val stopped = lastStopped[pkg] ?: 0L
-            val closeAt = if (stopped > currentStart) stopped else windowClose
-            closeCurrent(closeAt)
-        }
-
-        return totals
-    }
-
-    private fun clippedSpan(
-        from: Long,
-        to: Long,
-        windowStart: Long,
-        windowEnd: Long,
-    ): Long {
-        val s = maxOf(from, windowStart)
-        val e = minOf(to, windowEnd)
-        return (e - s).coerceAtLeast(0)
     }
 
     /// Ultima volta in cui ciascun package è stato visto come evento

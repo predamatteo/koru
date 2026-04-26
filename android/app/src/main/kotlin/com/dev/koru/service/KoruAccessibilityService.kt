@@ -95,6 +95,15 @@ class KoruAccessibilityService : AccessibilityService() {
     /// checkAppBlocking non viene mai richiamato spontaneamente).
     private val pendingBypassExpiryChecks = mutableMapOf<String, Runnable>()
 
+    /// Runnable schedulati a tempo di scadenza del daily limit, uno per
+    /// ogni package con limite attivo non ancora superato. Servono a
+    /// bloccare l'app quando il cap viene raggiunto MENTRE l'utente è
+    /// ancora dentro: TYPE_WINDOW_STATE_CHANGED scatta solo all'apertura,
+    /// quindi senza questo timer un utente che entra a 28' e resta
+    /// continua ad usare l'app oltre i 30' senza che nulla lo fermi
+    /// (bug osservato su Instagram).
+    private val pendingLimitChecks = mutableMapOf<String, Runnable>()
+
     /// Throttle per TYPE_WINDOW_CONTENT_CHANGED nei browser: limita la lettura
     /// della URL bar (operazione relativamente costosa) a max 2/s.
     private var lastBrowserContentCheckMs = 0L
@@ -288,6 +297,54 @@ class KoruAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * Pianifica un re-check del daily limit per [pkg] fra [remainingMs] ms.
+     *
+     * Risolve il caso "utente già dentro quando il cap viene toccato":
+     * gli AccessibilityEvent TYPE_WINDOW_STATE_CHANGED scattano solo
+     * all'apertura dell'app, quindi senza un timer un utente che entra
+     * a 28' (cap=30') resta dentro per ore senza che il blocco si
+     * riattivi mai. Il runnable rilancia [checkAppBlocking] che, se nel
+     * frattempo `todayMs >= limitMs`, mostra l'overlay USAGE_LIMIT e fa
+     * HOME. Se l'utente è uscito prima, no-op (rientrando scatterà
+     * spontaneamente checkAppBlocking).
+     *
+     * Stesso pattern di [scheduleBypassExpiryCheck].
+     */
+    private fun scheduleLimitCheck(pkg: String, remainingMs: Long) {
+        pendingLimitChecks.remove(pkg)?.let { mainHandler.removeCallbacks(it) }
+        if (remainingMs <= 0) {
+            // Limite gia` raggiunto teoricamente: il caller (checkAppBlocking)
+            // avrebbe dovuto bloccare. Difensivo, evitiamo postDelayed con 0.
+            return
+        }
+
+        val r = object : Runnable {
+            override fun run() {
+                pendingLimitChecks.remove(pkg)
+                if (lastForegroundPackage != pkg) {
+                    Log.d(TAG, "Limit re-check for $pkg: user not there anymore (foreground=$lastForegroundPackage)")
+                    return
+                }
+                if (OverlayManager.isBypassed(pkg)) {
+                    Log.d(TAG, "Limit re-check for $pkg: bypass active, skipping")
+                    return
+                }
+                Log.i(TAG, "Limit timer fired for $pkg, re-evaluating")
+                checkAppBlocking(pkg)
+            }
+        }
+        pendingLimitChecks[pkg] = r
+        // +1s di grace: queryEvents potrebbe non aver ancora aggregato
+        // la sessione corrente fino al ts esatto del cap. Meglio
+        // sforare di 1s che fare un loop di re-schedule.
+        mainHandler.postDelayed(r, remainingMs + 1_000L)
+    }
+
+    private fun cancelLimitCheck(pkg: String) {
+        pendingLimitChecks.remove(pkg)?.let { mainHandler.removeCallbacks(it) }
+    }
+
+    /**
      * Mostra l'overlay di estensione (time-up prompt) sopra l'app ancora
      * in foreground. A differenza del blocco "entry", NON facciamo HOME:
      * l'overlay vive sopra l'app; se l'utente sceglie un'estensione,
@@ -416,11 +473,13 @@ class KoruAccessibilityService : AccessibilityService() {
         // superato i minuti concessi per questo pkg oggi → overlay.
         val limitMinutes = AppUsageLimitsStore.limitMinutesFor(applicationContext, packageName)
         if (limitMinutes > 0) {
-            val todayMs = getTodayForegroundMs(packageName)
-            if (todayMs >= limitMinutes * 60_000L) {
+            val todayMs = UsageCounter.todayForegroundMs(applicationContext, packageName)
+            val limitMs = limitMinutes * 60_000L
+            if (todayMs >= limitMs) {
                 Log.w(TAG, ">>> BLOCKING APP (daily limit): $packageName " +
                     "${todayMs / 60_000}min used, cap=${limitMinutes}min")
                 currentlyBlockingPackage = packageName
+                cancelLimitCheck(packageName)
                 val appLabel = getAppLabel(packageName)
                 mainHandler.post {
                     overlayManager?.show(
@@ -444,6 +503,15 @@ class KoruAccessibilityService : AccessibilityService() {
                     )
                 } catch (_: Exception) {}
                 return true
+            } else {
+                // Cap non ancora raggiunto: pianifica un re-check fra
+                // (limitMs - todayMs) ms così se l'utente resta dentro
+                // l'app il blocco scatta nel momento in cui il cap viene
+                // toccato, non solo al prossimo cambio di window state.
+                // Senza questo timer, un utente che entra a 28' e resta
+                // dentro continua a usare l'app oltre i 30' senza che
+                // nulla lo fermi (bug osservato su Instagram).
+                scheduleLimitCheck(packageName, limitMs - todayMs)
             }
         }
 
@@ -454,28 +522,6 @@ class KoruAccessibilityService : AccessibilityService() {
             sendBlockingStateEvent(false, "", null)
         }
         return false
-    }
-
-    /// Tempo trascorso oggi (dall'inizio del giorno locale) in foreground
-    /// per `packageName`, in ms. Usa UsageStatsManager.queryUsageStats.
-    private fun getTodayForegroundMs(packageName: String): Long {
-        val usm = applicationContext
-            .getSystemService(Context.USAGE_STATS_SERVICE) as? android.app.usage.UsageStatsManager
-            ?: return 0L
-        val cal = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-        val from = cal.timeInMillis
-        val now = System.currentTimeMillis()
-        val stats = try {
-            usm.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY, from, now)
-        } catch (_: Exception) { return 0L }
-        return stats
-            .filter { it.packageName == packageName }
-            .sumOf { it.totalTimeInForeground }
     }
 
     private fun checkInAppContentBlocking(
@@ -737,6 +783,8 @@ class KoruAccessibilityService : AccessibilityService() {
         actionReceiver = null
         pendingBypassExpiryChecks.values.forEach { mainHandler.removeCallbacks(it) }
         pendingBypassExpiryChecks.clear()
+        pendingLimitChecks.values.forEach { mainHandler.removeCallbacks(it) }
+        pendingLimitChecks.clear()
         overlayManager?.destroy()
         overlayManager = null
         NativeDatabase.close()
