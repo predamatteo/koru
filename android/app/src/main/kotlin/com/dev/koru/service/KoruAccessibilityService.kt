@@ -164,17 +164,35 @@ class KoruAccessibilityService : AccessibilityService() {
                 // resta sull'app bloccata e il check sarebbe sempre true (era il
                 // bug "Open anyway non rilancia mai l'app").
                 val wasEntryBlock = overlayManager?.currentReason() != BlockReason.BYPASS_EXPIRED
-                dismiss()
                 if (wasEntryBlock) {
+                    // CRITICO: startActivity DEVE essere chiamato PRIMA del dismiss.
+                    // Su Android 12+ i Background Activity Launch sono ristretti:
+                    // un AccessibilityService che NON è in stato "user-interacting"
+                    // viene bloccato dal sistema. Mentre l'overlay è ancora montato
+                    // e l'utente ha appena tappato un button al suo interno, abbiamo
+                    // la "interaction grace" che autorizza la launch. Se dismissiamo
+                    // l'overlay PRIMA, la grace decade e startActivity fallisce
+                    // silenziosamente (sintomo: app non si apre dopo "Open anyway").
                     val intent = packageManager.getLaunchIntentForPackage(pkg)
-                    if (intent != null) {
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    if (intent == null) {
+                        Log.w(TAG, "No launch intent for $pkg — cannot relaunch after bypass")
+                    } else {
+                        intent.addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,
+                        )
                         try {
                             startActivity(intent)
+                            Log.i(TAG, "Launched $pkg after bypass")
                         } catch (e: Exception) {
-                            Log.w(TAG, "Failed to launch $pkg: ${e.message}")
+                            Log.w(TAG, "Failed to launch $pkg: ${e.message}", e)
                         }
                     }
+                    // Dismiss differito: lasciamo che la launch venga registrata
+                    // dal system_server prima di smontare l'overlay.
+                    mainHandler.postDelayed({ dismiss() }, 250L)
+                } else {
+                    dismiss()
                 }
             }
         }
