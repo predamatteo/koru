@@ -227,6 +227,11 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
 
     fun isVisible(): Boolean = isShowing
 
+    /// Reason dell'overlay attualmente mostrato (o l'ultimo se gia` dismissato).
+    /// Usato dal caller per distinguere il flow "entry block" (abbiamo fatto HOME,
+    /// app non in foreground) dal flow BYPASS_EXPIRED (app ancora in foreground).
+    fun currentReason(): BlockReason = _reason.value
+
     fun destroy() {
         dismiss()
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED

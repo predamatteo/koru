@@ -68,6 +68,12 @@ class KoruAccessibilityService : AccessibilityService() {
     private var lastForegroundPackage: String? = null
 
     private val skipPackages = setOf(
+        // "android" è il pkg del framework: viene attribuito a TYPE_WINDOWS_CHANGED
+        // emessi quando aggiungiamo il nostro overlay via WindowManager.addView.
+        // Senza questo skip, checkAppBlocking("android") cade nel fall-through e
+        // dismissa l'overlay che abbiamo appena mostrato (overlay flash al
+        // primo blocco di un'app a freddo).
+        "android",
         "com.android.systemui",
         "com.android.launcher",
         "com.android.launcher3",
@@ -146,13 +152,20 @@ class KoruAccessibilityService : AccessibilityService() {
                     )
                 } catch (_: Exception) {}
                 scheduleBypassExpiryCheck(pkg, durationMs)
+                // Discriminator: nel flow APP_BLOCKED/USAGE_LIMIT/FOCUS_MODE/...
+                // abbiamo fatto performGlobalAction(GLOBAL_ACTION_HOME), quindi
+                // l'app non è più in foreground e va rilanciata via startActivity.
+                // Nel flow BYPASS_EXPIRED invece showExtensionPrompt non fa HOME:
+                // l'app è ancora in foreground, basta dismissare l'overlay (un
+                // restart via Intent farebbe un fastidioso restart dell'activity).
+                //
+                // NB: NON usiamo `lastForegroundPackage == pkg` come signal — il
+                // launcher è in skipPackages, quindi dopo HOME `lastForegroundPackage`
+                // resta sull'app bloccata e il check sarebbe sempre true (era il
+                // bug "Open anyway non rilancia mai l'app").
+                val wasEntryBlock = overlayManager?.currentReason() != BlockReason.BYPASS_EXPIRED
                 dismiss()
-                // Se siamo nel flusso di estensione (bypass scaduto + utente
-                // ancora dentro), l'app è già in foreground: basta dismissare
-                // l'overlay. Lanciarla di nuovo via startActivity farebbe un
-                // restart di activity fastidioso.
-                val alreadyInForeground = lastForegroundPackage == pkg
-                if (!alreadyInForeground) {
+                if (wasEntryBlock) {
                     val intent = packageManager.getLaunchIntentForPackage(pkg)
                     if (intent != null) {
                         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
