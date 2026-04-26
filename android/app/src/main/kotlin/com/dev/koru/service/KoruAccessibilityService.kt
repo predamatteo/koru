@@ -54,8 +54,28 @@ class KoruAccessibilityService : AccessibilityService() {
         var instance: KoruAccessibilityService? = null
             private set
 
-        fun performGoHomeAction() { instance?.performGlobalAction(GLOBAL_ACTION_HOME) }
+        /// Timestamp (epoch ms) fino a cui MainActivity.onNewIntent deve
+        /// IGNORARE l'HOME intent invece di forzare la navigazione Flutter
+        /// a `/launcher`. Settato dal servizio prima di ogni HOME triggrato
+        /// per blocking; senza questa soppressione l'utente perde la pagina
+        /// su cui si trovava nel launcher (perche' ogni HOME intent reset-
+        /// avva GoRouter alla prima schermata via NavigationMethodChannel).
+        @Volatile
+        var suppressLauncherNavigationUntilMs: Long = 0L
+
+        fun performGoHomeAction() { instance?.performGoHomeForBlock() }
         fun triggerReload() { instance?.forceReloadProfiles() }
+    }
+
+    /// Wrapper su performGlobalAction(GLOBAL_ACTION_HOME) che marca anche
+    /// la finestra di soppressione di 1.5s per MainActivity.onNewIntent.
+    /// Usare SEMPRE questo helper quando l'HOME e' triggerato dal blocking
+    /// engine (entry block, focus mode, daily limit, section, website,
+    /// strict mode, "Don't open" / "Close app"). NON usarlo per HOME
+    /// utente-iniziato (quello invece deve resettare al launcher).
+    fun performGoHomeForBlock() {
+        suppressLauncherNavigationUntilMs = System.currentTimeMillis() + 1_500L
+        performGlobalAction(GLOBAL_ACTION_HOME)
     }
 
     private var profiles = emptyList<NativeProfile>()
@@ -121,7 +141,7 @@ class KoruAccessibilityService : AccessibilityService() {
         inAppDetector = InAppContentDetector(applicationContext)
         overlayManager = OverlayManager(applicationContext).apply {
             onReturnHome = {
-                performGlobalAction(GLOBAL_ACTION_HOME)
+                performGoHomeForBlock()
                 dismiss()
             }
             onIntentionChosen = { pkg, intention ->
@@ -200,7 +220,7 @@ class KoruAccessibilityService : AccessibilityService() {
         actionReceiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
                 when (intent?.action) {
-                    ACTION_GO_HOME -> performGlobalAction(GLOBAL_ACTION_HOME)
+                    ACTION_GO_HOME -> performGoHomeForBlock()
                     ACTION_RELOAD_PROFILES -> forceReloadProfiles()
                 }
             }
@@ -440,7 +460,7 @@ class KoruAccessibilityService : AccessibilityService() {
                     profileEmoji = "\uD83C\uDFAF", // 🎯
                 )
             }
-            performGlobalAction(GLOBAL_ACTION_HOME)
+            performGoHomeForBlock()
             val now = System.currentTimeMillis()
             try {
                 NativeDatabase.insertBlockSession(applicationContext, packageName, now)
@@ -483,7 +503,7 @@ class KoruAccessibilityService : AccessibilityService() {
                         profileEmoji = profile.emoji,
                     )
                 }
-                performGlobalAction(GLOBAL_ACTION_HOME)
+                performGoHomeForBlock()
                 val now = System.currentTimeMillis()
                 try {
                     NativeDatabase.insertBlockSession(applicationContext, packageName, now)
@@ -522,7 +542,7 @@ class KoruAccessibilityService : AccessibilityService() {
                         profileEmoji = "\u23F3", // ⏳
                     )
                 }
-                performGlobalAction(GLOBAL_ACTION_HOME)
+                performGoHomeForBlock()
                 val now = System.currentTimeMillis()
                 try {
                     NativeDatabase.insertRestrictedAccessEvent(
@@ -593,7 +613,7 @@ class KoruAccessibilityService : AccessibilityService() {
                     profileEmoji = profile.emoji,
                 )
             }
-            performGlobalAction(GLOBAL_ACTION_HOME)
+            performGoHomeForBlock()
             try {
                 NativeDatabase.insertBlockSession(
                     applicationContext,
@@ -648,7 +668,7 @@ class KoruAccessibilityService : AccessibilityService() {
                         profileEmoji = matchedProfile?.emoji,
                     )
                 }
-                performGlobalAction(GLOBAL_ACTION_HOME)
+                performGoHomeForBlock()
                 val now = System.currentTimeMillis()
                 try {
                     NativeDatabase.insertBlockSession(applicationContext, detected.domain, now)

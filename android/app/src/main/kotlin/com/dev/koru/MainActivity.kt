@@ -17,6 +17,7 @@ import com.dev.koru.channels.ServiceEventChannel
 import com.dev.koru.channels.PermissionMethodChannel
 import com.dev.koru.db.NativeDatabase
 import com.dev.koru.service.AppUsageLimitsStore
+import com.dev.koru.service.KoruAccessibilityService
 import com.dev.koru.service.LockForegroundService
 
 class MainActivity : FlutterActivity() {
@@ -145,10 +146,24 @@ class MainActivity : FlutterActivity() {
      * - Qualsiasi altro intent (drawer / task switcher / HOME senza essere
      *   default) → se Flutter è parcheggiato su `/launcher` (residuo di
      *   una sessione in cui Koru era default), uscine verso `/home`.
+     *
+     * Eccezione: se l'HOME intent è stato triggerato dal blocking engine
+     * (KoruAccessibilityService quando blocca un'app o StrictModeEnforcer
+     * quando blocca settings/recents/etc.), [KoruAccessibilityService.
+     * suppressLauncherNavigationUntilMs] ha settato una finestra di
+     * soppressione: in quel caso non navighiamo, l'utente conserva la
+     * pagina su cui si trovava.
      */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        val now = System.currentTimeMillis()
+        if (now < KoruAccessibilityService.suppressLauncherNavigationUntilMs) {
+            // Reset del flag: la soppressione vale solo per il singolo
+            // intent appena ricevuto, non per quelli successivi.
+            KoruAccessibilityService.suppressLauncherNavigationUntilMs = 0L
+            return
+        }
         if (isHomeIntent(intent) && isDefaultLauncher()) {
             NavigationMethodChannel.goToLauncher()
         } else {

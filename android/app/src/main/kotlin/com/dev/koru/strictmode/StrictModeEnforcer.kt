@@ -4,9 +4,21 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import com.dev.koru.service.KoruAccessibilityService
 
 object StrictModeEnforcer {
     private const val TAG = "StrictModeEnforcer"
+
+    /// Esegue HOME marcando la finestra di soppressione di MainActivity
+    /// per non far reset-are GoRouter al `/launcher` (il blocking strict
+    /// mode e' per sua natura involontario rispetto alla navigazione
+    /// utente, cosi' come APP_BLOCKED). Vedi
+    /// [KoruAccessibilityService.suppressLauncherNavigationUntilMs].
+    private fun goHomeSuppressed(service: AccessibilityService) {
+        KoruAccessibilityService.suppressLauncherNavigationUntilMs =
+            System.currentTimeMillis() + 1_500L
+        service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+    }
 
     const val BLOCK_EDITING = 1
     const val BLOCK_SETTINGS = 2
@@ -87,7 +99,7 @@ object StrictModeEnforcer {
                 return false
             }
             Log.w(TAG, "STRICT: Blocked settings: $packageName/$className")
-            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+            goHomeSuppressed(service)
             return true
         }
 
@@ -102,7 +114,7 @@ object StrictModeEnforcer {
                     className.contains("Recent", ignoreCase = true))
             if (isRecents) {
                 Log.w(TAG, "STRICT: Blocked recents: $packageName/$className")
-                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                goHomeSuppressed(service)
                 return true
             }
         }
@@ -113,7 +125,7 @@ object StrictModeEnforcer {
                 className.contains("DeleteApp", ignoreCase = true)
             ) {
                 Log.w(TAG, "STRICT: Blocked uninstall: $packageName/$className")
-                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                goHomeSuppressed(service)
                 return true
             }
         }
@@ -123,7 +135,7 @@ object StrictModeEnforcer {
                 className.contains("MultiWindow", ignoreCase = true)
             ) {
                 Log.w(TAG, "STRICT: Blocked split screen")
-                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                goHomeSuppressed(service)
                 return true
             }
         }
@@ -134,7 +146,7 @@ object StrictModeEnforcer {
                     className.contains("AppInfo", ignoreCase = true))
             ) {
                 Log.w(TAG, "STRICT: Blocked app editing")
-                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                goHomeSuppressed(service)
                 return true
             }
         }
