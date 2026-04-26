@@ -25,6 +25,12 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.d(
+            "MainActivity",
+            "onCreate: action=${intent?.action} isHome=${intent?.let { isHomeIntent(it) }} " +
+                "suppressUntil=${KoruAccessibilityService.suppressLauncherNavigationUntilMs} " +
+                "now=${System.currentTimeMillis()}",
+        )
         // Defense-in-depth: assicura che la foreground service di
         // backup sia viva se l'utente ha già configurato qualcosa che
         // richiede blocking. Cosi' anche se l'AccessibilityService
@@ -158,13 +164,22 @@ class MainActivity : FlutterActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         val now = System.currentTimeMillis()
-        if (now < KoruAccessibilityService.suppressLauncherNavigationUntilMs) {
+        val suppressUntil = KoruAccessibilityService.suppressLauncherNavigationUntilMs
+        val isHome = isHomeIntent(intent)
+        val isDefault = isDefaultLauncher()
+        Log.d(
+            "MainActivity",
+            "onNewIntent: action=${intent.action} isHome=$isHome isDefault=$isDefault " +
+                "now=$now suppressUntil=$suppressUntil suppressed=${now < suppressUntil}",
+        )
+        if (now < suppressUntil) {
             // Reset del flag: la soppressione vale solo per il singolo
             // intent appena ricevuto, non per quelli successivi.
             KoruAccessibilityService.suppressLauncherNavigationUntilMs = 0L
+            Log.i("MainActivity", "onNewIntent: navigation suppressed (block-triggered HOME)")
             return
         }
-        if (isHomeIntent(intent) && isDefaultLauncher()) {
+        if (isHome && isDefault) {
             NavigationMethodChannel.goToLauncher()
         } else {
             NavigationMethodChannel.goToHomeIfOnLauncher()

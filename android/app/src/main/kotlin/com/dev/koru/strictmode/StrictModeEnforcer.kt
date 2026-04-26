@@ -9,15 +9,18 @@ import com.dev.koru.service.KoruAccessibilityService
 object StrictModeEnforcer {
     private const val TAG = "StrictModeEnforcer"
 
-    /// Esegue HOME marcando la finestra di soppressione di MainActivity
-    /// per non far reset-are GoRouter al `/launcher` (il blocking strict
-    /// mode e' per sua natura involontario rispetto alla navigazione
-    /// utente, cosi' come APP_BLOCKED). Vedi
-    /// [KoruAccessibilityService.suppressLauncherNavigationUntilMs].
+    /// Riporta l'utente in Koru via il path "intent diretto", non HOME.
+    /// Vedi [KoruAccessibilityService.performGoHomeForBlock] per la
+    /// motivazione completa (HOME apriva il launcher di stock e resettava
+    /// GoRouter al `/launcher`).
     private fun goHomeSuppressed(service: AccessibilityService) {
-        KoruAccessibilityService.suppressLauncherNavigationUntilMs =
-            System.currentTimeMillis() + 1_500L
-        service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+        if (service is KoruAccessibilityService) {
+            service.performGoHomeForBlock()
+        } else {
+            KoruAccessibilityService.suppressLauncherNavigationUntilMs =
+                System.currentTimeMillis() + 1_500L
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+        }
     }
 
     const val BLOCK_EDITING = 1

@@ -11,6 +11,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.dev.koru.MainActivity
 import com.dev.koru.browser.BrowserConfigLoader
 import com.dev.koru.browser.BrowserUrlDetector
 import com.dev.koru.browser.WebsiteMatcher
@@ -67,15 +68,42 @@ class KoruAccessibilityService : AccessibilityService() {
         fun triggerReload() { instance?.forceReloadProfiles() }
     }
 
-    /// Wrapper su performGlobalAction(GLOBAL_ACTION_HOME) che marca anche
-    /// la finestra di soppressione di 1.5s per MainActivity.onNewIntent.
-    /// Usare SEMPRE questo helper quando l'HOME e' triggerato dal blocking
-    /// engine (entry block, focus mode, daily limit, section, website,
-    /// strict mode, "Don't open" / "Close app"). NON usarlo per HOME
-    /// utente-iniziato (quello invece deve resettare al launcher).
+    /// Riporta l'utente fuori dall'app bloccata facendolo tornare in Koru.
+    ///
+    /// Usavamo `performGlobalAction(GLOBAL_ACTION_HOME)` ma questo ha due
+    /// problemi:
+    /// 1) Se Koru NON e' il launcher di default, l'HOME apre il launcher
+    ///    di stock — Koru va in background e l'utente perde la sua sessione.
+    /// 2) Anche con Koru default, l'HOME intent triggrava `goToLauncher()`
+    ///    via `MainActivity.onNewIntent`, resettando GoRouter alla prima
+    ///    schermata e perdendo la pagina su cui l'utente si trovava.
+    ///
+    /// Lanciare direttamente `MainActivity` con `REORDER_TO_FRONT` riporta
+    /// Koru in foreground a prescindere dal launcher di default. Siccome
+    /// e' `singleTask`, l'istanza esistente viene riusata: nessun
+    /// `onCreate`, nessun reset Flutter, e l'`onNewIntent` riceve un
+    /// MAIN intent (non HOME) — combinato con la finestra di soppressione,
+    /// non triggera nessuna navigazione automatica.
     fun performGoHomeForBlock() {
-        suppressLauncherNavigationUntilMs = System.currentTimeMillis() + 1_500L
-        performGlobalAction(GLOBAL_ACTION_HOME)
+        val until = System.currentTimeMillis() + 1_500L
+        suppressLauncherNavigationUntilMs = until
+        Log.d(TAG, "ReturnToKoru: suppressUntilMs=$until")
+        try {
+            val intent = Intent(applicationContext, MainActivity::class.java).apply {
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                )
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            // Fallback estremo: l'HOME action e' sempre permessa per
+            // accessibility services. Anche se finiamo nel launcher di
+            // stock, e' meglio che lasciare l'utente nell'app bloccata.
+            Log.w(TAG, "Failed to bring Koru to front, falling back to HOME", e)
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        }
     }
 
     private var profiles = emptyList<NativeProfile>()
