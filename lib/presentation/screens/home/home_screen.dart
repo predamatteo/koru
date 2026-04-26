@@ -10,6 +10,7 @@ import '../../providers/app_list_provider.dart';
 import '../../providers/events_refresher.dart';
 import '../../providers/profile_providers.dart';
 import '../../providers/statistics_providers.dart';
+import 'widgets/accessibility_health_banner.dart';
 import 'widgets/today_limits_card.dart';
 
 /// Tab Home dell'app: dashboard con greeting, profilo attivo ora, quick stats,
@@ -39,6 +40,7 @@ class HomeScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, kBottomNavClearance),
         children: [
+          const AccessibilityHealthBanner(),
           const _GreetingCard(),
           const SizedBox(height: 12),
           _ActiveProfileCard(
