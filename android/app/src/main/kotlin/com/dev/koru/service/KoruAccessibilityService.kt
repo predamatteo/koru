@@ -215,6 +215,22 @@ class KoruAccessibilityService : AccessibilityService() {
                         timestamp = System.currentTimeMillis(),
                     )
                 } catch (_: Exception) {}
+                // Progressive friction: incrementa il counter solo quando il
+                // bypass discende da un blocco USAGE_LIMIT (entry o expired)
+                // su un'app NON strict. Bypass su APP_BLOCKED/profili/sezioni
+                // non alimentano la friction del daily limit (sono use case
+                // diversi). Strict mode è gestito a monte (no "Open anyway"
+                // sull'overlay), quindi qui non dovrebbe arrivare — defensive.
+                val reason = overlayManager?.currentReason()
+                if (reason == BlockReason.USAGE_LIMIT ||
+                    reason == BlockReason.BYPASS_EXPIRED
+                ) {
+                    val entry = AppUsageLimitsStore.entryFor(applicationContext, pkg)
+                    if (entry != null && !entry.strict) {
+                        val n = BypassCountStore.increment(applicationContext, pkg)
+                        Log.i(TAG, "Daily-limit bypass count for $pkg → $n")
+                    }
+                }
                 scheduleBypassExpiryCheck(pkg, durationMs)
                 // Discriminator: nel flow APP_BLOCKED/USAGE_LIMIT/FOCUS_MODE/...
                 // abbiamo fatto performGlobalAction(GLOBAL_ACTION_HOME), quindi
@@ -452,9 +468,23 @@ class KoruAccessibilityService : AccessibilityService() {
         // dell'overlay config; in assenza usiamo DEFAULT.
         val relation = profileApps.values.asSequence().flatten()
             .firstOrNull { it.packageName == pkg }
-        val config = OverlayConfig.fromJsonString(relation?.overlayConfigJson)
+        val baseConfig = OverlayConfig.fromJsonString(relation?.overlayConfigJson)
         val matchingProfile = profiles.firstOrNull { p ->
             profileApps[p.id]?.any { it.packageName == pkg } == true
+        }
+        // Se l'estensione discende da un USAGE_LIMIT (l'utente aveva
+        // bypassato un cap giornaliero), applichiamo la stessa policy
+        // progressiva del blocco entry: durate decrescenti dopo soglia,
+        // niente pausa. Per limit strict comunque non arriviamo qui (no
+        // bypass possibile a monte).
+        val limitEntry = AppUsageLimitsStore.entryFor(applicationContext, pkg)
+        val (config, policy) = if (limitEntry != null && !limitEntry.strict) {
+            val (_, p) = OverlayPolicies.buildUsageLimitOverlay(
+                applicationContext, pkg, isStrict = false,
+            )
+            baseConfig to p
+        } else {
+            baseConfig to BypassPolicy()
         }
         mainHandler.post {
             overlayManager?.show(
@@ -464,6 +494,7 @@ class KoruAccessibilityService : AccessibilityService() {
                 reason = BlockReason.BYPASS_EXPIRED,
                 config = config,
                 profileEmoji = matchingProfile?.emoji,
+                bypassPolicy = policy,
             )
         }
         try {
@@ -566,24 +597,30 @@ class KoruAccessibilityService : AccessibilityService() {
 
         // Daily usage limit (globale, non legato a profili): se l'utente ha
         // superato i minuti concessi per questo pkg oggi → overlay.
-        val limitMinutes = AppUsageLimitsStore.limitMinutesFor(applicationContext, packageName)
+        val limitEntry = AppUsageLimitsStore.entryFor(applicationContext, packageName)
+        val limitMinutes = limitEntry?.minutes ?: 0
         if (limitMinutes > 0) {
             val todayMs = UsageCounter.todayForegroundMs(applicationContext, packageName)
             val limitMs = limitMinutes * 60_000L
             if (todayMs >= limitMs) {
-                Log.w(TAG, ">>> BLOCKING APP (daily limit): $packageName " +
+                val isStrict = limitEntry?.strict ?: true
+                Log.w(TAG, ">>> BLOCKING APP (daily limit, strict=$isStrict): $packageName " +
                     "${todayMs / 60_000}min used, cap=${limitMinutes}min")
                 currentlyBlockingPackage = packageName
                 cancelLimitCheck(packageName)
                 val appLabel = getAppLabel(packageName)
+                val (overlayConfig, policy) = OverlayPolicies.buildUsageLimitOverlay(
+                    applicationContext, packageName, isStrict,
+                )
                 mainHandler.post {
                     overlayManager?.show(
                         packageName = packageName,
                         appLabel = appLabel,
-                        profileTitle = "Daily limit",
+                        profileTitle = if (isStrict) "Daily limit · strict" else "Daily limit",
                         reason = BlockReason.USAGE_LIMIT,
-                        config = OverlayConfig.DEFAULT,
+                        config = overlayConfig,
                         profileEmoji = "\u23F3", // ⏳
+                        bypassPolicy = policy,
                     )
                 }
                 performGoHomeForBlock()

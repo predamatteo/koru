@@ -163,13 +163,26 @@ class LockForegroundService : Service() {
             },
             onLimitBlock = { packageName, appLabel, limitMinutes, todayMs ->
                 Log.d(TAG, "[BACKUP] Daily limit block $packageName (${todayMs / 60_000}/${limitMinutes}min)")
+                // Stessa policy del path primario (KoruAccessibilityService):
+                // strict ⇒ no "Open anyway"; non-strict ⇒ progressive friction
+                // (countdown crescente, durate decrescenti). Coerenza tra
+                // primary path e backup è critica: se divergono, l'utente
+                // vede comportamenti diversi quando il servizio accessibility
+                // muore vs è vivo.
+                val isStrict = AppUsageLimitsStore.entryFor(
+                    applicationContext, packageName,
+                )?.strict ?: true
+                val (cfg, policy) = OverlayPolicies.buildUsageLimitOverlay(
+                    applicationContext, packageName, isStrict,
+                )
                 overlayManager?.show(
                     packageName = packageName,
                     appLabel = appLabel,
-                    profileTitle = "Daily limit",
+                    profileTitle = if (isStrict) "Daily limit · strict" else "Daily limit",
                     reason = BlockReason.USAGE_LIMIT,
-                    config = OverlayConfig.DEFAULT,
+                    config = cfg,
                     profileEmoji = "⏳", // ⏳
+                    bypassPolicy = policy,
                 )
                 performGoHome()
             },

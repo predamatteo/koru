@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/koru_colors.dart';
+import '../../../../platform/blocking_channel.dart';
 import '../../../providers/app_limits_provider.dart';
 import '../../../providers/app_list_provider.dart';
 
@@ -15,7 +16,7 @@ class TodayLimitsCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final limitsAsync = ref.watch(appLimitsProvider);
-    final limits = limitsAsync.valueOrNull ?? const <String, int>{};
+    final limits = limitsAsync.valueOrNull ?? const <String, AppLimitConfig>{};
     if (limits.isEmpty) return const SizedBox.shrink();
 
     final appsAsync = ref.watch(installedAppsProvider);
@@ -24,7 +25,7 @@ class TodayLimitsCard extends ConsumerWidget {
     };
 
     final entries = limits.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
+      ..sort((a, b) => b.value.minutes.compareTo(a.value.minutes));
 
     return Card(
       child: Padding(
@@ -62,7 +63,8 @@ class TodayLimitsCard extends ConsumerWidget {
               _LimitRow(
                 label: appsByPkg[e.key]?.label ?? e.key,
                 packageName: e.key,
-                limitMinutes: e.value,
+                limitMinutes: e.value.minutes,
+                strict: e.value.strict,
               ),
           ],
         ),
@@ -76,11 +78,13 @@ class _LimitRow extends ConsumerWidget {
     required this.label,
     required this.packageName,
     required this.limitMinutes,
+    required this.strict,
   });
 
   final String label;
   final String packageName;
   final int limitMinutes;
+  final bool strict;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -100,11 +104,25 @@ class _LimitRow extends ConsumerWidget {
           Row(
             children: [
               Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 14),
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+                    if (strict) ...[
+                      const SizedBox(width: 6),
+                      const Icon(
+                        Icons.lock_outline,
+                        size: 13,
+                        color: KoruColors.textSecondary,
+                      ),
+                    ],
+                  ],
                 ),
               ),
               Text(

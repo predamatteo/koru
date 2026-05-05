@@ -23,6 +23,40 @@ class InstalledAppInfo {
   }
 }
 
+/// Limite giornaliero per un singolo package. `strict=true` implica hard
+/// cap: l'overlay USAGE_LIMIT non offre "Open anyway". `strict=false`
+/// abilita progressive friction (countdown crescente, durate decrescenti).
+class AppLimitConfig {
+  const AppLimitConfig({required this.minutes, required this.strict});
+
+  final int minutes;
+  final bool strict;
+
+  Map<String, dynamic> toMap() => {'minutes': minutes, 'strict': strict};
+
+  /// Tollera valori `int` legacy (formato di scambio precedente): in quel
+  /// caso `strict` è assunto `true`. Ritorna `null` se `minutes <= 0`.
+  static AppLimitConfig? fromAny(dynamic raw) {
+    if (raw is num) {
+      final m = raw.toInt();
+      if (m <= 0) return null;
+      return AppLimitConfig(minutes: m, strict: true);
+    }
+    if (raw is Map) {
+      final m = (raw['minutes'] as num?)?.toInt() ?? 0;
+      if (m <= 0) return null;
+      final s = raw['strict'] as bool? ?? true;
+      return AppLimitConfig(minutes: m, strict: s);
+    }
+    return null;
+  }
+
+  AppLimitConfig copyWith({int? minutes, bool? strict}) => AppLimitConfig(
+        minutes: minutes ?? this.minutes,
+        strict: strict ?? this.strict,
+      );
+}
+
 class AppUsageInfo {
   AppUsageInfo({
     required this.packageName,
@@ -140,18 +174,35 @@ class BlockingChannel {
   Future<String?> getDefaultCameraPackage() async =>
       _channel.invokeMethod<String>('getDefaultCameraPackage');
 
-  Future<Map<String, int>> getAppDailyLimits() async {
+  Future<Map<String, AppLimitConfig>> getAppDailyLimits() async {
     final raw = await _channel
         .invokeMapMethod<String, dynamic>('getAppDailyLimits');
     if (raw == null) return const {};
-    return raw.map((k, v) => MapEntry(k, (v as num).toInt()));
+    final out = <String, AppLimitConfig>{};
+    raw.forEach((k, v) {
+      final cfg = AppLimitConfig.fromAny(v);
+      if (cfg != null) out[k] = cfg;
+    });
+    return out;
   }
 
-  Future<bool> setAppDailyLimits(Map<String, int> limits) async =>
+  Future<bool> setAppDailyLimits(Map<String, AppLimitConfig> limits) async =>
       (await _channel.invokeMethod<bool>('setAppDailyLimits', {
-        'limits': limits,
+        'limits': limits.map((k, v) => MapEntry(k, v.toMap())),
       })) ??
       false;
+
+  Future<int> getBypassCountToday(String packageName) async =>
+      (await _channel.invokeMethod<int>('getBypassCountToday', {
+        'packageName': packageName,
+      })) ??
+      0;
+
+  Future<void> resetBypassCount(String packageName) async {
+    await _channel.invokeMethod<bool>('resetBypassCount', {
+      'packageName': packageName,
+    });
+  }
 
   Future<int> getUsageTodayMs(String packageName) async =>
       (await _channel.invokeMethod<int>('getUsageTodayMs', {

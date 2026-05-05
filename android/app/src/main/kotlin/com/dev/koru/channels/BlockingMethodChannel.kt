@@ -13,6 +13,7 @@ import android.graphics.drawable.Drawable
 import android.os.Build
 import com.dev.koru.notification.NotificationFilterStore
 import com.dev.koru.service.AppUsageLimitsStore
+import com.dev.koru.service.BypassCountStore
 import com.dev.koru.service.LockForegroundService
 import com.dev.koru.service.UsageCounter
 import io.flutter.embedding.engine.FlutterEngine
@@ -29,6 +30,25 @@ private fun MethodCall.longArg(name: String): Long = when (val v = argument<Any>
     is Int -> v.toLong()
     is Number -> v.toLong()
     else -> 0L
+}
+
+/// Tollera tre forme che il Dart può inviare per un entry di limite:
+///   1. `Number` (legacy): solo i minuti, strict=true di default;
+///   2. `Map<String, Any>` con keys `minutes` (Number) + `strict` (Bool);
+///   3. qualunque altro tipo → null (ignorato in upstream).
+private fun parseLimitEntry(raw: Any?): AppUsageLimitsStore.LimitEntry? = when (raw) {
+    is Number -> AppUsageLimitsStore.LimitEntry(
+        minutes = raw.toInt(),
+        strict = true,
+    )
+    is Map<*, *> -> {
+        val minutes = (raw["minutes"] as? Number)?.toInt() ?: 0
+        val strict = raw["strict"] as? Boolean ?: true
+        if (minutes > 0) {
+            AppUsageLimitsStore.LimitEntry(minutes = minutes, strict = strict)
+        } else null
+    }
+    else -> null
 }
 
 object BlockingMethodChannel {
@@ -157,13 +177,36 @@ object BlockingMethodChannel {
                         result.success(resolveDefaultCamera(activity))
                     }
                     "getAppDailyLimits" -> {
-                        result.success(AppUsageLimitsStore.read(activity.applicationContext))
+                        // Schema scambiato col Dart: {pkg: {minutes:Int, strict:Bool}}.
+                        // Lo store gestisce backward compat sul disco; qui esponiamo
+                        // sempre il formato esteso così il Dart non deve disambiguare.
+                        val entries = AppUsageLimitsStore.read(activity.applicationContext)
+                        val out = entries.mapValues { (_, v) ->
+                            mapOf("minutes" to v.minutes, "strict" to v.strict)
+                        }
+                        result.success(out)
                     }
                     "setAppDailyLimits" -> {
                         @Suppress("UNCHECKED_CAST")
                         val raw = call.argument<Map<String, Any>>("limits") ?: emptyMap()
-                        val parsed = raw.mapValues { (it.value as? Number)?.toInt() ?: 0 }
+                        val parsed = raw.mapNotNull { (pkg, v) ->
+                            val entry = parseLimitEntry(v) ?: return@mapNotNull null
+                            pkg to entry
+                        }.toMap()
                         AppUsageLimitsStore.save(activity.applicationContext, parsed)
+                        result.success(true)
+                    }
+                    "getBypassCountToday" -> {
+                        val pkg = call.argument<String>("packageName")
+                            ?: return@setMethodCallHandler result.error("MISSING_ARG", "packageName required", null)
+                        result.success(
+                            BypassCountStore.todayCount(activity.applicationContext, pkg),
+                        )
+                    }
+                    "resetBypassCount" -> {
+                        val pkg = call.argument<String>("packageName")
+                            ?: return@setMethodCallHandler result.error("MISSING_ARG", "packageName required", null)
+                        BypassCountStore.reset(activity.applicationContext, pkg)
                         result.success(true)
                     }
                     "getUsageTodayMs" -> {

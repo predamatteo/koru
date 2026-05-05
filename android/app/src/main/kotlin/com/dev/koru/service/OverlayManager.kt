@@ -58,6 +58,38 @@ import com.dev.koru.overlay.BlockReason
 import com.dev.koru.overlay.OverlayConfig
 import kotlinx.coroutines.delay
 
+/**
+ * Politica di bypass per un singolo invocazione di overlay. Calcolata dal
+ * caller (KoruAccessibilityService) in base allo stato corrente
+ * (BypassCountStore + strict flag in AppUsageLimitsStore).
+ *
+ * @property countToday n. di bypass usati oggi per il pkg corrente. Esposto
+ *   nella UI come hint ("Bypassed N times today") per dare visibilità sulla
+ *   pressione che si sta accumulando.
+ * @property durations opzioni proposte all'utente nel duration picker
+ *   (e nel BYPASS_EXPIRED prompt). Decrescenti con il count: 5/10 min per i
+ *   primi bypass, 1/2 min dopo soglia.
+ * @property countdownSecondsOverride se non null, sovrascrive il countdown
+ *   standard di OverlayConfig (la frizione progressiva lo aumenta).
+ * @property pauseAllowed se false, il CountdownButton non risponde al tap
+ *   con "paused" — rimuove l'escape hatch del countdown infinito-pausabile.
+ */
+data class BypassPolicy(
+    val countToday: Int = 0,
+    val durations: List<Pair<String, Long>> = defaultBypassDurations,
+    val countdownSecondsOverride: Int? = null,
+    val pauseAllowed: Boolean = true,
+)
+
+/// Le opzioni standard, allineate ai pattern minimalist_phone / Opal /
+/// ScreenZen. Override nella BypassPolicy quando serve frizione.
+val defaultBypassDurations: List<Pair<String, Long>> = listOf(
+    "1 min" to 1L * 60_000L,
+    "5 min" to 5L * 60_000L,
+    "15 min" to 15L * 60_000L,
+    "30 min" to 30L * 60_000L,
+)
+
 /// Palette Koru (mirror di lib/core/constants/koru_colors.dart)
 private val KoruBgBase = Color(0xFF0E100F)
 private val KoruSurface = Color(0xFF1A1D1B)
@@ -138,6 +170,7 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
     }
 
     private var _profileEmoji = mutableStateOf<String?>(null)
+    private var _bypassPolicy = mutableStateOf(BypassPolicy())
 
     fun show(
         packageName: String,
@@ -146,6 +179,7 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
         reason: BlockReason = BlockReason.APP_BLOCKED,
         config: OverlayConfig = OverlayConfig.DEFAULT,
         profileEmoji: String? = null,
+        bypassPolicy: BypassPolicy = BypassPolicy(),
     ) {
         currentPackageName = packageName
         _appLabel.value = appLabel
@@ -153,6 +187,7 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
         _reason.value = reason
         _config.value = config
         _profileEmoji.value = profileEmoji
+        _bypassPolicy.value = bypassPolicy
 
         if (isShowing) return
 
@@ -188,6 +223,7 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
                             reason = _reason.value,
                             config = _config.value,
                             profileEmoji = _profileEmoji.value,
+                            bypassPolicy = _bypassPolicy.value,
                             onIntentionChosen = { intention ->
                                 onIntentionChosen?.invoke(currentPackageName, intention)
                             },
@@ -249,15 +285,6 @@ private val mindfulIntentions = listOf(
     "Not sure",
 )
 
-/// Opzioni di durata esposte nel duration picker. Allineate ai pattern
-/// comuni delle app di digital wellbeing (minimalist_phone, Opal, Screen Zen).
-private val bypassDurationOptions = listOf(
-    "1 min" to 1L * 60_000L,
-    "5 min" to 5L * 60_000L,
-    "15 min" to 15L * 60_000L,
-    "30 min" to 30L * 60_000L,
-)
-
 @Composable
 private fun BlockedScreen(
     packageName: String,
@@ -266,6 +293,7 @@ private fun BlockedScreen(
     reason: BlockReason,
     config: OverlayConfig,
     profileEmoji: String?,
+    bypassPolicy: BypassPolicy,
     onIntentionChosen: (String) -> Unit,
     onGoHome: () -> Unit,
     onBypass: (durationMs: Long) -> Unit,
@@ -293,6 +321,7 @@ private fun BlockedScreen(
         if (reason == BlockReason.BYPASS_EXPIRED) {
             ExtensionPromptSection(
                 appLabel = appLabel,
+                durations = bypassPolicy.durations,
                 onDurationChosen = { durationMs -> onBypass(durationMs) },
                 onCloseApp = onGoHome,
             )
@@ -303,6 +332,8 @@ private fun BlockedScreen(
             DurationPickerSection(
                 appLabel = appLabel,
                 config = config,
+                durations = bypassPolicy.durations,
+                bypassCountToday = bypassPolicy.countToday,
                 onDurationChosen = { durationMs ->
                     showDurationPicker = false
                     onBypass(durationMs)
@@ -359,14 +390,37 @@ private fun BlockedScreen(
 
             Spacer(Modifier.weight(1f))
 
+            // Frizione progressiva: il countdown standard di OverlayConfig
+            // (8s) è troppo basso quando l'utente sta provando a sforare un
+            // limite per la 4ª volta — la BypassPolicy del USAGE_LIMIT non
+            // strict lo allunga (15→30→60→120s).
+            val effectiveCountdownSec =
+                bypassPolicy.countdownSecondsOverride ?: config.countdownSeconds
+
+            // Il pause-toggle è un escape hatch: clicchi sul countdown → si
+            // ferma il timer → infinitamente. Per i blocchi "duri" (USAGE_LIMIT,
+            // BYPASS_EXPIRED) lo disabilitiamo, lasciandolo solo nei flow
+            // mindful (APP_BLOCKED entry) dove la pausa fa parte dell'UX.
             CountdownButton(
-                durationMs = config.countdownSeconds * 1000,
+                durationMs = effectiveCountdownSec * 1000,
                 finishedText = "Open $appLabel",
+                pauseAllowed = bypassPolicy.pauseAllowed,
                 onFinished = { countdownFinished = true },
                 onTapAfterFinish = {
                     if (config.allowBypassAfterCountdown) showDurationPicker = true
                 },
             )
+
+            if (bypassPolicy.countToday > 0 &&
+                config.allowBypassAfterCountdown
+            ) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Bypassed ${bypassPolicy.countToday}× today",
+                    color = KoruTextPrimary.copy(alpha = 0.55f),
+                    fontSize = 12.sp,
+                )
+            }
             Spacer(Modifier.height(16.dp))
 
             Button(
@@ -404,6 +458,8 @@ private fun BlockedScreen(
 private fun DurationPickerSection(
     appLabel: String,
     config: OverlayConfig,
+    durations: List<Pair<String, Long>>,
+    bypassCountToday: Int,
     onDurationChosen: (Long) -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -429,7 +485,12 @@ private fun DurationPickerSection(
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "$appLabel will be blocked again after this time.",
+            text = if (bypassCountToday > 0) {
+                "$appLabel — bypass #${bypassCountToday + 1} today. " +
+                    "It will be blocked again after this time."
+            } else {
+                "$appLabel will be blocked again after this time."
+            },
             color = KoruTextPrimary.copy(alpha = 0.78f),
             fontSize = 16.sp,
             textAlign = TextAlign.Center,
@@ -437,7 +498,7 @@ private fun DurationPickerSection(
 
         Spacer(Modifier.height(40.dp))
 
-        bypassDurationOptions.forEach { (label, durationMs) ->
+        durations.forEach { (label, durationMs) ->
             DurationOptionButton(
                 label = label,
                 onClick = { onDurationChosen(durationMs) },
@@ -486,6 +547,7 @@ private fun DurationOptionButton(
 @Composable
 private fun ExtensionPromptSection(
     appLabel: String,
+    durations: List<Pair<String, Long>>,
     onDurationChosen: (Long) -> Unit,
     onCloseApp: () -> Unit,
 ) {
@@ -519,7 +581,7 @@ private fun ExtensionPromptSection(
 
         Spacer(Modifier.height(40.dp))
 
-        bypassDurationOptions.forEach { (label, durationMs) ->
+        durations.forEach { (label, durationMs) ->
             DurationOptionButton(
                 label = "+$label",
                 onClick = { onDurationChosen(durationMs) },
@@ -596,6 +658,7 @@ private fun IntentionChip(
 private fun CountdownButton(
     durationMs: Int,
     finishedText: String,
+    pauseAllowed: Boolean,
     onFinished: () -> Unit,
     onTapAfterFinish: () -> Unit,
 ) {
@@ -634,7 +697,11 @@ private fun CountdownButton(
             .background(KoruTextPrimary.copy(alpha = 0.10f))
             .clickable {
                 when (phase) {
-                    "animating" -> phase = "paused"
+                    // Pausa disabilitata sui blocchi "duri": rimuove l'escape
+                    // hatch del countdown infinito-pausabile (l'utente
+                    // toccava il countdown per fermarlo, sceglieva di
+                    // calmarsi e poi ripartiva — soft-bypass gratuito).
+                    "animating" -> if (pauseAllowed) phase = "paused"
                     "paused" -> phase = "animating"
                     "finished" -> onTapAfterFinish()
                 }

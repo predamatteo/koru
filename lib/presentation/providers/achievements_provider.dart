@@ -64,7 +64,7 @@ Future<AchievementStats> buildAchievementStats(Ref ref) async {
   final profiles = await db.getAllProfiles();
 
   final limits = await platform.blocking.getAppDailyLimits();
-  final appsWithLimits = limits.values.where((v) => v > 0).length;
+  final appsWithLimits = limits.values.where((v) => v.minutes > 0).length;
 
   final customOverlayRows = await db
       .customSelect(
