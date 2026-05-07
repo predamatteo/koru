@@ -821,7 +821,11 @@ class KoruAccessibilityService : AccessibilityService() {
 
     private fun loadProfiles() {
         try {
-            NativeDatabase.close()
+            // Niente NativeDatabase.close() qui: l'open è idempotente e
+            // chiudere mentre un altro thread (LockRunnable, MainActivity
+            // bg-thread) sta leggendo causa SQLite IOError sul cursore in
+            // corso. La connection rimane aperta per tutta la vita del
+            // service e viene chiusa solo in onDestroy.
             profiles = NativeDatabase.getEnabledProfiles(applicationContext)
             profileApps.clear()
             websiteRulesCache.clear()

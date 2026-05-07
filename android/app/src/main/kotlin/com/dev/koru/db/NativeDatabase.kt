@@ -92,19 +92,37 @@ object NativeDatabase {
         return null
     }
 
+    @Synchronized
     fun open(context: Context): SQLiteDatabase {
-        if (db != null && db!!.isOpen) return db!!
+        val current = db
+        if (current != null && current.isOpen) return current
         val dbFile = findDbFile(context)
             ?: throw IllegalStateException("Database file not found – Flutter has not created it yet")
-        db = SQLiteDatabase.openDatabase(
+        // No ENABLE_WRITE_AHEAD_LOGGING: Drift apre lo stesso file con la
+        // libreria sqlite3_flutter_libs (amalgamation diversa da libsqlite
+        // di sistema). Se mettiamo il file in WAL da qui, i file ausiliari
+        // `-shm`/`-wal` finiscono in un layout non interoperabile e Drift
+        // crasha con SQLITE_IOERR_SHM* alle SELECT successive (es.
+        // `SELECT * FROM intervals` del watcher profili). Drift forza
+        // `journal_mode=DELETE` nel suo setup callback — Kotlin si
+        // allinea allo stesso mode + busy_timeout sotto.
+        val opened = SQLiteDatabase.openDatabase(
             dbFile.absolutePath, null,
-            SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.ENABLE_WRITE_AHEAD_LOGGING
+            SQLiteDatabase.OPEN_READWRITE
         )
+        try {
+            opened.execSQL("PRAGMA journal_mode = DELETE")
+            opened.execSQL("PRAGMA busy_timeout = 5000")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to set PRAGMAs: ${e.message}")
+        }
+        db = opened
         dbPath = dbFile.absolutePath
         Log.i(TAG, "Opened database at ${dbFile.absolutePath}")
-        return db!!
+        return opened
     }
 
+    @Synchronized
     fun close() {
         db?.close()
         db = null

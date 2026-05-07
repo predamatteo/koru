@@ -361,6 +361,21 @@ LazyDatabase _openConnection() {
   return LazyDatabase(() async {
     final dbFolder = await getApplicationDocumentsDirectory();
     final file = File(p.join(dbFolder.path, 'koru.db'));
-    return NativeDatabase.createInBackground(file);
+    return NativeDatabase.createInBackground(
+      file,
+      setup: (rawDb) {
+        // Forziamo journal_mode=DELETE (no WAL) perché il blocking engine
+        // legge il DB anche da Kotlin via android.database.sqlite. Le due
+        // librerie SQLite distinte (sqlite3_flutter_libs lato Flutter vs
+        // libsqlite di sistema lato Android) non condividono in modo
+        // affidabile i file ausiliari `-shm`/`-wal` del WAL — produceva
+        // SQLITE_IOERR_SHM* su qualsiasi SELECT (es. su intervals nei
+        // watcher di profile_repository) appena Kotlin apriva il DB.
+        // DELETE mode usa solo il file principale + un rollback journal
+        // temporaneo, gestito via fcntl-locks compatibili con entrambe.
+        rawDb.execute('PRAGMA journal_mode = DELETE;');
+        rawDb.execute('PRAGMA busy_timeout = 5000;');
+      },
+    );
   });
 }

@@ -75,14 +75,20 @@ class MainActivity : FlutterActivity() {
         }
 
         // Profili: query DB su thread di background per non bloccare onCreate.
-        Thread {
-            val hasProfiles = try {
-                NativeDatabase.getEnabledProfiles(applicationContext).isNotEmpty()
-            } catch (_: Exception) { false }
-            if (hasProfiles) {
-                Handler(Looper.getMainLooper()).post { startBackupBlockingServiceNow() }
-            }
-        }.start()
+        // Posticipiamo di 1.5s per dare a Drift tempo di completare la
+        // propria inizializzazione (LazyDatabase + migration onCreate) —
+        // aprire il DB via android.database.sqlite mentre Drift sta ancora
+        // creando le tabelle puo' produrre file ausiliari incoerenti.
+        Handler(Looper.getMainLooper()).postDelayed({
+            Thread {
+                val hasProfiles = try {
+                    NativeDatabase.getEnabledProfiles(applicationContext).isNotEmpty()
+                } catch (_: Exception) { false }
+                if (hasProfiles) {
+                    Handler(Looper.getMainLooper()).post { startBackupBlockingServiceNow() }
+                }
+            }.start()
+        }, 1500L)
     }
 
     private fun startBackupBlockingServiceNow() {
