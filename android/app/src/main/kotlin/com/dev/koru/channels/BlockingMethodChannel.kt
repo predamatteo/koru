@@ -82,6 +82,8 @@ object BlockingMethodChannel {
                     }
                     "isBlockingServiceRunning" -> result.success(LockForegroundService.isRunning)
                     "getInstalledApps" -> result.success(getInstalledApps(activity))
+                    "getInstalledPackageNames" ->
+                        result.success(getInstalledPackageNames(activity))
                     "getUsageStats" -> {
                         val startMs = call.longArg("startMs")
                         val endMs = call.longArg("endMs").takeIf { it > 0 }
@@ -260,6 +262,21 @@ object BlockingMethodChannel {
                 )
             }
             .sortedBy { (it["label"] as String).lowercase() }
+    }
+
+    /// Variante "cheap" usata dal lifecycle observer Dart per il diff-based
+    /// refresh: ritorna solo i package names launchable, senza label e
+    /// senza icone, evitando il decode delle bitmap (operazione costosa
+    /// che — se eseguita ad ogni resume — causa un freeze visibile della UI).
+    private fun getInstalledPackageNames(context: Context): List<String> {
+        val pm = context.packageManager
+        return pm.getInstalledApplications(0)
+            .filter {
+                it.flags and ApplicationInfo.FLAG_SYSTEM == 0 ||
+                    pm.getLaunchIntentForPackage(it.packageName) != null
+            }
+            .map { it.packageName }
+            .sorted()
     }
 
     private fun getUsageStats(context: Context, startMs: Long, endMs: Long): List<Map<String, Any>> {

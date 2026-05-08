@@ -25,6 +25,55 @@ void _invalidateInstalledApps(Ref ref) {
   ref.invalidate(installedAppsProvider);
 }
 
+/// Smart refresh per [installedAppsProvider] post-resume.
+///
+/// `getInstalledApps()` nativo è oneroso (PackageManager scan + decode
+/// di tutte le icone in PNG bytes), può prendere 1-3s su set di app
+/// reali. Invalidare a tappeto ad ogni resume causa un freeze visibile
+/// in qualsiasi schermo che mostri la lista (drawer, NotificationFilter,
+/// ecc.) — anche se l'utente sta semplicemente tornando da Settings di
+/// sistema senza aver toccato il package set.
+///
+/// Strategia: chiamare un endpoint nativo "cheap" che ritorna solo i
+/// package names. Se il set è identico al cached, no-op. Solo quando
+/// rileviamo un delta (install/uninstall avvenuto in onStop) paghiamo
+/// il costo del refresh completo.
+Future<void> _smartRefreshInstalledApps(Ref ref) async {
+  final cached = ref.read(installedAppsProvider).valueOrNull;
+  if (cached == null) {
+    // Lista mai caricata: il prossimo `ref.watch` la caricherà; nessun
+    // motivo di forzare adesso.
+    return;
+  }
+  final List<String> fresh;
+  try {
+    fresh = await ref
+        .read(platformChannelServiceProvider)
+        .blocking
+        .getInstalledPackageNames();
+  } catch (e) {
+    // Se la query cheap fallisce (channel down al resume?), fallback
+    // sicuro: invalida così il prossimo accesso ricarica.
+    developer.log(
+      'getInstalledPackageNames() failed: $e — fallback invalidate',
+      name: 'EventsRefresher',
+    );
+    _invalidateInstalledApps(ref);
+    return;
+  }
+  final cachedSet = cached.map((a) => a.packageName).toSet();
+  final freshSet = fresh.toSet();
+  final unchanged =
+      cachedSet.length == freshSet.length && cachedSet.containsAll(freshSet);
+  if (unchanged) return;
+  developer.log(
+    'Installed package set changed (cached=${cachedSet.length} '
+    'fresh=${freshSet.length}) → invalidating installedAppsProvider',
+    name: 'EventsRefresher',
+  );
+  _invalidateInstalledApps(ref);
+}
+
 /// Ascolta lo stream di eventi native (BLOCKING_STATE / IN_APP_SECTION_DETECTED
 /// / QUICK_BLOCK_TICK) e invalida i provider di statistiche così i conteggi
 /// di Blocks e Focus time si aggiornano in real-time anche se il native
@@ -77,7 +126,9 @@ final appLifecycleInvalidatorProvider = Provider<void>((ref) {
   final binding = WidgetsBinding.instance;
   final observer = _LifecycleObserver(() {
     _invalidateStats(ref);
-    _invalidateInstalledApps(ref);
+    // Fire-and-forget: il diff-based refresh è async e non deve bloccare
+    // il frame di rientro nell'app.
+    unawaited(_smartRefreshInstalledApps(ref));
   });
   binding.addObserver(observer);
   ref.onDispose(() => binding.removeObserver(observer));

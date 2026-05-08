@@ -99,6 +99,16 @@ class BlockingChannel {
         .toList(growable: false);
   }
 
+  /// Variante leggera: solo i package names launchable, senza label e
+  /// senza icon bytes. Usato dal lifecycle observer per fare un diff
+  /// rapido ed evitare l'invalidazione di [installedAppsProvider] quando
+  /// la lista non è cambiata (evita freeze visibile al resume).
+  Future<List<String>> getInstalledPackageNames() async {
+    final raw =
+        await _channel.invokeListMethod<String>('getInstalledPackageNames');
+    return raw ?? const [];
+  }
+
   Future<List<AppUsageInfo>> getUsageStats({
     required int startMs,
     required int endMs,
