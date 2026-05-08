@@ -67,55 +67,60 @@ class KoruAccessibilityService : AccessibilityService() {
         fun triggerReload() { instance?.forceReloadProfiles() }
     }
 
-    /// Riporta l'utente fuori dall'app bloccata simulando il tasto BACK.
+    /// Riporta l'utente fuori dall'app bloccata. Due strategie:
     ///
-    /// Perche' BACK e non HOME: vogliamo riportare l'utente alla pagina
-    /// del launcher dove si trovava l'icona dell'app appena aperta. HOME
-    /// porta sempre alla pagina principale del launcher, BACK invece
-    /// chiude la task dell'app e ripristina lo stato precedente — se
-    /// l'utente ha aperto l'app dalla pagina 3 del launcher, BACK lo
-    /// riporta lì. E' il comportamento "naturale" di Android quando
-    /// l'apertura dell'app e' fresh.
+    /// **BACK** (default, [forceHome] = false) — usato per il blocco
+    /// AUTOMATICO (l'utente apre l'app fresh dal launcher). Ripristina
+    /// lo stato precedente: se l'utente ha tappato l'icona dalla pagina
+    /// 3 del launcher, BACK lo riporta lì invece che alla pagina 1 (HOME).
+    /// E' il comportamento naturale di Android.
     ///
-    /// Caveat: se l'app ha gia' uno stack interno (es. l'utente la stava
-    /// usando prima e l'aveva mandata in background), un singolo BACK
-    /// non chiude la task — torna all'activity precedente dell'app.
-    /// Pero' sopra l'overlay resta montato e al prossimo
-    /// TYPE_WINDOW_STATE_CHANGED rifacciamo BACK: nel giro di 1-2 step
-    /// l'utente esce dall'app e torna al launcher.
+    /// **HOME** ([forceHome] = true) — usato per il click ESPLICITO
+    /// dell'utente su "Don't open $appLabel" / "Close $appLabel"
+    /// sull'overlay (callback onReturnHome). Quando l'utente clicca
+    /// quel bottone ha intento univoco: uscire dall'app, indipendente-
+    /// mente dallo stack interno. BACK qui sarebbe sbagliato perche'
+    /// se l'app ha activity stack interno (es. Instagram con storia
+    /// aperta sopra la feed), un singolo BACK chiude solo la storia,
+    /// non IG → l'utente vede l'overlay sparire e IG ancora in
+    /// foreground. Bug osservato: clicchi "Close instagram" dalla storia
+    /// → viene chiusa la storia ma IG no.
     ///
-    /// Fallback HOME: se `GLOBAL_ACTION_BACK` non e' disponibile o l'app
-    /// blocca BACK (raro, ma possibile con app full-screen che intercettano
-    /// il pulsante), Intent HOME standard al default launcher. NON apriamo
-    /// MainActivity — Koru non viene forzato in foreground.
-    ///
-    /// Manteniamo `suppressLauncherNavigationUntilMs`: nel fallback HOME,
-    /// se Koru E' il default launcher, MainActivity ricevera' un HOME
-    /// intent → senza soppressione `onNewIntent` chiamerebbe
-    /// `goToLauncher()` resettando GoRouter alla pagina launcher base.
-    fun performGoHomeForBlock() {
+    /// In entrambi i casi settiamo `suppressLauncherNavigationUntilMs`
+    /// per preservare la sub-pagina del launcher Flutter: se Koru e'
+    /// il default launcher, MainActivity ricevera' un HOME intent
+    /// (direttamente o via il fallback BACK→HOME) e senza la finestra
+    /// di soppressione `onNewIntent` chiamerebbe `goToLauncher()`
+    /// resettando GoRouter alla pagina launcher base.
+    fun performGoHomeForBlock(forceHome: Boolean = false) {
         val until = System.currentTimeMillis() + 1_500L
         suppressLauncherNavigationUntilMs = until
-        Log.d(TAG, "GoHomeForBlock: BACK + suppressUntilMs=$until")
-        val backOk = try {
-            performGlobalAction(GLOBAL_ACTION_BACK)
-        } catch (e: Exception) {
-            Log.w(TAG, "GLOBAL_ACTION_BACK threw, will fallback to HOME", e)
-            false
-        }
-        if (backOk) return
 
-        // Fallback: HOME standard via Intent. Va al default launcher senza
-        // forzare Koru.
-        Log.w(TAG, "BACK refused, falling back to HOME intent")
+        if (!forceHome) {
+            Log.d(TAG, "GoHomeForBlock: BACK + suppressUntilMs=$until")
+            val backOk = try {
+                performGlobalAction(GLOBAL_ACTION_BACK)
+            } catch (e: Exception) {
+                Log.w(TAG, "GLOBAL_ACTION_BACK threw, will fallback to HOME", e)
+                false
+            }
+            if (backOk) return
+            Log.w(TAG, "BACK refused, falling back to HOME intent")
+        } else {
+            Log.d(TAG, "GoHomeForBlock: HOME (forced) + suppressUntilMs=$until")
+        }
+
+        // HOME via Intent: va al default launcher senza forzare Koru.
+        // Chiude effettivamente il task dell'app target indipendentemente
+        // dal suo stack interno (a differenza di BACK).
         try {
             val home = Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_HOME)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
             startActivity(home)
         } catch (e: Exception) {
-            Log.e(TAG, "HOME intent fallback failed", e)
+            Log.e(TAG, "HOME intent failed", e)
         }
     }
 
@@ -182,10 +187,18 @@ class KoruAccessibilityService : AccessibilityService() {
         inAppDetector = InAppContentDetector(applicationContext)
         overlayManager = OverlayManager(applicationContext).apply {
             onReturnHome = {
-                // Tap "Don't open" sull'overlay → stessa semantica del blocco
-                // automatico: HOME del DISPOSITIVO via performGoHomeForBlock,
-                // mai aprire Koru forzatamente.
-                performGoHomeForBlock()
+                // Tap esplicito "Don't open $appLabel" / "Close $appLabel"
+                // sull'overlay → forceHome=true, NON BACK.
+                //
+                // L'utente ha appena espresso l'intento univoco di uscire
+                // dall'app. BACK fallirebbe quando l'app ha stack interno:
+                // es. Instagram con una storia aperta sopra la feed → BACK
+                // chiude solo la storia e IG resta in foreground (l'utente
+                // vede sparire l'overlay ma e' ancora dentro IG, confusione).
+                // HOME via Intent chiude il task IG indipendentemente dallo
+                // stack, e la suppressLauncherNavigationUntilMs preserva la
+                // sub-pagina del launcher Flutter dell'utente.
+                performGoHomeForBlock(forceHome = true)
                 dismiss()
             }
             onIntentionChosen = { pkg, intention ->
