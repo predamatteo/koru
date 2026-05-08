@@ -21,6 +21,10 @@ void _invalidateStats(Ref ref) {
   ref.invalidate(profilesProvider);
 }
 
+void _invalidateInstalledApps(Ref ref) {
+  ref.invalidate(installedAppsProvider);
+}
+
 /// Ascolta lo stream di eventi native (BLOCKING_STATE / IN_APP_SECTION_DETECTED
 /// / QUICK_BLOCK_TICK) e invalida i provider di statistiche così i conteggi
 /// di Blocks e Focus time si aggiornano in real-time anche se il native
@@ -56,14 +60,25 @@ final blockingEventsRefresherProvider = Provider<void>((ref) {
 /// Observer di AppLifecycleState che invalida tutti i provider di
 /// statistiche ogni volta che Koru torna in foreground.
 ///
-/// Motivo: l'EventChannel di Flutter è in pausa mentre l'app è in
-/// background (es. utente su Instagram, bloccato dall'overlay e tornato
-/// alla home). Gli eventi di blocking emessi dal processo :accessibility
-/// durante quel periodo si perdono, quindi affidiamoci al segnale
-/// affidabile dell'app che rientra in foreground.
+/// Motivi multipli:
+/// 1. Stats: l'EventChannel di Flutter è in pausa mentre l'app è in
+///    background (es. utente su Instagram, bloccato dall'overlay e tornato
+///    alla home). Gli eventi di blocking emessi dal processo :accessibility
+///    durante quel periodo si perdono, quindi affidiamoci al segnale
+///    affidabile dell'app che rientra in foreground.
+/// 2. Lista app installate: il [PackageEventsReceiver] nativo è registrato
+///    in MainActivity.onStart() e deregistrato in onStop(). Quando Koru è
+///    il launcher e l'utente apre un'altra app (o anche solo trascina giù
+///    la notification shade) l'activity va in onStop e perde i broadcast
+///    PACKAGE_ADDED/REMOVED/REPLACED che arrivano in quel periodo. Al
+///    rientro in foreground rinfreschiamo comunque la lista così launcher
+///    e all-apps drawer sono sempre coerenti col PackageManager.
 final appLifecycleInvalidatorProvider = Provider<void>((ref) {
   final binding = WidgetsBinding.instance;
-  final observer = _LifecycleObserver(() => _invalidateStats(ref));
+  final observer = _LifecycleObserver(() {
+    _invalidateStats(ref);
+    _invalidateInstalledApps(ref);
+  });
   binding.addObserver(observer);
   ref.onDispose(() => binding.removeObserver(observer));
 });
