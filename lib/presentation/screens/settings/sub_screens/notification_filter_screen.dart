@@ -22,14 +22,31 @@ class NotificationFilterScreen extends ConsumerStatefulWidget {
 }
 
 class _NotificationFilterScreenState
-    extends ConsumerState<NotificationFilterScreen> {
+    extends ConsumerState<NotificationFilterScreen>
+    with WidgetsBindingObserver {
   final _searchController = TextEditingController();
   String _query = '';
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Quando l'utente torna da "Notification access" in Settings di sistema,
+    // invalidiamo il provider per riflettere lo stato corrente del permesso.
+    if (state == AppLifecycleState.resumed) {
+      ref.invalidate(notificationAccessGrantedProvider);
+    }
   }
 
   @override
