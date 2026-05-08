@@ -86,25 +86,46 @@ class KoruAccessibilityService : AccessibilityService() {
     /// foreground. Bug osservato: clicchi "Close instagram" dalla storia
     /// → viene chiusa la storia ma IG no.
     ///
+    /// **Fallback HOME-after-BACK**: dopo BACK schedula un re-check a
+    /// 600ms; se [blockedPackage] è ancora in foreground (sintomo:
+    /// YouTube mini-player o Instagram inner stack ha "ingoiato" il
+    /// BACK senza chiudere il task), forza HOME via Intent. Bug
+    /// osservato: link YouTube tappato da WhatsApp → blocco → BACK →
+    /// YouTube riduce a mini-player → AccessibilityEvent ri-spara per
+    /// YT → re-blocco → BACK → loop infinito tra WA e overlay con il
+    /// timer che si resetta a ogni show.
+    ///
     /// In entrambi i casi settiamo `suppressLauncherNavigationUntilMs`
     /// per preservare la sub-pagina del launcher Flutter: se Koru e'
     /// il default launcher, MainActivity ricevera' un HOME intent
     /// (direttamente o via il fallback BACK→HOME) e senza la finestra
     /// di soppressione `onNewIntent` chiamerebbe `goToLauncher()`
     /// resettando GoRouter alla pagina launcher base.
-    fun performGoHomeForBlock(forceHome: Boolean = false) {
+    fun performGoHomeForBlock(forceHome: Boolean = false, blockedPackage: String? = null) {
         val until = System.currentTimeMillis() + 1_500L
         suppressLauncherNavigationUntilMs = until
 
+        // Se forceHome (path HOME diretto, es. tap "Don't open"), cancella
+        // qualunque fallback BACK→HOME pending: stiamo gia' facendo HOME,
+        // un secondo HOME 600ms dopo sarebbe inutile e potrebbe interferire
+        // con la navigazione utente nel launcher.
+        if (forceHome) {
+            pendingBackFallbacks.values.forEach { mainHandler.removeCallbacks(it) }
+            pendingBackFallbacks.clear()
+        }
+
         if (!forceHome) {
-            Log.d(TAG, "GoHomeForBlock: BACK + suppressUntilMs=$until")
+            Log.d(TAG, "GoHomeForBlock: BACK pkg=$blockedPackage suppressUntilMs=$until")
             val backOk = try {
                 performGlobalAction(GLOBAL_ACTION_BACK)
             } catch (e: Exception) {
                 Log.w(TAG, "GLOBAL_ACTION_BACK threw, will fallback to HOME", e)
                 false
             }
-            if (backOk) return
+            if (backOk) {
+                blockedPackage?.let { scheduleBackFallbackHome(it) }
+                return
+            }
             Log.w(TAG, "BACK refused, falling back to HOME intent")
         } else {
             Log.d(TAG, "GoHomeForBlock: HOME (forced) + suppressUntilMs=$until")
@@ -113,6 +134,10 @@ class KoruAccessibilityService : AccessibilityService() {
         // HOME via Intent: va al default launcher senza forzare Koru.
         // Chiude effettivamente il task dell'app target indipendentemente
         // dal suo stack interno (a differenza di BACK).
+        goToHomeViaIntent()
+    }
+
+    private fun goToHomeViaIntent() {
         try {
             val home = Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_HOME)
@@ -122,6 +147,37 @@ class KoruAccessibilityService : AccessibilityService() {
         } catch (e: Exception) {
             Log.e(TAG, "HOME intent failed", e)
         }
+    }
+
+    /// Schedulato dopo un GLOBAL_ACTION_BACK riuscito: a 600ms verifica
+    /// che il pkg target NON sia più in foreground. Se invece e' ancora
+    /// li, BACK e' stato "ingoiato" da uno stack interno (mini-player YT,
+    /// inner activity IG, deep-link trampoline) → forziamo HOME.
+    ///
+    /// Usiamo [ForegroundDetector] (UsageStats) come signal authoritative
+    /// invece di [lastForegroundPackage]: quest'ultimo non si aggiorna
+    /// mentre il foreground e' un pkg "skip" (launcher/systemui), quindi
+    /// se BACK ha funzionato e l'utente e' nel launcher avremmo
+    /// `lastForegroundPackage == pkg` (falso positivo) e re-faremmo
+    /// HOME inutilmente.
+    private val pendingBackFallbacks = mutableMapOf<String, Runnable>()
+    private fun scheduleBackFallbackHome(pkg: String) {
+        pendingBackFallbacks.remove(pkg)?.let { mainHandler.removeCallbacks(it) }
+        val r = object : Runnable {
+            override fun run() {
+                pendingBackFallbacks.remove(pkg)
+                val fg = ForegroundDetector.detect(applicationContext)?.primaryPackage
+                if (fg != pkg) {
+                    Log.d(TAG, "BACK fallback: $pkg already left (foreground=$fg)")
+                    return
+                }
+                Log.w(TAG, "BACK fallback: $pkg still foreground after 600ms — forcing HOME")
+                suppressLauncherNavigationUntilMs = System.currentTimeMillis() + 1_500L
+                goToHomeViaIntent()
+            }
+        }
+        pendingBackFallbacks[pkg] = r
+        mainHandler.postDelayed(r, 600L)
     }
 
     private var profiles = emptyList<NativeProfile>()
@@ -548,7 +604,7 @@ class KoruAccessibilityService : AccessibilityService() {
                     profileEmoji = "\uD83C\uDFAF", // 🎯
                 )
             }
-            performGoHomeForBlock()
+            performGoHomeForBlock(blockedPackage = packageName)
             val now = System.currentTimeMillis()
             try {
                 NativeDatabase.insertBlockSession(applicationContext, packageName, now)
@@ -591,7 +647,7 @@ class KoruAccessibilityService : AccessibilityService() {
                         profileEmoji = profile.emoji,
                     )
                 }
-                performGoHomeForBlock()
+                performGoHomeForBlock(blockedPackage = packageName)
                 val now = System.currentTimeMillis()
                 try {
                     NativeDatabase.insertBlockSession(applicationContext, packageName, now)
@@ -636,7 +692,7 @@ class KoruAccessibilityService : AccessibilityService() {
                         bypassPolicy = policy,
                     )
                 }
-                performGoHomeForBlock()
+                performGoHomeForBlock(blockedPackage = packageName)
                 val now = System.currentTimeMillis()
                 try {
                     NativeDatabase.insertRestrictedAccessEvent(
@@ -707,7 +763,7 @@ class KoruAccessibilityService : AccessibilityService() {
                     profileEmoji = profile.emoji,
                 )
             }
-            performGoHomeForBlock()
+            performGoHomeForBlock(blockedPackage = packageName)
             try {
                 NativeDatabase.insertBlockSession(
                     applicationContext,
@@ -762,7 +818,7 @@ class KoruAccessibilityService : AccessibilityService() {
                         profileEmoji = matchedProfile?.emoji,
                     )
                 }
-                performGoHomeForBlock()
+                performGoHomeForBlock(blockedPackage = packageName)
                 val now = System.currentTimeMillis()
                 try {
                     NativeDatabase.insertBlockSession(applicationContext, detected.domain, now)
@@ -934,6 +990,8 @@ class KoruAccessibilityService : AccessibilityService() {
         pendingBypassExpiryChecks.clear()
         pendingLimitChecks.values.forEach { mainHandler.removeCallbacks(it) }
         pendingLimitChecks.clear()
+        pendingBackFallbacks.values.forEach { mainHandler.removeCallbacks(it) }
+        pendingBackFallbacks.clear()
         overlayManager?.destroy()
         overlayManager = null
         NativeDatabase.close()
