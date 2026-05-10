@@ -397,29 +397,36 @@ private fun BlockedScreen(
             val effectiveCountdownSec =
                 bypassPolicy.countdownSecondsOverride ?: config.countdownSeconds
 
-            // Il pause-toggle è un escape hatch: clicchi sul countdown → si
-            // ferma il timer → infinitamente. Per i blocchi "duri" (USAGE_LIMIT,
-            // BYPASS_EXPIRED) lo disabilitiamo, lasciandolo solo nei flow
-            // mindful (APP_BLOCKED entry) dove la pausa fa parte dell'UX.
-            CountdownButton(
-                durationMs = effectiveCountdownSec * 1000,
-                finishedText = "Open $appLabel",
-                pauseAllowed = bypassPolicy.pauseAllowed,
-                onFinished = { countdownFinished = true },
-                onTapAfterFinish = {
-                    if (config.allowBypassAfterCountdown) showDurationPicker = true
-                },
-            )
-
-            if (bypassPolicy.countToday > 0 &&
-                config.allowBypassAfterCountdown
-            ) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "Bypassed ${bypassPolicy.countToday}× today",
-                    color = KoruTextPrimary.copy(alpha = 0.55f),
-                    fontSize = 12.sp,
+            // In strict mode (allowBypassAfterCountdown=false) NON renderiamo
+            // il CountdownButton: il suo unico scopo è gateare il bypass con
+            // frizione, ma senza bypass è solo un pulsante "Open $appLabel"
+            // che non fa niente al tap (bug osservato: utente aspetta 8s
+            // di countdown su strict, tappa "Open instagram", nulla succede).
+            // Mostriamo invece un lock indicator non-actionable per dare
+            // feedback visivo dello stato bloccato; l'unica CTA è "Don't open".
+            if (config.allowBypassAfterCountdown) {
+                // Il pause-toggle è un escape hatch: clicchi sul countdown → si
+                // ferma il timer → infinitamente. Per i blocchi "duri" (USAGE_LIMIT,
+                // BYPASS_EXPIRED) lo disabilitiamo, lasciandolo solo nei flow
+                // mindful (APP_BLOCKED entry) dove la pausa fa parte dell'UX.
+                CountdownButton(
+                    durationMs = effectiveCountdownSec * 1000,
+                    finishedText = "Open $appLabel",
+                    pauseAllowed = bypassPolicy.pauseAllowed,
+                    onFinished = { countdownFinished = true },
+                    onTapAfterFinish = { showDurationPicker = true },
                 )
+
+                if (bypassPolicy.countToday > 0) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Bypassed ${bypassPolicy.countToday}× today",
+                        color = KoruTextPrimary.copy(alpha = 0.55f),
+                        fontSize = 12.sp,
+                    )
+                }
+            } else {
+                LockedIndicator(reason = reason)
             }
             Spacer(Modifier.height(16.dp))
 
@@ -652,6 +659,32 @@ private fun IntentionChip(
             selectedLabelColor = KoruTextPrimary,
         ),
     )
+}
+
+/// Indicatore non-actionable mostrato al posto del CountdownButton quando
+/// `allowBypassAfterCountdown == false` (strict mode). Comunica lo stato
+/// bloccato senza promettere un'azione che il sistema non permette.
+@Composable
+private fun LockedIndicator(reason: BlockReason) {
+    val text = when (reason) {
+        BlockReason.USAGE_LIMIT -> "🔒  Locked until tomorrow"
+        else -> "🔒  Locked"
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(64.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(KoruTextPrimary.copy(alpha = 0.06f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text,
+            color = KoruTextPrimary.copy(alpha = 0.55f),
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
 }
 
 @Composable
