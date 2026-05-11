@@ -1,6 +1,7 @@
 package com.dev.koru.content
 
 import android.content.Context
+import android.os.Build
 import android.view.accessibility.AccessibilityNodeInfo
 import org.json.JSONObject
 
@@ -8,13 +9,21 @@ import org.json.JSONObject
  * Detector Instagram: riconosce Reels / Stories / Explore da view-ids.
  *
  * I view-id sono caricati da `res/raw/instagram_view_ids.json` per permettere
- * hot-update dopo update di Instagram senza rebuild nativo. DFS limitato a
- * depth 12 per evitare stalli su UI grandi.
+ * hot-update dopo update di Instagram senza rebuild nativo.
+ *
+ * Implementazione DFS iterativa con stack: la versione ricorsiva precedente
+ * andava in stack overflow su alberi UI molto profondi (Reels feed con
+ * RecyclerView nested) e, più sottilmente, leakava AccessibilityNodeInfo
+ * perche' i child nodes non venivano recyclati. Su API < 33 questo causava
+ * il temuto "TooManyAccessibilityNodeInfosInUse" del binder, con il sintomo
+ * di drop completo degli AccessibilityEvent dopo qualche minuto di uso
+ * intensivo. Su API 33+ recycle e' deprecated (no-op safe), ma chiamarlo
+ * non costa nulla. MAX_DEPTH alzato a 20 per dare margine sui feed moderni.
  */
 class InstagramDetector(context: Context) {
     companion object {
         const val PACKAGE = "com.instagram.android"
-        private const val MAX_DEPTH = 12
+        private const val MAX_DEPTH = 20
     }
 
     private val reelsIds: Set<String>
@@ -44,8 +53,8 @@ class InstagramDetector(context: Context) {
         var stories = false
         var explore = false
 
-        walk(root) { node ->
-            val rid = node.viewIdResourceName ?: return@walk
+        walkIterative(root) { node ->
+            val rid = node.viewIdResourceName ?: return@walkIterative
             val short = rid.substringAfter(":id/")
             if (short in reelsIds) reels = true
             if (short in storiesIds) stories = true
@@ -61,16 +70,36 @@ class InstagramDetector(context: Context) {
         }
     }
 
-    private fun walk(
-        node: AccessibilityNodeInfo,
-        depth: Int = 0,
+    /// DFS iterativo con stack esplicito. Per ogni nodo non-root, dopo aver
+    /// pushato i figli, recycle il nodo (su API < 33). Il root non viene
+    /// mai recyclato qui: e' di proprieta' del caller.
+    /// Track la depth tramite un secondo stack parallelo (potremmo
+    /// incapsulare in un Pair ma evitare allocazioni nel hot path matters).
+    private inline fun walkIterative(
+        root: AccessibilityNodeInfo,
         visit: (AccessibilityNodeInfo) -> Unit,
     ) {
-        if (depth > MAX_DEPTH) return
-        visit(node)
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            walk(child, depth + 1, visit)
+        val nodes = ArrayDeque<AccessibilityNodeInfo>()
+        val depths = ArrayDeque<Int>()
+        nodes.addLast(root)
+        depths.addLast(0)
+        while (nodes.isNotEmpty()) {
+            val n = nodes.removeLast()
+            val d = depths.removeLast()
+            try {
+                visit(n)
+                if (d < MAX_DEPTH) {
+                    for (i in 0 until n.childCount) {
+                        val child = n.getChild(i) ?: continue
+                        nodes.addLast(child)
+                        depths.addLast(d + 1)
+                    }
+                }
+            } finally {
+                if (n !== root && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                    try { n.recycle() } catch (_: Throwable) {}
+                }
+            }
         }
     }
 }

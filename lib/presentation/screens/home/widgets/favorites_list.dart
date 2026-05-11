@@ -8,6 +8,13 @@ import '../../../providers/favorites_provider.dart';
 import '../../all_apps/widgets/app_list_view.dart';
 
 /// Lista favoriti reorderable. Tap = lancia app, long press = menu contestuale.
+///
+/// IMPORTANTE: la lista ha scroll proprio (non più `shrinkWrap +
+/// NeverScrollableScrollPhysics` dentro un `SingleChildScrollView` esterno).
+/// Quel pattern impediva l'auto-scroll durante il drag perché
+/// `ReorderableListView` ha bisogno di una `Scrollable` propria per scrollare
+/// quando il dito si avvicina ai bordi. Il caller deve dare a questo widget
+/// un'altezza limitata (es. Expanded o SizedBox).
 class FavoritesList extends ConsumerWidget {
   const FavoritesList({super.key});
 
@@ -22,8 +29,6 @@ class FavoritesList extends ConsumerWidget {
     final blocking = ref.watch(platformChannelServiceProvider).blocking;
 
     return ReorderableListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
       buildDefaultDragHandles: false,
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: favorites.length,

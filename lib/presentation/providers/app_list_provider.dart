@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/di/providers.dart';
@@ -10,18 +11,54 @@ final installedAppsProvider = FutureProvider<List<InstalledAppInfo>>((ref) async
   return blocking.getInstalledApps();
 });
 
+/// Set di package che dichiarano un'activity HOME (sono altri launcher
+/// installati: Nova, Pixel Launcher, AGM Launcher, ecc.). Usati per
+/// filtrare il drawer di Koru — mostrare un altro launcher tra le app
+/// confonde l'utente perché tap su Pixel Launcher non fa nulla di
+/// significativo (Android lo apre come app, non come launcher).
+///
+/// Implementato come call diretta al `com.koru/blocking` channel senza
+/// passare da `BlockingChannel` per non doverlo allargare; il backing è
+/// lo stesso method channel.
+final launcherPackagesProvider = FutureProvider<Set<String>>((ref) async {
+  const channel = MethodChannel('com.koru/blocking');
+  try {
+    final raw =
+        await channel.invokeListMethod<String>('getLauncherPackageNames');
+    return raw?.toSet() ?? const <String>{};
+  } catch (_) {
+    // Se la query fallisce (channel down al boot, OEM con restrizione)
+    // ritorniamo set vuoto: nessun filtro è meglio che crash.
+    return const <String>{};
+  }
+});
+
 /// Query di ricerca corrente nella drawer bar.
 final appSearchQueryProvider = StateProvider<String>((_) => '');
 
 /// App filtrate per la query + personalization (rinominate con nome
 /// custom, hidden escluse dal drawer). Le app rinominate sono ricercate
 /// sia per label originale sia per nome custom.
+///
+/// Filtra anche gli altri launcher installati: senza questo filtro il
+/// drawer mostra Nova/Pixel Launcher/AGM e tap su quegli entry non porta
+/// l'utente da nessuna parte (Android NON apre un launcher come app
+/// normale, lo tratta solo come candidato HOME). Koru stessa NON viene
+/// filtrata (anche se ha CATEGORY_HOME): l'utente la cerca esplicitamente.
 final filteredAppsProvider = Provider<List<InstalledAppInfo>>((ref) {
   final apps = ref.watch(installedAppsProvider).valueOrNull ?? const [];
   final query = ref.watch(appSearchQueryProvider).trim().toLowerCase();
   final personalization = ref.watch(appPersonalizationProvider);
+  final launcherPkgs =
+      ref.watch(launcherPackagesProvider).valueOrNull ?? const <String>{};
+  // Hardcoded: il package di Koru stessa. Volutamente NON filtrato dal
+  // drawer anche se compare nel set launcher (l'utente vuole poterla
+  // aprire da lì se ha cambiato launcher di default).
+  const koruPkg = 'com.dev.koru';
 
-  final visible = apps.where((a) => !personalization.isHidden(a.packageName));
+  final visible = apps.where((a) =>
+      !personalization.isHidden(a.packageName) &&
+      (a.packageName == koruPkg || !launcherPkgs.contains(a.packageName)));
 
   // Applica rename: produciamo nuovi InstalledAppInfo con label custom
   // mantenendo packageName/iconBytes, così tutto il resto della UI usa

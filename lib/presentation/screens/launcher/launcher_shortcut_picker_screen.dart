@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -23,11 +25,24 @@ class _LauncherShortcutPickerScreenState
     extends ConsumerState<LauncherShortcutPickerScreen> {
   final _searchController = TextEditingController();
   String _query = '';
+  Timer? _debounce;
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  /// Senza debounce un setState() per keystroke ricostruisce e refiltra la
+  /// lista (anche centinaia di app) ad ogni carattere — tipicamente induce
+  /// jank visibile su device modesti. 150ms è il sweet-spot: percepito
+  /// istantaneo dall'utente, evita filtri intermedi su query parziali.
+  void _onQueryChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 150), () {
+      if (mounted) setState(() => _query = value);
+    });
   }
 
   String _title() => widget.slot == LauncherShortcutSlot.left
@@ -63,7 +78,7 @@ class _LauncherShortcutPickerScreenState
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: TextField(
               controller: _searchController,
-              onChanged: (v) => setState(() => _query = v),
+              onChanged: _onQueryChanged,
               decoration: InputDecoration(
                 isDense: true,
                 hintText: 'Search apps',

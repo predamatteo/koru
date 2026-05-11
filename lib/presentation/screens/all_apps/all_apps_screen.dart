@@ -59,8 +59,15 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
 
   void _computeSectionOffsets(Map<String, dynamic> grouped) {
     _sectionOffsets.clear();
-    const headerHeight = 40.0;
-    const tileHeight = 50.0;
+    // Le altezze base (50px tile / 40px header) sono quelle definite in
+    // _AppTile e _SectionHeader. Se l'utente ha aumentato la font-scale di
+    // sistema (Accessibility → Display size & text), le tile crescono e i
+    // calcoli hard-coded portano il jump della fast-scrollbar ad ancorarsi
+    // su offset sbagliati. Scaliamo via TextScaler così il jump resta
+    // accurato anche per font scale 1.3x/1.5x.
+    final textScaler = MediaQuery.textScalerOf(context);
+    final tileHeight = textScaler.scale(50.0);
+    final headerHeight = textScaler.scale(40.0);
     double offset = 4.0;
     for (final entry in grouped.entries) {
       _sectionOffsets[entry.key] = offset;

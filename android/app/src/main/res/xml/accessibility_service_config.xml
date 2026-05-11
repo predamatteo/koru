@@ -1,9 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Config dell'AccessibilityService Koru.
+
+    notificationTimeout=200: la frequenza minima con cui il sistema ci
+    consegna eventi dello stesso tipo dalla stessa finestra. Era 100ms,
+    portato a 200ms per tagliare ~50% degli eventi WindowContentChanged
+    duplicati (es. scroll continuo in IG Stories) — il consumer di
+    questi eventi (handleAccessibilityEvent) ha overhead non trascurabile
+    quando la coalescenza è disabilitata. 200ms resta sotto il budget di
+    reattività percepibile dall'utente per il blocco.
+
+    accessibilityFlags: rimosso flagIncludeNotImportantViews. Era utile
+    quando volevamo scansionare anche subview decorative (es. ad icons
+    nascoste), ma nella prassi non rilevava niente di rilevante per
+    Instagram/YouTube/TikTok detector e aumentava il payload di ogni
+    AccessibilityNodeInfo tree fetch.
+
+    packageNames whitelist NON impostata qui: il filtering dinamico
+    via serviceInfo.packageNames lo fa KoruAccessibilityService.loadProfiles().
+    Lasciare il manifest vuoto = filter accetta tutti i pkg al boot,
+    KoruAccessibilityService lo restringe poi alle app sotto profilo
+    (riduzione drastica di eventi spurious).
+-->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged|typeWindowContentChanged|typeViewScrolled"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagRetrieveInteractiveWindows|flagReportViewIds|flagIncludeNotImportantViews"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows|flagReportViewIds"
     android:canRetrieveWindowContent="true"
-    android:notificationTimeout="100"
+    android:notificationTimeout="200"
     android:settingsActivity="com.dev.koru.MainActivity"
     android:description="@string/koru_accessibility_description" />

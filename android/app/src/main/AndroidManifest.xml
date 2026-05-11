@@ -14,13 +14,6 @@
 
     <!-- Overlay / System UI -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
-
-    <!-- Launcher role: concede l'ownership del wallpaper layer al nostro
-         activity quando Koru è il launcher di default. Senza questa
-         permission il compositor può mostrare il wallpaper di sistema
-         durante la gesture swipe-up da un'app verso home. -->
-    <uses-permission android:name="android.permission.SET_WALLPAPER" />
 
     <!-- Foreground service (blocking engine) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -48,13 +41,13 @@
     <!-- Biometric (Phase 2 Strict Mode unlock) -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
-    <!-- Scheduled alarms for periodic tasks / heartbeat -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-
     <application
         android:label="@string/app_name"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false">
 
         <!-- Main + HOME intent-filter tutti su MainActivity direttamente
              (pattern MP). L'attività appare come launcher option nel picker
@@ -113,7 +106,15 @@
 
         <!-- Notification filter: auto-dismiss delle notifiche dai pkg
              silenziati dall'utente. Richiede che l'utente abiliti Koru
-             in "Notification access" nelle Settings Android. -->
+             in "Notification access" nelle Settings Android.
+
+             android:exported="true" è REQUIRED dal sistema: il
+             NotificationManagerService di Android (process di sistema)
+             deve poter bindare il nostro service via Intent esterno
+             all'app. La sicurezza è garantita da
+             BIND_NOTIFICATION_LISTENER_SERVICE: solo processi che
+             detengono quella signature-level permission (il system
+             server) possono effettuare il binding. -->
         <service
             android:name=".notification.KoruNotificationListenerService"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
@@ -141,8 +142,15 @@
             android:name=".receiver.BootReceiver"
             android:exported="true">
             <intent-filter>
+                <!-- BOOT_COMPLETED: utenti con device sbloccato post-boot.
+                     LOCKED_BOOT_COMPLETED: direct-boot path, fires
+                     prima che l'utente sblocchi il device la prima
+                     volta (utile per ripristinare blocking attivo su
+                     device con FBE). QUICKBOOT_POWERON era un action
+                     OEM (HTC/Samsung) non protetto a livello sistema
+                     e quindi spoofable: rimosso. -->
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
 

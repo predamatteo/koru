@@ -22,7 +22,7 @@ class CircleClockWidget extends ConsumerStatefulWidget {
 }
 
 class _CircleClockWidgetState extends ConsumerState<CircleClockWidget> {
-  late Timer _clockTimer;
+  Timer? _clockTimer;
   DateTime _now = DateTime.now();
 
   static final DateFormat _timeFormat = DateFormat.Hm();
@@ -31,14 +31,32 @@ class _CircleClockWidgetState extends ConsumerState<CircleClockWidget> {
   @override
   void initState() {
     super.initState();
-    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _now = DateTime.now());
+    // Il formato HH:mm cambia al massimo una volta al minuto: schedulare un
+    // tick al secondo causa ~60 rebuild inutili al minuto solo per
+    // refreshare un widget statico. Schedula invece al prossimo confine
+    // di minuto, e si ri-schedula da solo dopo ogni tick.
+    _scheduleTick();
+  }
+
+  void _scheduleTick() {
+    _now = DateTime.now();
+    final next = DateTime(
+      _now.year,
+      _now.month,
+      _now.day,
+      _now.hour,
+      _now.minute + 1,
+    );
+    _clockTimer = Timer(next.difference(_now), () {
+      if (!mounted) return;
+      setState(() => _now = DateTime.now());
+      _scheduleTick();
     });
   }
 
   @override
   void dispose() {
-    _clockTimer.cancel();
+    _clockTimer?.cancel();
     super.dispose();
   }
 

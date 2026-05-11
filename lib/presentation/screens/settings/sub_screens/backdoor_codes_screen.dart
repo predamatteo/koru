@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/koru_colors.dart';
@@ -17,7 +18,11 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
   final _codeController = TextEditingController();
   String? _currentCode;
   String? _validationResult;
+  Color _resultColor = KoruColors.danger;
+  int _attemptsLeft = 0;
+  int _lockoutRemainingMs = 0;
   bool _loaded = false;
+  bool _submitting = false;
 
   StrictModeChannel get _channel =>
       ref.read(platformChannelServiceProvider).strictMode;
@@ -31,29 +36,103 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
   Future<void> _hydrate() async {
     if (_loaded) return;
     final code = await _channel.generateBackdoorCode();
+    final attempts = await _channel.getRemainingAttempts();
+    final lockout = await _channel.getLockoutRemainingMs();
     if (!mounted) return;
     setState(() {
       _loaded = true;
       _currentCode = code;
+      _attemptsLeft = attempts;
+      _lockoutRemainingMs = lockout;
+    });
+  }
+
+  Future<void> _refreshCounters() async {
+    final attempts = await _channel.getRemainingAttempts();
+    final lockout = await _channel.getLockoutRemainingMs();
+    if (!mounted) return;
+    setState(() {
+      _attemptsLeft = attempts;
+      _lockoutRemainingMs = lockout;
     });
   }
 
   Future<void> _validate() async {
     final input = _codeController.text.trim();
-    if (input.isEmpty) return;
-    final ok = await _channel.validateBackdoorCode(input);
-    if (!mounted) return;
-    if (ok) {
-      await _channel.performEmergencyUnblock();
-      setState(() => _validationResult = 'Valid — Strict mode turned off.');
-    } else {
-      setState(() => _validationResult = 'Invalid code.');
+    if (input.isEmpty || _submitting) return;
+    setState(() {
+      _submitting = true;
+      _validationResult = null;
+    });
+    try {
+      // Nuovo flow: performEmergencyUnblock fa tutto atomicamente
+      // (validate + markUsed + setMask(0) + removeDeviceAdmin). Non
+      // chiamiamo più validateBackdoorCode separatamente: era una
+      // race condition (un attacker poteva reusare il code tra validate
+      // e unblock).
+      final outcome = await _channel.performEmergencyUnblock(input);
+      if (!mounted) return;
+      switch (outcome) {
+        case BackdoorValid():
+          _codeController.clear();
+          setState(() {
+            _validationResult =
+                'Codice valido — strict mode disattivato. Il codice è stato '
+                'consumato; ne sarà generato uno nuovo.';
+            _resultColor = KoruColors.success;
+          });
+          // Refresh del code corrente: dopo emergency unblock il Kotlin
+          // ruota il code automaticamente.
+          final newCode = await _channel.generateBackdoorCode();
+          if (!mounted) return;
+          setState(() => _currentCode = newCode);
+        case BackdoorInvalid():
+          setState(() {
+            _validationResult = 'Codice non valido.';
+            _resultColor = KoruColors.danger;
+          });
+        case BackdoorReplay():
+          setState(() {
+            _validationResult =
+                'Codice già usato. Aspetta la rotazione settimanale per '
+                'ricevere un nuovo codice.';
+            _resultColor = KoruColors.danger;
+          });
+        case BackdoorLocked(:final remainingMs):
+          setState(() {
+            _validationResult = _formatLockoutMessage(remainingMs);
+            _resultColor = KoruColors.danger;
+            _lockoutRemainingMs = remainingMs;
+          });
+      }
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _validationResult = 'Errore: ${e.message ?? e.code}';
+        _resultColor = KoruColors.danger;
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+        await _refreshCounters();
+      }
     }
+  }
+
+  String _formatLockoutMessage(int ms) {
+    final minutes = (ms / 60000).ceil();
+    if (minutes < 60) return 'Lockout: $minutes minuti rimanenti.';
+    final hours = (minutes / 60).ceil();
+    if (hours < 24) return 'Lockout: $hours ore rimanenti.';
+    final days = (hours / 24).ceil();
+    return 'Lockout: $days giorni rimanenti.';
   }
 
   @override
   Widget build(BuildContext context) {
     if (!_loaded) _hydrate();
+
+    final inLockout = _lockoutRemainingMs > 0;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Backdoor codes')),
@@ -82,8 +161,10 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Copy it somewhere safe. It changes every week based on '
-                    'your device ID, works offline, and is single-use.',
+                    'Copia il codice in un posto sicuro. Ruota ogni settimana, '
+                    'è generato in modo casuale sul tuo dispositivo, funziona '
+                    'offline, e ogni codice è single-use: appena lo usi per '
+                    'sbloccare lo strict mode viene sostituito da uno nuovo.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: KoruColors.textSecondary,
                           height: 1.4,
@@ -101,26 +182,43 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
           const SizedBox(height: 8),
           TextField(
             controller: _codeController,
+            enabled: !inLockout && !_submitting,
             textCapitalization: TextCapitalization.characters,
-            decoration: const InputDecoration(
-              labelText: 'Enter code',
-              hintText: 'ABC123…',
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
+              LengthLimitingTextInputFormatter(16),
+            ],
+            decoration: InputDecoration(
+              labelText: 'Inserisci il codice',
+              hintText: 'ABCD2345',
+              helperText: inLockout
+                  ? _formatLockoutMessage(_lockoutRemainingMs)
+                  : '$_attemptsLeft tentativi rimanenti prima del lockout',
+              helperStyle: TextStyle(
+                color: inLockout
+                    ? KoruColors.danger
+                    : (_attemptsLeft <= 1
+                        ? KoruColors.danger
+                        : KoruColors.textSecondary),
+              ),
             ),
           ),
           const SizedBox(height: 12),
           FilledButton(
-            onPressed: _validate,
-            child: const Text('Unlock'),
+            onPressed: (inLockout || _submitting) ? null : _validate,
+            child: _submitting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Sblocca'),
           ),
           if (_validationResult != null) ...[
             const SizedBox(height: 12),
             Text(
               _validationResult!,
-              style: TextStyle(
-                color: _validationResult!.startsWith('Valid')
-                    ? KoruColors.success
-                    : KoruColors.danger,
-              ),
+              style: TextStyle(color: _resultColor),
             ),
           ],
         ],

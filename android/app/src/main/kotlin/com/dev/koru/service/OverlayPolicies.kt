@@ -21,14 +21,24 @@ object OverlayPolicies {
      * Non strict ⇒ progressive friction. Countdown 15→30→60→120s e durate
      * 5/10 min → 1/2 min dopo 3 bypass nel giorno corrente. Pause del
      * countdown disabilitato (era escape hatch gratuito).
+     *
+     * @param baseConfig OverlayConfig di partenza. Tipicamente
+     *   [OverlayConfig.DEFAULT] per i blocchi USAGE_LIMIT (che non
+     *   hanno una relation per-app/profilo), ma può essere un config
+     *   custom quando il caller ha accesso a un overlayConfigJson
+     *   (es. KoruAccessibilityService quando il limit è scoped a una
+     *   AppProfileRelation con custom branding/colors). Il flag
+     *   `allowBypassAfterCountdown` viene sempre derivato da `isStrict`
+     *   e sovrascrive il valore in baseConfig per coerenza UX.
      */
     fun buildUsageLimitOverlay(
         context: Context,
         pkg: String,
         isStrict: Boolean,
+        baseConfig: OverlayConfig = OverlayConfig.DEFAULT,
     ): Pair<OverlayConfig, BypassPolicy> {
         if (isStrict) {
-            return OverlayConfig.DEFAULT.copy(
+            return baseConfig.copy(
                 allowBypassAfterCountdown = false,
             ) to BypassPolicy()
         }
@@ -44,7 +54,9 @@ object OverlayPolicies {
         } else {
             listOf("5 min" to 5L * 60_000L, "10 min" to 10L * 60_000L)
         }
-        return OverlayConfig.DEFAULT to BypassPolicy(
+        return baseConfig.copy(
+            allowBypassAfterCountdown = true,
+        ) to BypassPolicy(
             countToday = count,
             durations = durations,
             countdownSecondsOverride = countdown,

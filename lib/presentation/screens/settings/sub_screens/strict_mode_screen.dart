@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -36,9 +37,152 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
 
   bool get _isEnabled => _mask != 0;
 
+  /// Richiede backdoor code prima di applicare un cambio che ALLENTA la
+  /// protezione (disable master, disable di un singolo bit). Restituisce
+  /// `true` se l'utente ha autenticato correttamente.
+  ///
+  /// Strategia: chiediamo conferma di intent + backdoor code in un dialog
+  /// unico. La chiamata al channel performa la validazione atomica (S4):
+  /// rate limit, replay check, match. Se passa, ritorniamo true e il caller
+  /// applica la modifica.
+  Future<bool> _requireBackdoorAuth({required String purpose}) async {
+    final controller = TextEditingController();
+    var attemptsLeft = await _channel.getRemainingAttempts();
+    final lockoutMs = await _channel.getLockoutRemainingMs();
+    if (!mounted) return false;
+
+    if (lockoutMs > 0) {
+      // Lockout attivo: nemmeno mostriamo il dialog, comunichiamo il tempo
+      // di attesa.
+      await _showLockoutDialog(lockoutMs);
+      return false;
+    }
+
+    final granted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        String? errorText;
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            return AlertDialog(
+              title: const Text('Conferma con backdoor code'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Per $purpose devi inserire il backdoor code della '
+                    'settimana. Lo trovi in Strict mode → Backdoor.',
+                    style: Theme.of(ctx).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    textCapitalization: TextCapitalization.characters,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(
+                        RegExp(r'[A-Za-z0-9]'),
+                      ),
+                      LengthLimitingTextInputFormatter(16),
+                    ],
+                    decoration: InputDecoration(
+                      labelText: 'Backdoor code',
+                      hintText: 'ABCD2345',
+                      errorText: errorText,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '$attemptsLeft tentativi rimanenti prima del lockout.',
+                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                          color: KoruColors.textSecondary,
+                        ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('Annulla'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    final input = controller.text.trim();
+                    if (input.isEmpty) {
+                      setLocal(() => errorText = 'Codice obbligatorio');
+                      return;
+                    }
+                    final outcome = await _channel.validateBackdoorCode(input);
+                    if (!ctx.mounted) return;
+                    switch (outcome) {
+                      case BackdoorValid():
+                        Navigator.of(ctx).pop(true);
+                      case BackdoorInvalid():
+                        attemptsLeft = await _channel.getRemainingAttempts();
+                        if (!ctx.mounted) return;
+                        setLocal(() => errorText = 'Codice non valido');
+                      case BackdoorReplay():
+                        setLocal(
+                          () => errorText =
+                              'Codice già usato — aspetta la rotazione settimanale.',
+                        );
+                      case BackdoorLocked(:final remainingMs):
+                        Navigator.of(ctx).pop(false);
+                        await _showLockoutDialog(remainingMs);
+                    }
+                  },
+                  child: const Text('Conferma'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    controller.dispose();
+    return granted ?? false;
+  }
+
+  Future<void> _showLockoutDialog(int remainingMs) async {
+    if (!mounted) return;
+    final minutes = (remainingMs / 60000).ceil();
+    final text = minutes < 60
+        ? '$minutes minuti'
+        : minutes < 24 * 60
+            ? '${(minutes / 60).ceil()} ore'
+            : '${(minutes / (60 * 24)).ceil()} giorni';
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Troppi tentativi falliti'),
+        content: Text(
+          'Per motivi di sicurezza il backdoor code è disattivato '
+          'per $text. Riprova tra un po\'.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _toggleOption(int bit, bool enabled) async {
+    if (!enabled && (_mask & bit) != 0) {
+      // Disabilito un bit attivo → richiedi auth.
+      final ok = await _requireBackdoorAuth(
+        purpose: 'disattivare questa protezione',
+      );
+      if (!ok) return;
+    }
     final next = enabled ? (_mask | bit) : (_mask & ~bit);
     await _channel.setStrictModeOptions(next);
+    if (!mounted) return;
     setState(() => _mask = next);
   }
 
@@ -49,11 +193,59 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
         // User returns: recheck status when screen resumes.
       }
       await _channel.setStrictModeOptions(StrictModeOption.allMvp);
+      if (!mounted) return;
       setState(() => _mask = StrictModeOption.allMvp);
       await ref.read(achievementEvaluationProvider.notifier).trigger();
     } else {
+      // Disable master richiede backdoor code (è il path "voglio uscire"
+      // più frequente — passa dalla validazione di sicurezza completa).
+      final ok = await _requireBackdoorAuth(
+        purpose: 'disattivare strict mode',
+      );
+      if (!ok) return;
+      // Il backdoor code valid invalida già la mask via
+      // performEmergencyUnblock? No: validateBackdoorCode marca solo come
+      // usato + reset counter. Per coerenza chiamiamo setStrictModeOptions(0)
+      // qui — la mask è già azzerata se l'utente ha usato il "vero" emergency
+      // unblock dalla backdoor screen.
       await _channel.setStrictModeOptions(0);
+      if (!mounted) return;
       setState(() => _mask = 0);
+    }
+  }
+
+  Future<void> _disableDeviceAdmin() async {
+    try {
+      await _channel.disableDeviceAdmin();
+      if (!mounted) return;
+      setState(() => _deviceAdminActive = false);
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      if (e.code == 'STRICT_ACTIVE') {
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Strict mode attivo'),
+            content: const Text(
+              'Per disabilitare Device Admin devi prima disattivare '
+              'strict mode usando il backdoor code.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  context.push('/settings/backdoor');
+                },
+                child: const Text('Apri backdoor'),
+              ),
+            ],
+          ),
+        );
+      }
     }
   }
 
@@ -165,10 +357,7 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
             ),
             trailing: _deviceAdminActive
                 ? TextButton(
-                    onPressed: () async {
-                      await _channel.disableDeviceAdmin();
-                      setState(() => _deviceAdminActive = false);
-                    },
+                    onPressed: _disableDeviceAdmin,
                     child: const Text('Disable'),
                   )
                 : FilledButton(

@@ -1,8 +1,10 @@
 package com.dev.koru.service
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import java.io.File
+import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONObject
 
 /**
@@ -21,6 +23,15 @@ import org.json.JSONObject
  *
  * `strict=true` ⇒ il blocco USAGE_LIMIT non permette "Open anyway".
  * `strict=false` ⇒ progressive friction (vedi [BypassCountStore]).
+ *
+ * Hardening (S6):
+ * - Cache `AtomicReference<CachedSnapshot>` con baseline `elapsedRealtime`
+ *   per evitare il file read ad ogni check del polling (1Hz). Era il bottleneck
+ *   identificato dal Mobile Builder: ogni iterazione del polling parsava
+ *   l'intero JSON da disco. Ora la prima read mette in cache, le successive
+ *   sono O(1). La cache è invalidata su [save] (write esplicita).
+ * - Niente sync API: la mutabilità è solo via [save], che bumpea il counter
+ *   di versione e tutti i lettori successivi vedono il nuovo valore.
  */
 object AppUsageLimitsStore {
     private const val TAG = "AppUsageLimitsStore"
@@ -30,10 +41,30 @@ object AppUsageLimitsStore {
     /// limite attivo (lo store filtra questi entries via [save]).
     data class LimitEntry(val minutes: Int, val strict: Boolean)
 
+    private data class CachedSnapshot(
+        val data: Map<String, LimitEntry>,
+        val baselineElapsedMs: Long,
+        val fileLastModified: Long,
+    )
+
+    private val cache = AtomicReference<CachedSnapshot?>(null)
+
     fun read(context: Context): Map<String, LimitEntry> {
+        val current = cache.get()
+        val file = File(context.filesDir, FILE_NAME)
+        val lastModified = if (file.exists()) file.lastModified() else 0L
+
+        if (current != null && current.fileLastModified == lastModified) {
+            return current.data
+        }
+
+        // Cache miss o file modificato fuori da save(): reload da disco.
         return try {
-            val file = File(context.filesDir, FILE_NAME)
-            if (!file.exists()) return emptyMap()
+            if (!file.exists()) {
+                val empty = emptyMap<String, LimitEntry>()
+                cache.set(CachedSnapshot(empty, SystemClock.elapsedRealtime(), 0L))
+                return empty
+            }
             val json = JSONObject(file.readText())
             val out = mutableMapOf<String, LimitEntry>()
             val keys = json.keys()
@@ -42,7 +73,9 @@ object AppUsageLimitsStore {
                 val entry = parseEntry(json.opt(k)) ?: continue
                 if (entry.minutes > 0) out[k] = entry
             }
-            out
+            val frozen = out.toMap()
+            cache.set(CachedSnapshot(frozen, SystemClock.elapsedRealtime(), lastModified))
+            frozen
         } catch (e: Exception) {
             Log.w(TAG, "Failed to read limits, returning empty", e)
             emptyMap()
@@ -77,6 +110,10 @@ object AppUsageLimitsStore {
                 json.put(k, obj)
             }
             file.writeText(json.toString())
+            // Aggiorna immediatamente la cache così il prossimo read non
+            // deve nemmeno hit-are il filesystem per il check di lastModified.
+            val frozen = limits.filter { it.value.minutes > 0 }.toMap()
+            cache.set(CachedSnapshot(frozen, SystemClock.elapsedRealtime(), file.lastModified()))
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save limits", e)
         }

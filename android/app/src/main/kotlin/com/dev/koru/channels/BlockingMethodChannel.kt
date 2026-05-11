@@ -16,6 +16,7 @@ import com.dev.koru.service.AppUsageLimitsStore
 import com.dev.koru.service.BypassCountStore
 import com.dev.koru.service.LockForegroundService
 import com.dev.koru.service.UsageCounter
+import com.dev.koru.strictmode.StrictModeStore
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -81,9 +82,44 @@ object BlockingMethodChannel {
                         result.success(true)
                     }
                     "isBlockingServiceRunning" -> result.success(LockForegroundService.isRunning)
-                    "getInstalledApps" -> result.success(getInstalledApps(activity))
+                    "getInstalledApps" -> {
+                        // Offload su background thread: `getInstalledApps`
+                        // scansiona TUTTI i package, chiama
+                        // `getApplicationIcon` (decode drawable da APK) e fa
+                        // un compress PNG per ciascuno. Su set realistici
+                        // (60-150 app) può prendere 1-3s e bloccare il
+                        // Platform main thread, freezando la UI Flutter
+                        // (che attende il method channel result). Eseguiamo
+                        // tutto su Thread() e torniamo alla UI thread solo
+                        // per `result.success`/`result.error`.
+                        Thread {
+                            try {
+                                val data = getInstalledApps(activity)
+                                activity.runOnUiThread { result.success(data) }
+                            } catch (e: Exception) {
+                                activity.runOnUiThread {
+                                    result.error(
+                                        "INSTALLED_APPS_ERROR",
+                                        e.message,
+                                        null,
+                                    )
+                                }
+                            }
+                        }.start()
+                    }
                     "getInstalledPackageNames" ->
                         result.success(getInstalledPackageNames(activity))
+                    "getLauncherPackageNames" -> {
+                        // Set di package che dichiarano un'activity HOME
+                        // (sono altri launcher installati: Nova, Pixel
+                        // Launcher, ecc.). Esposto separatamente da
+                        // `getInstalledApps` per non dover toccare lo schema
+                        // di `InstalledAppInfo` lato Dart; il provider Dart
+                        // fa il merge.
+                        result.success(
+                            resolveLauncherPackages(activity.packageManager).toList()
+                        )
+                    }
                     "getUsageStats" -> {
                         val startMs = call.longArg("startMs")
                         val endMs = call.longArg("endMs").takeIf { it > 0 }
@@ -140,6 +176,23 @@ object BlockingMethodChannel {
                     }
                     "uninstallApp" -> {
                         val pkg = call.argument<String>("packageName") ?: return@setMethodCallHandler result.error("MISSING_ARG", "packageName required", null)
+                        // Guard strict mode: se l'utente sta cercando di
+                        // disinstallare Koru stessa mentre BLOCK_UNINSTALLING
+                        // è attivo, blocchiamo l'intent prima ancora di
+                        // arrivare al package installer (defense in depth:
+                        // anche se StrictModeEnforcer dovesse missarlo,
+                        // questo livello rifiuta).
+                        if (pkg == activity.packageName) {
+                            val mask = StrictModeStore.readMask(activity)
+                            if (mask and StrictModeStore.BLOCK_UNINSTALLING != 0) {
+                                result.error(
+                                    "BLOCK_UNINSTALLING",
+                                    "Cannot uninstall Koru while strict mode protects uninstalling.",
+                                    null,
+                                )
+                                return@setMethodCallHandler
+                            }
+                        }
                         try {
                             val intent = Intent(Intent.ACTION_DELETE).apply {
                                 data = android.net.Uri.parse("package:$pkg")
@@ -249,6 +302,7 @@ object BlockingMethodChannel {
 
     private fun getInstalledApps(context: Context): List<Map<String, Any?>> {
         val pm = context.packageManager
+        val launcherPkgs = resolveLauncherPackages(pm)
         return pm.getInstalledApplications(PackageManager.GET_META_DATA)
             .filter {
                 it.flags and ApplicationInfo.FLAG_SYSTEM == 0 ||
@@ -259,9 +313,27 @@ object BlockingMethodChannel {
                     "packageName" to app.packageName,
                     "label" to (pm.getApplicationLabel(app)?.toString() ?: app.packageName),
                     "icon" to try { drawableToBytes(pm.getApplicationIcon(app)) } catch (_: Exception) { null },
+                    "isLauncher" to launcherPkgs.contains(app.packageName),
                 )
             }
             .sortedBy { (it["label"] as String).lowercase() }
+    }
+
+    /// Set di package che dichiarano almeno un'activity con
+    /// CATEGORY_HOME (cioè sono launcher). Calcolato una volta per
+    /// chiamata a `getInstalledApps` e poi usato come lookup O(1) per
+    /// taggare il flag `isLauncher` su ciascuna app — il Dart-side
+    /// filtra il drawer per nascondere altri launcher (Nova, Pixel
+    /// Launcher, ecc.) che altrimenti creavano confusione.
+    private fun resolveLauncherPackages(pm: PackageManager): Set<String> {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        return try {
+            pm.queryIntentActivities(intent, 0)
+                .mapNotNull { it.activityInfo?.packageName }
+                .toSet()
+        } catch (_: Exception) {
+            emptySet()
+        }
     }
 
     /// Variante "cheap" usata dal lifecycle observer Dart per il diff-based

@@ -66,10 +66,14 @@ class LockRunnable(
         Thread.sleep(1000) // wait for DB to be ready
         loadProfiles()
 
+        // O12: PowerManager risolto una sola volta. getSystemService non
+        // è gratis (lookup ServiceManager) e qui era nel hot loop.
+        val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+
         while (isRunning) {
             try {
-                val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-                if (pm.isInteractive) checkAndBlock()
+                val interactive = pm.isInteractive
+                if (interactive) checkAndBlock()
 
                 iterationCount++
                 if (needsReload || iterationCount % PROFILE_RELOAD_INTERVAL == 0) {
@@ -77,7 +81,19 @@ class LockRunnable(
                     loadProfiles()
                 }
 
-                Thread.sleep(POLL_INTERVAL_MS)
+                // Adaptive backoff: il polling 300ms è il backup di emergenza
+                // per quando l'AccessibilityService è morto. In quel caso ci
+                // serve reattività vera (300ms = max 300ms di lag prima del
+                // blocco). Quando invece accessibility è vivo è lui il path
+                // primario, e qui basta un check ogni 5s per "siamo ancora
+                // qui pronti se cade". Schermo spento: 10s, irrilevante
+                // qualunque foreground app perché l'utente non la sta usando.
+                val sleepMs = when {
+                    !interactive -> 10_000L
+                    KoruAccessibilityService.instance != null -> 5_000L
+                    else -> POLL_INTERVAL_MS
+                }
+                Thread.sleep(sleepMs)
             } catch (e: InterruptedException) {
                 Log.i(TAG, "Blocking loop interrupted")
                 break
@@ -117,7 +133,11 @@ class LockRunnable(
         // i daily limits sono globali, non profile-scoped, quindi vanno
         // controllati anche se l'utente ha 0 profili abilitati.
 
-        val foreground = ForegroundDetector.detect(context) ?: run {
+        // O12: lookback ridotto a 30s. Default più lungo causava
+        // ForegroundDetector a scansionare ~60s di UsageEvents ogni
+        // 300ms = uso CPU non necessario. 30s è abbastanza per coprire
+        // il caso in cui torniamo dal sleep di un cycle precedente.
+        val foreground = ForegroundDetector.detect(context, lookbackMs = 30_000L) ?: run {
             if (iterationCount % 100 == 0) Log.w(TAG, "ForegroundDetector returned null")
             return
         }
@@ -153,7 +173,13 @@ class LockRunnable(
         }
 
         // 1) Profile-based blocking (logica originale).
-        for (profile in profiles) {
+        // O13: snapshot tramite toList() — loadProfiles() può sostituire
+        // l'intera lista da un altro callback (reloadProfiles via Flutter
+        // bridge). Iterando direttamente su `profiles` si rischiava
+        // ConcurrentModificationException quando il broadcast arrivava
+        // a metà ciclo.
+        val profilesSnapshot = profiles.toList()
+        for (profile in profilesSnapshot) {
             if (!isProfileActiveNow(profile)) continue
 
             val relation = findBlockingRelation(profile, pkg) ?: continue

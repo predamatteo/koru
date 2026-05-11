@@ -14,6 +14,13 @@ import '../../core/router/app_router.dart';
 ///   quel segnale Flutter resterebbe sulla launcher UI anche quando Koru
 ///   non è più il launcher di sistema.
 final homeIntentListenerProvider = Provider<void>((ref) {
+  // keepAlive: il listener deve restare registrato per tutta la vita dell'app
+  // perché MainActivity può inviare `goToLauncher` / `goToHomeIfOnLauncher`
+  // in qualsiasi momento (es. HOME intent ricevuto mentre Koru è in
+  // background). Senza keepAlive, se nessuna UI lo watcha (provider listener
+  // smontati durante deep navigation), Riverpod lo disposerebbe e i futuri
+  // intent verrebbero persi finché non si rimonta un consumer.
+  ref.keepAlive();
   const channel = MethodChannel('com.koru/navigation');
   channel.setMethodCallHandler((call) async {
     final ctx = rootNavigatorKey.currentContext;

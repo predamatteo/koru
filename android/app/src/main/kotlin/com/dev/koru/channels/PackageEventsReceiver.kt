@@ -19,6 +19,14 @@ import org.json.JSONObject
 class PackageEventsReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
         val action = intent?.action ?: return
+        // Early-return su packageName vuoto: alcuni broadcast malformati
+        // (o intent injection da componenti di sistema senza data) arrivano
+        // senza scheme-specific-part, e propagarli nel channel Flutter
+        // avrebbe come effetto di invalidare la lista installed apps senza
+        // motivo, scatenando un refresh fullinde inutile su PackageManager.
+        val packageName = intent.data?.schemeSpecificPart ?: return
+        if (packageName.isEmpty()) return
+
         // PACKAGE_REPLACED emette ANCHE un PACKAGE_REMOVED con EXTRA_REPLACING=true
         // seguito da PACKAGE_ADDED con EXTRA_REPLACING=true. Per evitare 3 eventi
         // a fronte di un singolo update, ignoriamo i REMOVED/ADDED "replacing"
@@ -26,7 +34,6 @@ class PackageEventsReceiver : BroadcastReceiver() {
         val replacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
         if (replacing && action != Intent.ACTION_PACKAGE_REPLACED) return
 
-        val packageName = intent.data?.schemeSpecificPart ?: ""
         val kind = when (action) {
             Intent.ACTION_PACKAGE_ADDED -> "added"
             Intent.ACTION_PACKAGE_REMOVED -> "removed"

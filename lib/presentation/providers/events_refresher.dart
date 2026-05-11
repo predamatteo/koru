@@ -39,7 +39,21 @@ void _invalidateInstalledApps(Ref ref) {
 /// rileviamo un delta (install/uninstall avvenuto in onStop) paghiamo
 /// il costo del refresh completo.
 Future<void> _smartRefreshInstalledApps(Ref ref) async {
-  final cached = ref.read(installedAppsProvider).valueOrNull;
+  final state = ref.read(installedAppsProvider);
+  if (state.hasError) {
+    // Primo load fallito (es. PackageManager scan crashato durante init,
+    // o channel down al boot): senza retry esplicito il provider resta
+    // sempre in AsyncError finché un altro trigger (package event) non
+    // lo invalida. Forzare invalidate qui risolve il blocco al rientro
+    // foreground anche dopo un fail iniziale.
+    developer.log(
+      'installedAppsProvider in error state at resume → force retry',
+      name: 'EventsRefresher',
+    );
+    _invalidateInstalledApps(ref);
+    return;
+  }
+  final cached = state.valueOrNull;
   if (cached == null) {
     // Lista mai caricata: il prossimo `ref.watch` la caricherà; nessun
     // motivo di forzare adesso.

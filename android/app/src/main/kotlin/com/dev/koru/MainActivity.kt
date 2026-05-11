@@ -1,5 +1,6 @@
 package com.dev.koru
 
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -8,6 +9,7 @@ import android.os.Looper
 import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import com.dev.koru.channels.BatteryEventChannel
 import com.dev.koru.channels.BlockingMethodChannel
 import com.dev.koru.channels.NavigationMethodChannel
 import com.dev.koru.channels.PackageEventsReceiver
@@ -48,6 +50,15 @@ class MainActivity : FlutterActivity() {
         ServiceEventChannel.register(flutterEngine)
         PermissionMethodChannel.register(flutterEngine, this)
         NavigationMethodChannel.register(flutterEngine)
+        BatteryEventChannel.register(flutterEngine, applicationContext)
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        // Rilascia sink/handler dei channel longevi prima che l'engine
+        // venga distrutto, così non restano reference a sink morti.
+        ServiceEventChannel.detach()
+        NavigationMethodChannel.detach()
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 
     /**
@@ -118,7 +129,20 @@ class MainActivity : FlutterActivity() {
         super.onStart()
         if (packageEventsReceiver == null) {
             val receiver = PackageEventsReceiver()
-            registerReceiver(receiver, PackageEventsReceiver.newFilter())
+            // Android 14 (API 34) richiede esplicitamente il flag
+            // RECEIVER_NOT_EXPORTED / RECEIVER_EXPORTED per i context-
+            // registered receiver, pena SecurityException. I broadcast
+            // PACKAGE_ADDED/REMOVED/REPLACED arrivano dal sistema e non
+            // devono essere esposti ad altre app → NOT_EXPORTED.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(
+                    receiver,
+                    PackageEventsReceiver.newFilter(),
+                    Context.RECEIVER_NOT_EXPORTED,
+                )
+            } else {
+                registerReceiver(receiver, PackageEventsReceiver.newFilter())
+            }
             packageEventsReceiver = receiver
         }
     }

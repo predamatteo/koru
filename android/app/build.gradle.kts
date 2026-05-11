@@ -57,6 +57,13 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+
+    // Keystore-backed encrypted preferences per strict mode mask, backdoor code
+    // e counter di lockout. Necessario perché i file plain in filesDir sono
+    // letti/scritti senza integrità (un utente con accesso al filesystem può
+    // azzerare la mask). EncryptedSharedPreferences usa AES-256 GCM con chiave
+    // master dal Keystore hardware (StrongBox quando disponibile).
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 }
 
 flutter {

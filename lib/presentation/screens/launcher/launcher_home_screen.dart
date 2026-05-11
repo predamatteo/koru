@@ -39,14 +39,11 @@ class LauncherHomeScreen extends ConsumerWidget {
             const SizedBox(height: 16),
             const CircleClockWidget(),
             const SizedBox(height: 16),
-            Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: const [FavoritesList()],
-                ),
-              ),
-            ),
+            // FavoritesList gestisce ora il proprio scroll (richiesto per
+            // l'auto-scroll durante il drag-reorder). L'Expanded le dà
+            // l'altezza limitata che serve perché ReorderableListView non
+            // può vivere senza vincoli verticali.
+            const Expanded(child: FavoritesList()),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [

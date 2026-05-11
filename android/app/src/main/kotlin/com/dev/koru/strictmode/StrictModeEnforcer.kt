@@ -47,47 +47,86 @@ object StrictModeEnforcer {
         "com.miui.packageinstaller",
     )
 
-    /// Activity di Settings considerate "permission grant pages": il
-     /// blocco BLOCK_SETTINGS le lascia passare anche con strict mode on,
-     /// così l'utente può concedere i permessi richiesti da Koru (notif
-     /// listener, accessibility, usage stats, overlay, battery opt,
-     /// default launcher). Match è substring case-insensitive sul className
-     /// dell'activity per funzionare cross-OEM.
-    private val SETTINGS_PERMISSION_ALLOWLIST = listOf(
+    /// Allowlist BASE: voci di Settings sempre concesse anche con strict mode
+    /// attivo, perché necessarie per concedere/revocare permessi richiesti
+    /// da Koru stesso (notification listener, usage access, app overlay).
+    /// Match è substring case-insensitive sul className.
+    private val PERMISSION_ALLOWLIST_BASE = listOf(
         "NotificationAccess",              // notification listener detail + list
         "NotificationListener",
-        "AccessibilityDetails",            // enable specific accessibility service
-        "AccessibilityServiceDetail",
         "UsageAccess",                     // package usage stats
         "AppUsageAccess",
         "ManageAppOverlay",                // draw over other apps
         "AppOverlayPermission",
-        "HighPowerApplication",            // battery optimization whitelist
         "RequestIgnoreBatteryOptimization",
         "IgnoreBatteryOptimization",
-        "HomeSettings",                    // default launcher picker
     )
 
-    private fun isPermissionGrantPage(className: String): Boolean {
+    /// Voci sensibili che PRIMA erano in allowlist incondizionata e ora sono
+    /// concesse SOLO quando BLOCK_SETTINGS è disabilitato. Razionale:
+    /// - `AccessibilityDetails` / `AccessibilityServiceDetail`: l'utente può
+    ///   disabilitare il servizio di accessibilità di Koru → bypass totale
+    ///   dello strict mode. Va bloccato finché strict è attivo.
+    /// - `AccessibilitySettings`: stessa identica esposizione, lista
+    ///   completa dei servizi a11y dove Koru può essere disabilitato.
+    /// - `HomeSettings`: cambiare il default launcher mentre strict è ON
+    ///   permette di nascondere Koru. Resta bloccato.
+    /// - `HighPowerApplication`: la pagina di battery optimization permette
+    ///   anche di rimuovere Koru dalla whitelist → kill del foreground
+    ///   service in background → bypass. Bloccato.
+    private val PERMISSION_ALLOWLIST_WHEN_SETTINGS_UNLOCKED = listOf(
+        "AccessibilityDetails",
+        "AccessibilityServiceDetail",
+        "AccessibilitySettings",
+        "HomeSettings",
+        "HighPowerApplication",
+    )
+
+    /// Allowlist effettiva data la mask corrente. Quando BLOCK_SETTINGS è
+    /// attivo, eliminiamo le voci sensibili che potrebbero permettere
+    /// all'utente di disabilitare Koru indirettamente.
+    private fun effectiveAllowlist(mask: Int): List<String> {
+        if (mask and BLOCK_SETTINGS == 0) {
+            // Strict mode su Settings OFF: l'utente può comunque entrare in
+            // Settings, quindi non ha senso filtrare nessuna pagina.
+            return PERMISSION_ALLOWLIST_BASE + PERMISSION_ALLOWLIST_WHEN_SETTINGS_UNLOCKED
+        }
+        return PERMISSION_ALLOWLIST_BASE
+    }
+
+    private fun isPermissionGrantPage(className: String, mask: Int): Boolean {
         if (className.isEmpty()) return false
-        return SETTINGS_PERMISSION_ALLOWLIST.any {
+        return effectiveAllowlist(mask).any {
             className.contains(it, ignoreCase = true)
         }
     }
 
+    /// Cache della mask. Era 3 secondi → ridotta a 0 per garantire che
+    /// dopo una write da [StrictModeMethodChannel.setStrictModeOptions]
+    /// l'enforcer veda subito il nuovo valore, senza affidarsi al call
+    /// esplicito di [invalidateCache] su tutti i write path. EncryptedSharedPreferences
+    /// fa caching interno comunque, quindi la read è O(1) in memoria.
     private var cachedMask: Int = -1
     private var lastReadTime = 0L
-    private const val CACHE_MS = 3_000L
+    private const val CACHE_MS = 0L
 
     private fun getMask(context: Context): Int {
-        val now = System.currentTimeMillis()
-        if (cachedMask >= 0 && now - lastReadTime < CACHE_MS) return cachedMask
-        cachedMask = StrictModeStore.readMask(context)
-        lastReadTime = now
-        return cachedMask
+        if (CACHE_MS > 0L) {
+            val now = System.currentTimeMillis()
+            if (cachedMask >= 0 && now - lastReadTime < CACHE_MS) return cachedMask
+            cachedMask = StrictModeStore.readMask(context)
+            lastReadTime = now
+            return cachedMask
+        }
+        // Zero-cache path: leggi sempre fresco. La EncryptedSharedPreferences
+        // tiene un caching interno per cui questo non è un I/O cost.
+        return StrictModeStore.readMask(context)
     }
 
-    fun invalidateCache() { cachedMask = -1 }
+    fun invalidateCache() {
+        cachedMask = -1
+        lastReadTime = 0L
+    }
 
     fun handleEvent(service: AccessibilityService, event: AccessibilityEvent): Boolean {
         val mask = getMask(service.applicationContext)
@@ -97,7 +136,7 @@ object StrictModeEnforcer {
         val className = event.className?.toString() ?: ""
 
         if (mask and BLOCK_SETTINGS != 0 && SETTINGS_PACKAGES.contains(packageName)) {
-            if (isPermissionGrantPage(className)) {
+            if (isPermissionGrantPage(className, mask)) {
                 Log.d(TAG, "STRICT: allowlisted permission page $className")
                 return false
             }

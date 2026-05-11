@@ -9,8 +9,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.Configuration
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.dev.koru.MainActivity
@@ -55,6 +59,20 @@ class LockForegroundService : Service() {
     private var overlayManager: OverlayManager? = null
     private var reloadReceiver: BroadcastReceiver? = null
 
+    /// Handler sul main looper. Tutte le chiamate a WindowManager.addView /
+    /// removeView devono essere fatte da qui (Compose lo richiede, e
+    /// WindowManager su alcuni device crasha se chiamato da thread di
+    /// background con eccezioni opache). LockRunnable invoca i callback
+    /// dal suo polling thread, quindi qui wrappiamo tutto in mainHandler.post.
+    private val mainHandler: Handler = Handler(Looper.getMainLooper())
+
+    /// PARTIAL_WAKE_LOCK acquisito quando il blocking è attivo. Senza
+    /// questo, il sistema può addormentare il loop di polling proprio
+    /// nel momento in cui serve di più (utente con schermo che ha appena
+    /// fatto auto-off). Timeout 10 min: se LockRunnable è ancora vivo
+    /// rinnova; se è morto, il wakelock muore con il service.
+    private var wakeLock: PowerManager.WakeLock? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -62,13 +80,35 @@ class LockForegroundService : Service() {
         createNotificationChannel()
         quickBlockManager.attachContext(applicationContext)
         overlayManager = OverlayManager(applicationContext)
-        overlayManager?.onReturnHome = {
+        overlayManager?.onReturnHome = { forceHome ->
             // Tap "Don't open" sull'overlay: l'utente vuole tornare alla
             // home del DISPOSITIVO (launcher di default), non a Koru.
             // performGoHome qui usa Intent(ACTION_MAIN, CATEGORY_HOME)
             // che il sistema dispatcha al default launcher — comportamento
             // corretto: se Koru non e' default, va sul launcher di stock.
+            //
+            // forceHome: lo riceviamo ma per ora il behavior è identico
+            // (sempre HOME dura). Mantenuto il parametro per consistenza
+            // con KoruAccessibilityService che usa moveTaskToBack quando
+            // false e GLOBAL_ACTION_HOME quando true.
             performGoHome()
+            overlayManager?.dismiss()
+        }
+        // O8: wiring del bypass timed. Quando l'utente sceglie una durata
+        // dal duration picker, OverlayManager invoca questo callback
+        // (l'OverlayManager si è già marcato il bypass internamente via
+        // markBypassed, ma lo rimarchiamo qui per esplicitezza in caso
+        // il flusso cambi in futuro). Lanciamo l'app target.
+        overlayManager?.onBypassOpen = { pkg, durationMs ->
+            OverlayManager.markBypassed(pkg, durationMs)
+            try {
+                val launch = packageManager.getLaunchIntentForPackage(pkg)
+                launch?.flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+                launch?.let { startActivity(it) }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to launch bypassed app $pkg", e)
+            }
             overlayManager?.dismiss()
         }
 
@@ -110,14 +150,25 @@ class LockForegroundService : Service() {
                 } catch (e: Exception) {
                     Log.e(TAG, "startForeground failed", e)
                 }
+                acquireWakeLock()
                 startBlocking()
                 return START_STICKY
             }
         }
     }
 
+    /// O10: il Service NON riceve onConfigurationChanged automaticamente
+    /// se non c'è override (lo riceve solo se è registrato a quei changes
+    /// nel manifest, ma per Service è di default). Comunque, override
+    /// esplicito per propagare al WindowManager dell'overlay.
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        overlayManager?.onConfigurationChanged()
+    }
+
     override fun onDestroy() {
         stopBlocking()
+        releaseWakeLock()
         quickBlockManager.stop()
         overlayManager?.destroy()
         overlayManager = null
@@ -126,6 +177,36 @@ class LockForegroundService : Service() {
         }
         reloadReceiver = null
         super.onDestroy()
+    }
+
+    /// Acquisisce un PARTIAL_WAKE_LOCK con timeout 10 min. Timeout
+    /// importante per evitare leak permanente: se per qualunque ragione
+    /// il release non viene chiamato (crash, kill), il sistema rilascia
+    /// da solo dopo 10 min. LockRunnable può ri-acquisire periodicamente
+    /// se vuole estendere oltre.
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        try {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "Koru::Blocking",
+            ).apply {
+                setReferenceCounted(false)
+                acquire(10 * 60 * 1000L /* 10 min */)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "acquireWakeLock failed", e)
+        }
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            wakeLock?.let { if (it.isHeld) it.release() }
+        } catch (e: Exception) {
+            Log.e(TAG, "releaseWakeLock failed", e)
+        }
+        wakeLock = null
     }
 
     private fun setBlockingPersistenceFlag(active: Boolean) {
@@ -145,14 +226,20 @@ class LockForegroundService : Service() {
             onBlock = { packageName, appLabel, profile, relation ->
                 Log.d(TAG, "[BACKUP] Blocking $packageName (${profile.title})")
                 val config = OverlayConfig.fromJsonString(relation?.overlayConfigJson)
-                overlayManager?.show(
-                    packageName = packageName,
-                    appLabel = appLabel,
-                    profileTitle = profile.title,
-                    reason = BlockReason.APP_BLOCKED,
-                    config = config,
-                    profileEmoji = profile.emoji,
-                )
+                // O9: addView/setContent richiedono main thread. Senza
+                // mainHandler.post abbiamo visto rare CalledFromWrongThread
+                // su alcuni Samsung quando il polling thread è particolarmente
+                // veloce a beccare il foreground change.
+                mainHandler.post {
+                    overlayManager?.show(
+                        packageName = packageName,
+                        appLabel = appLabel,
+                        profileTitle = profile.title,
+                        reason = BlockReason.APP_BLOCKED,
+                        config = config,
+                        profileEmoji = profile.emoji,
+                    )
+                }
                 // Forziamo HOME anche dal foreground service: se siamo qui
                 // l'AccessibilityService è morto, quindi non ci possiamo
                 // più affidare al broadcast ACTION_GO_HOME (cadrebbe nel
@@ -172,23 +259,31 @@ class LockForegroundService : Service() {
                 val isStrict = AppUsageLimitsStore.entryFor(
                     applicationContext, packageName,
                 )?.strict ?: true
+                // O14: passiamo baseConfig=DEFAULT esplicito; il caller del
+                // KoruAccessibilityService passa il config custom della
+                // app/profilo, qui non abbiamo accesso al relation (è
+                // un block USAGE_LIMIT, non profile-scoped), quindi default.
                 val (cfg, policy) = OverlayPolicies.buildUsageLimitOverlay(
-                    applicationContext, packageName, isStrict,
+                    context = applicationContext,
+                    pkg = packageName,
+                    isStrict = isStrict,
                 )
-                overlayManager?.show(
-                    packageName = packageName,
-                    appLabel = appLabel,
-                    profileTitle = if (isStrict) "Daily limit · strict" else "Daily limit",
-                    reason = BlockReason.USAGE_LIMIT,
-                    config = cfg,
-                    profileEmoji = "⏳", // ⏳
-                    bypassPolicy = policy,
-                )
+                mainHandler.post {
+                    overlayManager?.show(
+                        packageName = packageName,
+                        appLabel = appLabel,
+                        profileTitle = if (isStrict) "Daily limit · strict" else "Daily limit",
+                        reason = BlockReason.USAGE_LIMIT,
+                        config = cfg,
+                        profileEmoji = "⏳", // ⏳
+                        bypassPolicy = policy,
+                    )
+                }
                 performGoHome()
             },
             onUnblock = {
                 Log.d(TAG, "[BACKUP] Unblocking")
-                overlayManager?.dismiss()
+                mainHandler.post { overlayManager?.dismiss() }
                 sendBlockingEvent(false, "", null)
             },
         )
@@ -211,7 +306,8 @@ class LockForegroundService : Service() {
         blockingThread = null
         lockRunnable = null
         currentLockRunnable = null
-        overlayManager?.dismiss()
+        mainHandler.post { overlayManager?.dismiss() }
+        releaseWakeLock()
         isRunning = false
         setBlockingPersistenceFlag(false)
         sendServiceStateEvent(false)

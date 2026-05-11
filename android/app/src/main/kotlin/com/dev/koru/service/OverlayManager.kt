@@ -1,10 +1,11 @@
 package com.dev.koru.service
 
 import android.content.Context
-import android.content.Intent
 import android.graphics.PixelFormat
+import android.os.Build
 import android.util.Log
 import android.view.Gravity
+import android.view.WindowInsets
 import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -57,6 +58,7 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.dev.koru.overlay.BlockReason
 import com.dev.koru.overlay.OverlayConfig
 import kotlinx.coroutines.delay
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Politica di bypass per un singolo invocazione di overlay. Calcolata dal
@@ -117,14 +119,34 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
         /// il bypass resta valido per quella durata indipendentemente dal
         /// fatto che l'utente esca e rientri nell'app. Scaduta la durata,
         /// al prossimo ingresso il blocco si riattiva.
-        private val bypassedPackages = mutableMapOf<String, Long>()
+        ///
+        /// ConcurrentHashMap perché letto/scritto da thread misti:
+        /// AccessibilityService (binder), LockRunnable (polling thread),
+        /// main thread (UI callback onBypassOpen). MutableMap non sync
+        /// causava ConcurrentModificationException sporadiche.
+        private val bypassedPackages = ConcurrentHashMap<String, Long>()
+
+        /// Cleanup interno: rimuove entries scadute. Chiamato pigramente
+        /// da isBypassed / markBypassed per evitare leak senza un timer
+        /// dedicato. La mappa resta piccola (1 entry per app bloccata)
+        /// ma "best effort" garbage collection ci sta.
+        private fun pruneExpired() {
+            val now = System.currentTimeMillis()
+            val iterator = bypassedPackages.entries.iterator()
+            while (iterator.hasNext()) {
+                val entry = iterator.next()
+                if (entry.value < now) iterator.remove()
+            }
+        }
 
         fun isBypassed(packageName: String): Boolean {
+            pruneExpired()
             val until = bypassedPackages[packageName] ?: return false
             return System.currentTimeMillis() < until
         }
 
         fun markBypassed(packageName: String, durationMs: Long) {
+            pruneExpired()
             bypassedPackages[packageName] = System.currentTimeMillis() + durationMs
         }
 
@@ -133,6 +155,13 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
         /// affidamento sulla scadenza naturale via TTL.
         fun clearBypass(packageName: String) {
             bypassedPackages.remove(packageName)
+        }
+
+        /// Revoca tutti i bypass attivi. Esposto per strict mode toggle:
+        /// quando l'utente attiva strict, eventuali bypass timed pendenti
+        /// non hanno più senso e vanno azzerati.
+        fun revokeAllBypasses() {
+            bypassedPackages.clear()
         }
     }
 
@@ -145,17 +174,31 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
 
     private var windowManager: WindowManager? = null
     private var overlayView: ComposeView? = null
+    private var overlayParams: WindowManager.LayoutParams? = null
+    @Volatile
     private var isShowing = false
 
-    var currentPackageName: String = ""
-        private set
-    private var _appLabel = mutableStateOf("")
-    private var _profileTitle = mutableStateOf("")
-    private var _reason = mutableStateOf(BlockReason.APP_BLOCKED)
-    private var _config = mutableStateOf(OverlayConfig.DEFAULT)
+    /// Compose-observable. Una `var String` veniva trattata come "stable
+    /// param" dal compiler e non triggerava ricomposizioni quando il show()
+    /// successivo cambiava pkg (es. utente passa da IG a YT senza che
+    /// l'overlay venga rimosso). Ora ogni ricomposizione rilegge `.value`.
+    private val _currentPackageName = mutableStateOf("")
+    val currentPackageName: String get() = _currentPackageName.value
+    private val _appLabel = mutableStateOf("")
+    private val _profileTitle = mutableStateOf("")
+    private val _reason = mutableStateOf(BlockReason.APP_BLOCKED)
+    private val _config = mutableStateOf(OverlayConfig.DEFAULT)
 
     /// Callback quando l'utente tocca "Go back" → torna alla home.
-    var onReturnHome: (() -> Unit)? = null
+    ///
+    /// @param forceHome `true` quando il caller vuole una HOME "dura":
+    /// usato dal flow BYPASS_EXPIRED, dove "Close $app" non è solo "torna
+    /// indietro" ma una richiesta esplicita di rimuovere l'app dal foreground
+    /// (l'utente è dentro la app, non sta provando ad aprirla). Il caller
+    /// può lanciare ACTION_MAIN+CATEGORY_HOME in entrambi i casi, ma con
+    /// `forceHome=true` può saltare logiche di "se sei già su home, no-op"
+    /// e forzare anche `moveTaskToBack` o equivalenti.
+    var onReturnHome: ((forceHome: Boolean) -> Unit)? = null
 
     /// Callback invocato quando l'utente sceglie una intention (per logging).
     var onIntentionChosen: ((pkg: String, intention: String) -> Unit)? = null
@@ -180,8 +223,22 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
         config: OverlayConfig = OverlayConfig.DEFAULT,
         profileEmoji: String? = null,
         bypassPolicy: BypassPolicy = BypassPolicy(),
-    ) {
-        currentPackageName = packageName
+    ): Unit = synchronized(this) {
+        // Se l'overlay è già visibile MA per un pacchetto diverso, forziamo
+        // la dismiss + re-create. Questo previene il bug del countdown
+        // "Open instagram" che restava mostrato anche dopo che l'utente
+        // entrava in YouTube (i field venivano aggiornati, ma il `setContent`
+        // non veniva re-eseguito perché currentPackageName era stable).
+        if (isShowing && _currentPackageName.value != packageName) {
+            Log.d(TAG, "show(): pkg changed ${_currentPackageName.value} → $packageName, recreating overlay")
+            dismissInternal()
+        }
+
+        // Field update DOPO la guard: se sopra abbiamo fatto dismiss,
+        // l'aggiornamento sotto popola la nuova istanza pulita. Se l'overlay
+        // era già su con stesso pkg, aggiorna i field (es. reason cambia da
+        // APP_BLOCKED → BYPASS_EXPIRED) e Compose ri-osserva via mutableState.
+        _currentPackageName.value = packageName
         _appLabel.value = appLabel
         _profileTitle.value = profileTitle
         _reason.value = reason
@@ -189,7 +246,7 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
         _profileEmoji.value = profileEmoji
         _bypassPolicy.value = bypassPolicy
 
-        if (isShowing) return
+        if (isShowing) return@synchronized
 
         try {
             windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -199,9 +256,29 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
                 PixelFormat.TRANSLUCENT,
-            ).apply { gravity = Gravity.TOP or Gravity.START }
+            ).apply {
+                gravity = Gravity.TOP or Gravity.START
+                // Cutout: l'overlay deve coprire l'area del notch su display
+                // con foro/tacca, altrimenti compare una banda nera che
+                // rivela l'app sottostante per ~30px in alto.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    layoutInDisplayCutoutMode =
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                }
+                // Stiamo già FLAG_LAYOUT_NO_LIMITS: la combinazione con
+                // fitInsetsTypes=systemBars() su API 30+ ci dà copertura
+                // sotto status/nav bar mantenendo il layout pulito.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    try {
+                        fitInsetsTypes = WindowInsets.Type.systemBars()
+                    } catch (_: Throwable) {
+                        // Alcune ROM custom rompono questa API; skip silente.
+                    }
+                }
+            }
 
             val composeView = ComposeView(context).apply {
                 setViewTreeLifecycleOwner(this@OverlayManager)
@@ -216,8 +293,11 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
                             background = KoruBgBase,
                         ),
                     ) {
+                        // I valori sono letti dai mutableState dentro la
+                        // composable (vedi BlockedScreen): qui passiamo i
+                        // .value per rendere esplicita la sottoscrizione.
                         BlockedScreen(
-                            packageName = currentPackageName,
+                            packageName = _currentPackageName.value,
                             appLabel = _appLabel.value,
                             profileTitle = _profileTitle.value,
                             reason = _reason.value,
@@ -225,12 +305,12 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
                             profileEmoji = _profileEmoji.value,
                             bypassPolicy = _bypassPolicy.value,
                             onIntentionChosen = { intention ->
-                                onIntentionChosen?.invoke(currentPackageName, intention)
+                                onIntentionChosen?.invoke(_currentPackageName.value, intention)
                             },
-                            onGoHome = { onReturnHome?.invoke() },
+                            onGoHome = { forceHome -> onReturnHome?.invoke(forceHome) },
                             onBypass = { durationMs ->
-                                markBypassed(currentPackageName, durationMs)
-                                onBypassOpen?.invoke(currentPackageName, durationMs)
+                                markBypassed(_currentPackageName.value, durationMs)
+                                onBypassOpen?.invoke(_currentPackageName.value, durationMs)
                             },
                         )
                     }
@@ -240,6 +320,7 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
             lifecycleRegistry.currentState = Lifecycle.State.RESUMED
             windowManager?.addView(composeView, params)
             overlayView = composeView
+            overlayParams = params
             isShowing = true
             Log.d(TAG, "Overlay shown for $packageName (reason=$reason)")
         } catch (e: Exception) {
@@ -247,15 +328,27 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
         }
     }
 
-    fun dismiss() {
+    fun dismiss(): Unit = synchronized(this) {
+        dismissInternal()
+    }
+
+    /// Variante non-synchronized di dismiss(), per uso interno quando
+    /// siamo già dentro un blocco synchronized(this) (es. show() che
+    /// forza dismiss prima di re-create).
+    private fun dismissInternal() {
         if (!isShowing) return
+        // isShowing = false PRIMA del removeView: se una seconda chiamata
+        // concorrente arriva mentre removeView è in corso, vede subito
+        // !isShowing e ritorna, evitando doppio removeView (crash) e
+        // doppio dismiss log.
+        isShowing = false
         try {
             overlayView?.let { windowManager?.removeView(it) }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to remove overlay view", e)
         } finally {
             overlayView = null
-            isShowing = false
+            overlayParams = null
             try { lifecycleRegistry.currentState = Lifecycle.State.CREATED } catch (_: Exception) {}
             Log.d(TAG, "Overlay dismissed")
         }
@@ -267,6 +360,27 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
     /// Usato dal caller per distinguere il flow "entry block" (abbiamo fatto HOME,
     /// app non in foreground) dal flow BYPASS_EXPIRED (app ancora in foreground).
     fun currentReason(): BlockReason = _reason.value
+
+    /// Da invocare quando il Service host riceve `onConfigurationChanged`
+    /// (rotazione, theme dark/light switch, locale change, density change).
+    /// Senza questa propagazione l'overlay resta dimensionato per il
+    /// vecchio config — su rotazione da portrait a landscape si vede una
+    /// banda bianca sul lato corto del display.
+    ///
+    /// IMPORTANT: chiamare dal main thread (Service.onConfigurationChanged
+    /// gira sul main thread di default, quindi nei call site standard
+    /// non serve un Handler.post).
+    fun onConfigurationChanged(): Unit = synchronized(this) {
+        if (!isShowing) return@synchronized
+        val view = overlayView ?: return@synchronized
+        val params = overlayParams ?: return@synchronized
+        try {
+            windowManager?.updateViewLayout(view, params)
+            Log.d(TAG, "Overlay relayout after configuration change")
+        } catch (e: Exception) {
+            Log.e(TAG, "updateViewLayout failed during config change", e)
+        }
+    }
 
     fun destroy() {
         dismiss()
@@ -285,6 +399,11 @@ private val mindfulIntentions = listOf(
     "Not sure",
 )
 
+/// State machine del CountdownButton. Sostituisce le magic string
+/// "animating" / "paused" / "finished" usate in precedenza — i refactor
+/// silenziosi di una stringa erano un magnete per bug.
+private enum class CountdownPhase { ANIMATING, PAUSED, FINISHED }
+
 @Composable
 private fun BlockedScreen(
     packageName: String,
@@ -295,7 +414,7 @@ private fun BlockedScreen(
     profileEmoji: String?,
     bypassPolicy: BypassPolicy,
     onIntentionChosen: (String) -> Unit,
-    onGoHome: () -> Unit,
+    onGoHome: (forceHome: Boolean) -> Unit,
     onBypass: (durationMs: Long) -> Unit,
 ) {
     // Overlay completamente opaco (niente bleed-through dall'app bloccata
@@ -323,7 +442,11 @@ private fun BlockedScreen(
                 appLabel = appLabel,
                 durations = bypassPolicy.durations,
                 onDurationChosen = { durationMs -> onBypass(durationMs) },
-                onCloseApp = onGoHome,
+                // forceHome=true: l'utente è DENTRO l'app (TTL scaduto
+                // mentre era in foreground), non sta solo provando ad
+                // entrare. "Close $app" implica buttare via la task,
+                // non un semplice navigate-to-launcher.
+                onCloseApp = { onGoHome(true) },
             )
             return@Box
         }
@@ -431,7 +554,7 @@ private fun BlockedScreen(
             Spacer(Modifier.height(16.dp))
 
             Button(
-                onClick = onGoHome,
+                onClick = { onGoHome(false) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
@@ -696,30 +819,34 @@ private fun CountdownButton(
     onTapAfterFinish: () -> Unit,
 ) {
     // State machine: ANIMATING ↔ PAUSED → FINISHED.
-    var phase by remember { mutableStateOf("animating") }
+    var phase by remember { mutableStateOf(CountdownPhase.ANIMATING) }
     var elapsedMs by remember { mutableStateOf(0L) }
     val progress = (elapsedMs.toFloat() / durationMs).coerceIn(0f, 1f)
     val totalSec = durationMs / 1000
     val remainingSec = ((1f - progress) * totalSec).toInt().coerceAtLeast(0) +
         if (progress < 1f) 1 else 0
 
-    // Tick every 50ms while animating.
+    // Tick every 250ms while animating. Prima era 50ms (20Hz): ricomposizione
+    // 20×/sec di un Box+Text non fa praticamente differenza visiva e brucia
+    // CPU/battery quando l'overlay resta sul cellulare anche pochi secondi.
+    // 250ms (4Hz) è sufficiente per il rendering smooth del countdown
+    // numerico (1 secondo cambia di solo 0.25 unità) e taglia 5x il lavoro.
     LaunchedEffect(phase) {
-        if (phase != "animating") return@LaunchedEffect
-        while (phase == "animating" && elapsedMs < durationMs) {
-            delay(50L)
-            elapsedMs += 50L
+        if (phase != CountdownPhase.ANIMATING) return@LaunchedEffect
+        while (phase == CountdownPhase.ANIMATING && elapsedMs < durationMs) {
+            delay(250L)
+            elapsedMs += 250L
         }
-        if (elapsedMs >= durationMs && phase == "animating") {
-            phase = "finished"
+        if (elapsedMs >= durationMs && phase == CountdownPhase.ANIMATING) {
+            phase = CountdownPhase.FINISHED
             onFinished()
         }
     }
 
     val display = when (phase) {
-        "finished" -> finishedText
-        "paused" -> "Paused"
-        else -> remainingSec.toString()
+        CountdownPhase.FINISHED -> finishedText
+        CountdownPhase.PAUSED -> "Paused"
+        CountdownPhase.ANIMATING -> remainingSec.toString()
     }
 
     Box(
@@ -734,9 +861,9 @@ private fun CountdownButton(
                     // hatch del countdown infinito-pausabile (l'utente
                     // toccava il countdown per fermarlo, sceglieva di
                     // calmarsi e poi ripartiva — soft-bypass gratuito).
-                    "animating" -> if (pauseAllowed) phase = "paused"
-                    "paused" -> phase = "animating"
-                    "finished" -> onTapAfterFinish()
+                    CountdownPhase.ANIMATING -> if (pauseAllowed) phase = CountdownPhase.PAUSED
+                    CountdownPhase.PAUSED -> phase = CountdownPhase.ANIMATING
+                    CountdownPhase.FINISHED -> onTapAfterFinish()
                 }
             },
     ) {
@@ -752,7 +879,7 @@ private fun CountdownButton(
             Text(
                 display,
                 color = KoruTextPrimary,
-                fontSize = if (phase == "finished") 18.sp else 28.sp,
+                fontSize = if (phase == CountdownPhase.FINISHED) 18.sp else 28.sp,
                 fontWeight = FontWeight.Bold,
             )
         }

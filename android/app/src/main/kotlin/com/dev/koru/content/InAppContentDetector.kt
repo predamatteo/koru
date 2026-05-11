@@ -9,6 +9,10 @@ import android.view.accessibility.AccessibilityNodeInfo
  *
  * Mantenuto come singleton (lazy init dei detector, che leggono i JSON una
  * volta sola) e throttled externally dalla caller (KoruAccessibilityService).
+ *
+ * NB: il root node passato a [detect] e' di proprieta' del caller; il
+ * recycle (su API < 33) e' responsabilita' del caller. I detector
+ * internamente recyclano solo i child node che allocano via getChild().
  */
 class InAppContentDetector(context: Context) {
     private val instagram = InstagramDetector(context)

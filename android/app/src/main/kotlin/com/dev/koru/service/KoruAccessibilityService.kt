@@ -1,10 +1,12 @@
 package com.dev.koru.service
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -18,6 +20,7 @@ import com.dev.koru.channels.ServiceEventChannel
 import com.dev.koru.content.InAppContentDetector
 import com.dev.koru.db.NativeAppRelation
 import com.dev.koru.db.NativeDatabase
+import com.dev.koru.db.NativeInterval
 import com.dev.koru.db.NativeProfile
 import com.dev.koru.db.NativeWebsiteRule
 import com.dev.koru.overlay.BlockReason
@@ -25,6 +28,7 @@ import com.dev.koru.overlay.OverlayConfig
 import com.dev.koru.strictmode.StrictModeEnforcer
 import org.json.JSONObject
 import java.util.Calendar
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Koru blocking engine running inside an AccessibilityService process.
@@ -39,6 +43,30 @@ import java.util.Calendar
  * quel processo. È un proprio OverlayManager distinto da quello di
  * LockForegroundService (che gira nel main process).
  */
+/// Snapshot atomico dello stato profili caricato dal DB. Il foreground thread
+/// di AccessibilityService scrive (via [KoruAccessibilityService.loadProfiles])
+/// mentre `onAccessibilityEvent` può girare su thread diversi del binder
+/// callback; sostituire un riferimento atomico (publish-via-AtomicReference)
+/// è strettamente safer di `profiles.clear() + put()` (che durante il refresh
+/// presentava una finestra temporale con dati parziali al lettore).
+data class ProfilesSnapshot(
+    val profiles: List<NativeProfile>,
+    val profileApps: Map<Int, List<NativeAppRelation>>,
+    val websiteRulesCache: Map<Int, List<NativeWebsiteRule>>,
+    val profileIntervals: Map<Int, List<NativeInterval>>,
+    val profileWifis: Map<Int, Set<String>>,
+) {
+    companion object {
+        val EMPTY = ProfilesSnapshot(
+            emptyList(),
+            emptyMap(),
+            emptyMap(),
+            emptyMap(),
+            emptyMap(),
+        )
+    }
+}
+
 class KoruAccessibilityService : AccessibilityService() {
 
     companion object {
@@ -49,6 +77,52 @@ class KoruAccessibilityService : AccessibilityService() {
         /// Profile typeCombinations bit per "time interval enabled".
         /// Allineato a [ProfileType.time] in lib/core/constants/profile_types.dart.
         const val PROFILE_TYPE_TIME = 1
+
+        /// Restriction type log su `restricted_access_events`: nuovo valore per
+        /// gli eventi BYPASS_EXPIRED (l'utente è stato ri-prompted dopo che il
+        /// TTL di un bypass è scaduto mentre era ancora dentro l'app).
+        /// Allineato ai valori usati altrove: 0=APP, 1=SECTION, 2=WEBSITE,
+        /// 3=USAGE_LIMIT, 4=FOCUS_MODE. Riserviamo 5 per BYPASS_EXPIRED.
+        const val RESTRICTION_TYPE_BYPASS_EXPIRED = 5
+
+        /// Set di package "noti" come browser: usato per popolare
+        /// dinamicamente `serviceInfo.packageNames` così l'AccessibilityService
+        /// riceve eventi solo dalle app interessanti (vedi `loadProfiles`).
+        /// Allineato a `BrowserConfigLoader` per copertura ma indipendente:
+        /// se il JSON dei config browser non è ancora caricato all'avvio,
+        /// non vogliamo perdere eventi sui browser più comuni.
+        val KNOWN_BROWSERS: Set<String> = setOf(
+            "com.android.chrome",
+            "com.chrome.beta",
+            "com.chrome.dev",
+            "com.chrome.canary",
+            "com.brave.browser",
+            "org.mozilla.firefox",
+            "org.mozilla.firefox_beta",
+            "com.microsoft.emmx",
+            "com.sec.android.app.sbrowser",
+            "com.opera.browser",
+            "com.opera.mini.native",
+            "com.duckduckgo.mobile.android",
+            "com.vivaldi.browser",
+        )
+
+        /// Set di package "settings" (system settings + OEM): usato sia da
+        /// StrictModeEnforcer sia per popolare `serviceInfo.packageNames`
+        /// così possiamo intercettare il blocco "settings" anche quando
+        /// l'utente apre l'app di sistema. Allineato (ma non condiviso
+        /// direttamente per evitare coupling) con
+        /// `StrictModeEnforcer.SETTINGS_PACKAGES`.
+        val SETTINGS_PACKAGES: Set<String> = setOf(
+            "com.android.settings",
+            "com.samsung.android.app.routines",
+            "com.miui.securitycenter",
+            "com.coloros.safecenter",
+            "com.coloros.oplusphonemanager",
+            "com.huawei.systemmanager",
+            "com.oneplus.security",
+            "com.oplus.settings",
+        )
 
         @Volatile
         var instance: KoruAccessibilityService? = null
@@ -165,6 +239,11 @@ class KoruAccessibilityService : AccessibilityService() {
         pendingBackFallbacks.remove(pkg)?.let { mainHandler.removeCallbacks(it) }
         val r = object : Runnable {
             override fun run() {
+                // Service hygiene: il runnable potrebbe essere stato
+                // schedulato prima che onDestroy nullasse `instance`. Senza
+                // questo guard rischiamo NPE/IllegalState chiamando metodi
+                // su un service smontato (es. applicationContext).
+                if (instance != this@KoruAccessibilityService) return
                 pendingBackFallbacks.remove(pkg)
                 val fg = ForegroundDetector.detect(applicationContext)?.primaryPackage
                 if (fg != pkg) {
@@ -180,13 +259,16 @@ class KoruAccessibilityService : AccessibilityService() {
         mainHandler.postDelayed(r, 600L)
     }
 
-    private var profiles = emptyList<NativeProfile>()
-    private var profileApps = mutableMapOf<Int, List<NativeAppRelation>>()
-    private var websiteRulesCache = mutableMapOf<Int, List<NativeWebsiteRule>>()
-    private var profileWifis = mapOf<Int, Set<String>>()
-    private var profileIntervals = mapOf<Int, List<com.dev.koru.db.NativeInterval>>()
+    /// Snapshot atomico letto da `onAccessibilityEvent` e dai check workflow.
+    /// Sostituire il riferimento con un nuovo oggetto immutabile garantisce
+    /// publish atomico fra thread (foreground service loop vs binder callback)
+    /// senza lock e senza finestra temporale di stato parziale.
+    private val profilesSnapshot = AtomicReference(ProfilesSnapshot.EMPTY)
+    @Volatile
     private var lastProfileLoadTime = 0L
+    @Volatile
     private var currentlyBlockingPackage: String? = null
+    @Volatile
     private var lastForegroundPackage: String? = null
 
     private val skipPackages = setOf(
@@ -208,11 +290,16 @@ class KoruAccessibilityService : AccessibilityService() {
         "com.coloros.safecenter",
     )
 
+    @Volatile
     private var actionReceiver: BroadcastReceiver? = null
+    @Volatile
     private var inAppDetector: InAppContentDetector? = null
+    @Volatile
     private var lastSectionEventTime = 0L
+    @Volatile
     private var lastDetectedSectionWireId: String? = null
 
+    @Volatile
     private var overlayManager: OverlayManager? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -234,7 +321,9 @@ class KoruAccessibilityService : AccessibilityService() {
 
     /// Throttle per TYPE_WINDOW_CONTENT_CHANGED nei browser: limita la lettura
     /// della URL bar (operazione relativamente costosa) a max 2/s.
+    @Volatile
     private var lastBrowserContentCheckMs = 0L
+    @Volatile
     private var lastBrowserContentPkg: String? = null
 
     override fun onServiceConnected() {
@@ -242,19 +331,15 @@ class KoruAccessibilityService : AccessibilityService() {
         instance = this
         inAppDetector = InAppContentDetector(applicationContext)
         overlayManager = OverlayManager(applicationContext).apply {
-            onReturnHome = {
-                // Tap esplicito "Don't open $appLabel" / "Close $appLabel"
-                // sull'overlay → forceHome=true, NON BACK.
-                //
-                // L'utente ha appena espresso l'intento univoco di uscire
-                // dall'app. BACK fallirebbe quando l'app ha stack interno:
-                // es. Instagram con una storia aperta sopra la feed → BACK
-                // chiude solo la storia e IG resta in foreground (l'utente
-                // vede sparire l'overlay ma e' ancora dentro IG, confusione).
-                // HOME via Intent chiude il task IG indipendentemente dallo
-                // stack, e la suppressLauncherNavigationUntilMs preserva la
-                // sub-pagina del launcher Flutter dell'utente.
-                performGoHomeForBlock(forceHome = true)
+            onReturnHome = { forceHome ->
+                // Tap esplicito dall'overlay: il flag `forceHome` decide
+                // se forzare HOME (Intent) o tentare BACK prima con
+                // fallback HOME. La policy è scelta in OverlayManager
+                // in base alla BlockReason: APP_BLOCKED → BACK (preserva
+                // sub-pagina launcher), BYPASS_EXPIRED/USAGE_LIMIT/SECTION
+                // → HOME forzato (l'utente vuole uscire univocamente
+                // dall'app con stack interno tipo Instagram-storia).
+                performGoHomeForBlock(forceHome = forceHome)
                 dismiss()
             }
             onIntentionChosen = { pkg, intention ->
@@ -372,6 +457,13 @@ class KoruAccessibilityService : AccessibilityService() {
         if (event == null) return
         val pkg = event.packageName?.toString() ?: return
 
+        // Snapshot atomico in cima all'event: tutti i check successivi
+        // useranno questa view consistente, anche se loadProfiles() viene
+        // richiamato concorrentemente dal Refresh receiver. Se in un branch
+        // facciamo un reload, ri-leggiamo lo snapshot dopo (variabile
+        // `freshSnapshot`) — entrambi sono `val` cosi' la promise di
+        // consistenza per la durata di ogni check resta valida.
+
         // Content change / scroll dentro un browser → ricontrolla la URL bar.
         // TYPE_VIEW_SCROLLED copre il caso in cui l'utente scrolla nella pagina
         // o cambia tab (ascent pattern); TYPE_WINDOW_CONTENT_CHANGED è l'evento
@@ -385,11 +477,14 @@ class KoruAccessibilityService : AccessibilityService() {
             lastBrowserContentCheckMs = now
             lastBrowserContentPkg = pkg
             if (now - lastProfileLoadTime > 10_000) loadProfiles()
-            val root = try { rootInActiveWindow } catch (_: Exception) { null }
-            if (root == null) {
-                Log.w(TAG, "BROWSER ${event.eventType}: rootInActiveWindow null for $pkg")
-            } else {
-                checkWebsiteBlocking(pkg, root)
+            // Recupera snapshot aggiornato dopo eventuale reload.
+            val freshSnapshot = profilesSnapshot.get()
+            withRootInActiveWindow { root ->
+                if (root == null) {
+                    Log.w(TAG, "BROWSER ${event.eventType}: rootInActiveWindow null for $pkg")
+                } else {
+                    checkWebsiteBlocking(pkg, root, freshSnapshot)
+                }
             }
             return
         }
@@ -416,20 +511,43 @@ class KoruAccessibilityService : AccessibilityService() {
 
         val now = System.currentTimeMillis()
         if (now - lastProfileLoadTime > 10_000) loadProfiles()
+        val freshSnapshot = profilesSnapshot.get()
 
-        val blockedByApp = checkAppBlocking(pkg)
+        val blockedByApp = checkAppBlocking(pkg, freshSnapshot)
         if (blockedByApp) return
 
         // In-app content blocking (Instagram Reels/Stories/Explore, YouTube Shorts)
         val detector = inAppDetector
         if (detector != null && detector.supports(pkg)) {
-            val root = try { rootInActiveWindow } catch (_: Exception) { null }
-            if (root != null && checkInAppContentBlocking(pkg, root)) return
+            var handled = false
+            withRootInActiveWindow { root ->
+                if (root != null && checkInAppContentBlocking(pkg, root, freshSnapshot)) {
+                    handled = true
+                }
+            }
+            if (handled) return
         }
 
         if (BrowserConfigLoader.isBrowser(applicationContext, pkg)) {
-            val root = try { rootInActiveWindow } catch (_: Exception) { null }
-            if (root != null) checkWebsiteBlocking(pkg, root)
+            withRootInActiveWindow { root ->
+                if (root != null) checkWebsiteBlocking(pkg, root, freshSnapshot)
+            }
+        }
+    }
+
+    /// Helper centralizzato per ottenere il root node, eseguire una callback
+    /// e poi recyclare il nodo su API < 33 (su API 33+ il recycle e' no-op
+    /// safe). Necessario per evitare leak di AccessibilityNodeInfo nel buffer
+    /// del binder accessibility — sintomi: log "Suspicious node" e fps drop
+    /// dopo qualche minuto di attività.
+    private inline fun withRootInActiveWindow(block: (AccessibilityNodeInfo?) -> Unit) {
+        val root = try { rootInActiveWindow } catch (_: Exception) { null }
+        try {
+            block(root)
+        } finally {
+            if (root != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                try { root.recycle() } catch (_: Throwable) {}
+            }
         }
     }
 
@@ -455,6 +573,8 @@ class KoruAccessibilityService : AccessibilityService() {
 
         val r = object : Runnable {
             override fun run() {
+                // Service hygiene: skip se il service e' stato distrutto.
+                if (instance != this@KoruAccessibilityService) return
                 pendingBypassExpiryChecks.remove(pkg)
                 // Double-check: il bypass potrebbe essere stato esteso nel frattempo.
                 if (OverlayManager.isBypassed(pkg)) {
@@ -500,6 +620,8 @@ class KoruAccessibilityService : AccessibilityService() {
 
         val r = object : Runnable {
             override fun run() {
+                // Service hygiene: skip se il service e' stato distrutto.
+                if (instance != this@KoruAccessibilityService) return
                 pendingLimitChecks.remove(pkg)
                 if (lastForegroundPackage != pkg) {
                     Log.d(TAG, "Limit re-check for $pkg: user not there anymore (foreground=$lastForegroundPackage)")
@@ -510,7 +632,7 @@ class KoruAccessibilityService : AccessibilityService() {
                     return
                 }
                 Log.i(TAG, "Limit timer fired for $pkg, re-evaluating")
-                checkAppBlocking(pkg)
+                checkAppBlocking(pkg, profilesSnapshot.get())
             }
         }
         pendingLimitChecks[pkg] = r
@@ -533,13 +655,14 @@ class KoruAccessibilityService : AccessibilityService() {
      */
     private fun showExtensionPrompt(pkg: String) {
         val appLabel = getAppLabel(pkg)
+        val snapshot = profilesSnapshot.get()
         // Cerchiamo una relation app→profilo per ereditare la palette
         // dell'overlay config; in assenza usiamo DEFAULT.
-        val relation = profileApps.values.asSequence().flatten()
+        val relation = snapshot.profileApps.values.asSequence().flatten()
             .firstOrNull { it.packageName == pkg }
         val baseConfig = OverlayConfig.fromJsonString(relation?.overlayConfigJson)
-        val matchingProfile = profiles.firstOrNull { p ->
-            profileApps[p.id]?.any { it.packageName == pkg } == true
+        val matchingProfile = snapshot.profiles.firstOrNull { p ->
+            snapshot.profileApps[p.id]?.any { it.packageName == pkg } == true
         }
         // Se l'estensione discende da un USAGE_LIMIT (l'utente aveva
         // bypassato un cap giornaliero), applichiamo la stessa policy
@@ -548,10 +671,14 @@ class KoruAccessibilityService : AccessibilityService() {
         // bypass possibile a monte).
         val limitEntry = AppUsageLimitsStore.entryFor(applicationContext, pkg)
         val (config, policy) = if (limitEntry != null && !limitEntry.strict) {
-            val (_, p) = OverlayPolicies.buildUsageLimitOverlay(
-                applicationContext, pkg, isStrict = false,
+            // buildUsageLimitOverlay riceve `baseConfig` cosi' l'OverlayConfig
+            // ritornato eredita la palette / countdown / shake personalizzati
+            // dall'utente per quella relation. Senza questo merge l'estensione
+            // perdeva sempre i colori utente e usava OverlayConfig.DEFAULT.
+            val (cfg, p) = OverlayPolicies.buildUsageLimitOverlay(
+                applicationContext, pkg, baseConfig = baseConfig, isStrict = false,
             )
-            baseConfig to p
+            cfg to p
         } else {
             baseConfig to BypassPolicy()
         }
@@ -571,7 +698,9 @@ class KoruAccessibilityService : AccessibilityService() {
                 applicationContext,
                 pkg,
                 eventType = 0, // TRIGGERED
-                restrictionType = 0, // APP
+                // Dedicato BYPASS_EXPIRED: discrimina nel log analytics da un
+                // normale APP block (era loggato come restrictionType=0).
+                restrictionType = RESTRICTION_TYPE_BYPASS_EXPIRED,
                 timestamp = System.currentTimeMillis(),
             )
         } catch (_: Exception) {}
@@ -580,7 +709,10 @@ class KoruAccessibilityService : AccessibilityService() {
     /**
      * Ritorna true se ha bloccato l'app (overlay mostrato + HOME).
      */
-    private fun checkAppBlocking(packageName: String): Boolean {
+    private fun checkAppBlocking(
+        packageName: String,
+        snapshot: ProfilesSnapshot = profilesSnapshot.get(),
+    ): Boolean {
         // Bypass timed: l'utente ha scelto una durata esplicita dal duration
         // picker. Finché quella durata non scade, non mostriamo l'overlay.
         if (OverlayManager.isBypassed(packageName)) return false
@@ -604,7 +736,11 @@ class KoruAccessibilityService : AccessibilityService() {
                     profileEmoji = "\uD83C\uDFAF", // 🎯
                 )
             }
-            performGoHomeForBlock(blockedPackage = packageName)
+            // FOCUS_MODE: forceHome=true. La user-intent del Pomodoro / focus
+            // session è uscire dall'app, non navigare lo stack interno.
+            // BACK su un'app con activity nested chiuderebbe solo l'inner
+            // activity e l'app target resterebbe in foreground.
+            performGoHomeForBlock(forceHome = true, blockedPackage = packageName)
             val now = System.currentTimeMillis()
             try {
                 NativeDatabase.insertBlockSession(applicationContext, packageName, now)
@@ -619,10 +755,10 @@ class KoruAccessibilityService : AccessibilityService() {
             return true
         }
 
-        for (profile in profiles) {
-            if (!isProfileActiveNow(profile)) continue
+        for (profile in snapshot.profiles) {
+            if (!isProfileActiveNow(profile, snapshot)) continue
 
-            val apps = profileApps[profile.id] ?: emptyList()
+            val apps = snapshot.profileApps[profile.id] ?: emptyList()
             val enabledApps = apps.filter { it.isEnabled }.map { it.packageName }
 
             val shouldBlock = when (profile.blockingMode) {
@@ -678,8 +814,18 @@ class KoruAccessibilityService : AccessibilityService() {
                 currentlyBlockingPackage = packageName
                 cancelLimitCheck(packageName)
                 val appLabel = getAppLabel(packageName)
+                // Recupera la palette utente dalla relation app→profilo se
+                // presente, cosi' la versione USAGE_LIMIT eredita colori/copy
+                // custom invece di usare OverlayConfig.DEFAULT a tappeto.
+                val limitRelation = snapshot.profileApps.values.asSequence()
+                    .flatten()
+                    .firstOrNull { it.packageName == packageName }
+                val limitBaseConfig = OverlayConfig.fromJsonString(limitRelation?.overlayConfigJson)
                 val (overlayConfig, policy) = OverlayPolicies.buildUsageLimitOverlay(
-                    applicationContext, packageName, isStrict,
+                    applicationContext,
+                    packageName,
+                    baseConfig = limitBaseConfig,
+                    isStrict = isStrict,
                 )
                 mainHandler.post {
                     overlayManager?.show(
@@ -728,6 +874,7 @@ class KoruAccessibilityService : AccessibilityService() {
     private fun checkInAppContentBlocking(
         packageName: String,
         root: AccessibilityNodeInfo,
+        snapshot: ProfilesSnapshot = profilesSnapshot.get(),
     ): Boolean {
         val detected = inAppDetector?.detect(packageName, root) ?: return false
 
@@ -739,9 +886,9 @@ class KoruAccessibilityService : AccessibilityService() {
         lastDetectedSectionWireId = detected.wireId
         lastSectionEventTime = now
 
-        for (profile in profiles) {
-            if (!isProfileActiveNow(profile)) continue
-            val apps = profileApps[profile.id] ?: continue
+        for (profile in snapshot.profiles) {
+            if (!isProfileActiveNow(profile, snapshot)) continue
+            val apps = snapshot.profileApps[profile.id] ?: continue
             val relation = apps.firstOrNull { it.packageName == packageName } ?: continue
 
             // Se app è già bloccata interamente, il checkAppBlocking la gestisce.
@@ -763,7 +910,13 @@ class KoruAccessibilityService : AccessibilityService() {
                     profileEmoji = profile.emoji,
                 )
             }
-            performGoHomeForBlock(blockedPackage = packageName)
+            // SECTION_BLOCKED: forceHome=true. Bloccare una "sezione"
+            // dentro un'app (es. Reels, Shorts) ha senso solo se l'app
+            // viene effettivamente chiusa. BACK chiuderebbe solo la
+            // sub-activity (es. il viewer Reels) e l'utente resterebbe
+            // sulla home dell'app, libero di tornare immediatamente
+            // sulla sezione bloccata.
+            performGoHomeForBlock(forceHome = true, blockedPackage = packageName)
             try {
                 NativeDatabase.insertBlockSession(
                     applicationContext,
@@ -784,7 +937,11 @@ class KoruAccessibilityService : AccessibilityService() {
         return false
     }
 
-    private fun checkWebsiteBlocking(packageName: String, rootNode: AccessibilityNodeInfo) {
+    private fun checkWebsiteBlocking(
+        packageName: String,
+        rootNode: AccessibilityNodeInfo,
+        snapshot: ProfilesSnapshot = profilesSnapshot.get(),
+    ) {
         val configs = BrowserConfigLoader.getConfigsForPackage(applicationContext, packageName)
         if (configs.isEmpty()) {
             Log.w(TAG, "  → no browser configs for $packageName")
@@ -798,17 +955,23 @@ class KoruAccessibilityService : AccessibilityService() {
         }
         Log.i(TAG, "  URL detected: domain=${detected.domain} full=${detected.fullUrl}")
 
-        if (websiteRulesCache.isEmpty()) {
+        if (snapshot.websiteRulesCache.isEmpty()) {
             Log.w(TAG, "  → websiteRulesCache is EMPTY")
             return
         }
 
-        for ((profileId, rules) in websiteRulesCache) {
+        for ((profileId, rules) in snapshot.websiteRulesCache) {
             Log.d(TAG, "  profile $profileId has ${rules.size} rules: ${rules.map { "${it.name}(type=${it.blockingType},any=${it.isAnywhereInUrl})" }}")
             if (WebsiteMatcher.matchesAny(rules, detected.fullUrl, detected.domain)) {
                 Log.w(TAG, ">>> BLOCKING SITE: ${detected.domain} by profile $profileId")
-                val matchedProfile = profiles.firstOrNull { it.id == profileId }
+                val matchedProfile = snapshot.profiles.firstOrNull { it.id == profileId }
                 val profileTitle = matchedProfile?.title ?: "Koru"
+                // Setta currentlyBlockingPackage cosi' quando l'utente cambia
+                // tab a un sito non bloccato (o naviga via dal browser),
+                // il path "no profile blocks this pkg" di checkAppBlocking
+                // smonta correttamente l'overlay (era un bug: dopo blocco
+                // website l'overlay restava montato anche su tab pulita).
+                currentlyBlockingPackage = packageName
                 mainHandler.post {
                     overlayManager?.show(
                         packageName = packageName,
@@ -818,7 +981,12 @@ class KoruAccessibilityService : AccessibilityService() {
                         profileEmoji = matchedProfile?.emoji,
                     )
                 }
-                performGoHomeForBlock(blockedPackage = packageName)
+                // WEBSITE_BLOCKED: forceHome=true. L'utente sta navigando in
+                // un browser; BACK porta alla pagina precedente del browser,
+                // che spesso è la stessa scheda. La user-intent "non aprire
+                // questo sito" si soddisfa solo chiudendo il browser fino
+                // a fuori — HOME è il fix per gli stessi pattern di IG/YT.
+                performGoHomeForBlock(forceHome = true, blockedPackage = packageName)
                 val now = System.currentTimeMillis()
                 try {
                     NativeDatabase.insertBlockSession(applicationContext, detected.domain, now)
@@ -835,7 +1003,10 @@ class KoruAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun isProfileActiveNow(profile: NativeProfile): Boolean {
+    private fun isProfileActiveNow(
+        profile: NativeProfile,
+        snapshot: ProfilesSnapshot = profilesSnapshot.get(),
+    ): Boolean {
         if (profile.pausedUntil < 0) return false
         if (profile.pausedUntil > 0 && profile.pausedUntil > System.currentTimeMillis()) return false
 
@@ -857,7 +1028,7 @@ class KoruAccessibilityService : AccessibilityService() {
         // PROFILE_TYPE_TIME e ci sono intervals enabled, l'orario corrente
         // deve cadere in almeno uno di essi (cross-midnight supportato).
         val hasTimeType = (profile.typeCombinations and PROFILE_TYPE_TIME) != 0
-        val intervals = profileIntervals[profile.id] ?: emptyList()
+        val intervals = snapshot.profileIntervals[profile.id] ?: emptyList()
         if (hasTimeType && intervals.isNotEmpty()) {
             val nowMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 +
                 cal.get(Calendar.MINUTE)
@@ -880,7 +1051,7 @@ class KoruAccessibilityService : AccessibilityService() {
         // configurato, attivo solo se l'SSID corrente matcha. Se non
         // possiamo leggere il SSID (permesso location non concesso)
         // trattiamo come "no match" → profilo inattivo per sicurezza.
-        val wifiSet = profileWifis[profile.id]
+        val wifiSet = snapshot.profileWifis[profile.id]
         if (wifiSet != null && wifiSet.isNotEmpty()) {
             val current = getCurrentWifiSsid()
             if (current == null || !wifiSet.contains(current)) return false
@@ -895,27 +1066,82 @@ class KoruAccessibilityService : AccessibilityService() {
             // bg-thread) sta leggendo causa SQLite IOError sul cursore in
             // corso. La connection rimane aperta per tutta la vita del
             // service e viene chiusa solo in onDestroy.
-            profiles = NativeDatabase.getEnabledProfiles(applicationContext)
-            profileApps.clear()
-            websiteRulesCache.clear()
-            val intervalsByProfile = mutableMapOf<Int, List<com.dev.koru.db.NativeInterval>>()
-            for (p in profiles) {
-                profileApps[p.id] = NativeDatabase.getAppRelationsForProfile(applicationContext, p.id)
+            val newProfiles = NativeDatabase.getEnabledProfiles(applicationContext)
+            val newProfileApps = mutableMapOf<Int, List<NativeAppRelation>>()
+            val intervalsByProfile = mutableMapOf<Int, List<NativeInterval>>()
+            for (p in newProfiles) {
+                newProfileApps[p.id] = NativeDatabase.getAppRelationsForProfile(applicationContext, p.id)
                 intervalsByProfile[p.id] = NativeDatabase.getIntervalsForProfile(applicationContext, p.id)
             }
-            profileIntervals = intervalsByProfile
-            websiteRulesCache.putAll(NativeDatabase.getAllWebsiteRulesForEnabledProfiles(applicationContext))
-            profileWifis = NativeDatabase.getWifiSsidsByProfile(applicationContext)
+            val newRules = NativeDatabase.getAllWebsiteRulesForEnabledProfiles(applicationContext)
+            val newWifis = NativeDatabase.getWifiSsidsByProfile(applicationContext)
+
+            // Costruisco snapshot immutabile LOCALE e poi swap atomico.
+            // Cosi' eventuali letture concorrenti vedono o il vecchio o il
+            // nuovo snapshot, mai uno stato parziale (es. profili nuovi ma
+            // profileApps ancora del vecchio set, finestra esistente nel
+            // pattern precedente di clear()+put()).
+            val snapshot = ProfilesSnapshot(
+                profiles = newProfiles,
+                profileApps = newProfileApps.toMap(),
+                websiteRulesCache = newRules,
+                profileIntervals = intervalsByProfile.toMap(),
+                profileWifis = newWifis,
+            )
+            profilesSnapshot.set(snapshot)
             lastProfileLoadTime = System.currentTimeMillis()
-            Log.d(TAG, "Loaded ${profiles.size} profiles, ${profileWifis.size} with wifi constraints, " +
-                "${profileIntervals.values.sumOf { it.size }} intervals")
+            Log.d(TAG, "Loaded ${snapshot.profiles.size} profiles, ${snapshot.profileWifis.size} with wifi constraints, " +
+                "${snapshot.profileIntervals.values.sumOf { it.size }} intervals")
+
+            // Filtro dinamico per AccessibilityService: limita gli eventi
+            // ricevuti al solo set di package che effettivamente ci interessa
+            // (apps configurate nei profili + browser noti + settings).
+            // Riduce significativamente la pressione sul binder accessibility
+            // su sistemi con tante app installate. Cambiare `packageNames` su
+            // `serviceInfo` deve essere fatto ricreando l'AccessibilityServiceInfo
+            // — settare in-place su quello restituito da `getServiceInfo` non
+            // sempre prende effetto.
+            applyDynamicPackageFilter(snapshot)
         } catch (e: Exception) {
             Log.e(TAG, "Error loading profiles: ${e.message}")
-            profiles = emptyList()
-            profileApps.clear()
-            websiteRulesCache.clear()
-            profileWifis = emptyMap()
-            profileIntervals = emptyMap()
+            profilesSnapshot.set(ProfilesSnapshot.EMPTY)
+        }
+    }
+
+    /// Aggiorna `serviceInfo.packageNames` con l'unione di:
+    /// - tutti i package referenziati dai profili attivi
+    /// - browser noti (per intercettare URL websites)
+    /// - settings (per StrictModeEnforcer)
+    ///
+    /// Se l'unione e' vuota lasciamo `packageNames = null` (= ricevi da tutti),
+    /// altrimenti il servizio non riceverebbe alcun evento prima del primo
+    /// profilo configurato.
+    @Volatile
+    private var lastWatchedPackages: Set<String>? = null
+
+    private fun applyDynamicPackageFilter(snapshot: ProfilesSnapshot) {
+        try {
+            val profilePackages = snapshot.profileApps.values
+                .flatten()
+                .map { it.packageName }
+                .toSet()
+            val watched = profilePackages + KNOWN_BROWSERS + SETTINGS_PACKAGES
+            // Skip se il set non e' cambiato: ricreare AccessibilityServiceInfo
+            // forza il system_server a re-validare il manifest e re-bindare
+            // il service — operazione non gratuita, va evitata se inutile.
+            if (watched == lastWatchedPackages) return
+            val info = serviceInfo ?: return
+            // Modifichiamo in place i soli campi mutabili (packageNames).
+            // canRetrieveWindowContent e' read-only sull'oggetto e proviene
+            // dal manifest config XML — preservato implicitamente dato che
+            // riutilizziamo l'istanza esistente. Creare un nuovo
+            // AccessibilityServiceInfo from scratch perderebbe quel flag e
+            // il system_server lo ri-validerebbe via meta-data.
+            info.packageNames = if (watched.isEmpty()) null else watched.toTypedArray()
+            serviceInfo = info
+            lastWatchedPackages = watched
+        } catch (e: Exception) {
+            Log.w(TAG, "applyDynamicPackageFilter failed: ${e.message}")
         }
     }
 
@@ -942,7 +1168,7 @@ class KoruAccessibilityService : AccessibilityService() {
     private fun forceReloadProfiles() {
         Log.i(TAG, "Force reloading profiles")
         loadProfiles()
-        lastForegroundPackage?.let { checkAppBlocking(it) }
+        lastForegroundPackage?.let { checkAppBlocking(it, profilesSnapshot.get()) }
     }
 
     private fun getAppLabel(packageName: String): String = try {
@@ -980,6 +1206,14 @@ class KoruAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         Log.w(TAG, "Interrupted")
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Forward al manager: l'overlay deve potersi riallineare a un cambio
+        // di rotazione / dark mode / scale font senza ricreare l'overlay
+        // da capo (verrebbe perso lo stato del countdown).
+        overlayManager?.onConfigurationChanged()
     }
 
     override fun onDestroy() {
