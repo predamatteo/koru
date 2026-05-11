@@ -46,7 +46,14 @@ final appSearchQueryProvider = StateProvider<String>((_) => '');
 /// normale, lo tratta solo come candidato HOME). Koru stessa NON viene
 /// filtrata (anche se ha CATEGORY_HOME): l'utente la cerca esplicitamente.
 final filteredAppsProvider = Provider<List<InstalledAppInfo>>((ref) {
-  final apps = ref.watch(installedAppsProvider).valueOrNull ?? const [];
+  // Stale-while-revalidate: mostra la lista cached anche durante un reload
+  // (invalidate da PACKAGE_*/smart-refresh). Senza `unwrapPrevious()` il
+  // drawer "All apps" e i provider downstream (grouped, favorite) sarebbero
+  // vuoti per 1-3s mentre `getInstalledApps` rifa lo scan PackageManager
+  // con decode delle icone — perceived come blink/sfarfallio al rientro
+  // home. Sul primissimo cold start (no previous) resta lista vuota.
+  final apps =
+      ref.watch(installedAppsProvider).unwrapPrevious().valueOrNull ?? const [];
   final query = ref.watch(appSearchQueryProvider).trim().toLowerCase();
   final personalization = ref.watch(appPersonalizationProvider);
   final launcherPkgs =

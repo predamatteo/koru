@@ -13,9 +13,20 @@ final favoritesProvider = StreamProvider<List<String>>((ref) {
 
 /// Risolve i package favoriti in oggetti InstalledAppInfo
 /// preservando l'ordine di favoritesProvider e filtrando app non più installate.
+///
+/// Stale-while-revalidate su [installedAppsProvider]: quando viene invalidato
+/// (PACKAGE_ADDED/REMOVED/REPLACED, oppure smart refresh al resume rileva un
+/// delta), Riverpod transita in AsyncLoading.copyWithPrevious. Senza
+/// `unwrapPrevious()` `valueOrNull` tornerebbe null durante il reload —
+/// 1-3s in cui la lista favoriti del launcher rimane vuota (e poi torna,
+/// causando il "blink" / "a scatti" percepito al rientro home).
+/// Con `unwrapPrevious()` continuiamo a mostrare la lista cached finche'
+/// la nuova fetch non completa; poi sostituiamo seamless. Sul primissimo
+/// cold start (mai caricata, no previous) il fallback resta lista vuota.
 final favoriteAppsProvider = Provider<List<InstalledAppInfo>>((ref) {
   final favPackages = ref.watch(favoritesProvider).valueOrNull ?? const <String>[];
-  final installed = ref.watch(installedAppsProvider).valueOrNull ?? const <InstalledAppInfo>[];
+  final installed = ref.watch(installedAppsProvider).unwrapPrevious().valueOrNull ??
+      const <InstalledAppInfo>[];
   final byPkg = {for (final a in installed) a.packageName: a};
   return favPackages
       .map((p) => byPkg[p])
