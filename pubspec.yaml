@@ -50,6 +50,9 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
 
+  # Testing
+  mocktail: ^1.0.4
+
   # Code generation
   build_runner: ^2.4.14
   drift_dev: ^2.22.1

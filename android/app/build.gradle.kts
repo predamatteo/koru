@@ -39,6 +39,11 @@ android {
         compose = true
         buildConfig = true
     }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -64,6 +69,20 @@ dependencies {
     // azzerare la mask). EncryptedSharedPreferences usa AES-256 GCM con chiave
     // master dal Keystore hardware (StrongBox quando disponibile).
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // ─── Unit testing ─────────────────────────────────────────────────────
+    // JUnit 4 + MockK + Truth + Robolectric per i test JVM (src/test/...).
+    // Robolectric per i test che toccano Android Context, SharedPreferences,
+    // resources, etc. — gira in JVM senza emulator.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("io.mockk:mockk:1.13.13")
+    testImplementation("com.google.truth:truth:1.4.4")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.test:core-ktx:1.6.1")
+    testImplementation("androidx.test.ext:junit:1.2.1")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("org.json:json:20240303")
 }
 
 flutter {
