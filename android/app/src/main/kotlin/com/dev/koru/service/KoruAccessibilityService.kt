@@ -717,6 +717,47 @@ class KoruAccessibilityService : AccessibilityService() {
         // picker. Finché quella durata non scade, non mostriamo l'overlay.
         if (OverlayManager.isBypassed(packageName)) return false
 
+        // GHOST-EVENT GUARD. TYPE_WINDOW_STATE_CHANGED / TYPE_WINDOWS_CHANGED
+        // possono essere emessi anche per un'app che sta PERDENDO il
+        // foreground durante una transizione (la finestra che scompare
+        // genera un evento "state changed"). Senza guardia il flow vicioso e':
+        //
+        //  1. Utente in IG (bloccato dal profilo) → tocca notifica WhatsApp.
+        //  2. Durante la transizione arriva un evento per IG mentre WA sta
+        //     gia' diventando foreground reale.
+        //  3. checkAppBlocking(IG) → BLOCK → overlay + GLOBAL_ACTION_BACK.
+        //  4. WA NON e' monitorata (non in nessun profilo → fuori dal
+        //     watched set di applyDynamicPackageFilter), quindi nessun
+        //     evento per WA arriva: `currentlyBlockingPackage` non viene
+        //     resettato e l'overlay resta sopra WA.
+        //  5. Il BACK pending colpisce WA (GLOBAL_ACTION_BACK e' globale
+        //     sul foreground reale al momento del dispatch, e WA e' gia'
+        //     li'). WA chiude → torna IG (stack precedente) → nuovo evento
+        //     IG → BLOCK #2 → overlay #2. L'utente preme "Don't open" due
+        //     volte e finisce sul launcher senza l'app che voleva aprire.
+        //
+        // Verifichiamo via UsageStats (authoritative su chi e' realmente
+        // foreground) che pkg sia il foreground reale corrente. Se il
+        // foreground reale e' un'altra app non-skip, l'evento per pkg e'
+        // un ghost di uscita → no block. Foreground=skipPackages
+        // (launcher/systemui) o null → procediamo: UsageStats puo' laggare
+        // e in dubbio bloccare e' piu' sicuro che non bloccare (es. evento
+        // di apertura legittimo subito dopo HOME, dove ACTIVITY_RESUMED
+        // del pkg target non e' ancora stato indicizzato).
+        val foregroundDetected = ForegroundDetector
+            .detect(applicationContext)?.primaryPackage
+        if (foregroundDetected != null &&
+            foregroundDetected != packageName &&
+            !skipPackages.contains(foregroundDetected)
+        ) {
+            Log.d(
+                TAG,
+                "checkAppBlocking: pkg=$packageName but real foreground=" +
+                    "$foregroundDetected (ghost transition event) — skip",
+            )
+            return false
+        }
+
         // Quick-block / Pomodoro-work: blocca tutto tranne whitelist.
         // Lo stato è letto da QuickBlockStore (file su disco) perché
         // QuickBlockManager vive nel processo main e qui siamo in
