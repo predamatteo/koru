@@ -24,6 +24,12 @@ void _invalidateStats(Ref ref) {
 
 void _invalidateInstalledApps(Ref ref) {
   ref.invalidate(installedAppsProvider);
+  // I due provider sono fotografie consistenti dello stesso PackageManager
+  // a un istante T: se uno diventa stale lo e' anche l'altro. Senza
+  // questa invalidazione il filtro di [TodayLimitsCard] continuerebbe
+  // a mostrare app gia' disinstallate fra un PACKAGE_REMOVED e il
+  // successivo cold start.
+  ref.invalidate(installedPackageNamesProvider);
 }
 
 /// Smart refresh per [installedAppsProvider] post-resume.
@@ -211,7 +217,7 @@ final packageEventsRefresherProvider = Provider<void>((ref) {
     }
     debounce?.cancel();
     debounce = Timer(const Duration(milliseconds: 400), () {
-      ref.invalidate(installedAppsProvider);
+      _invalidateInstalledApps(ref);
     });
   });
   ref.onDispose(() {

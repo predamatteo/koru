@@ -11,6 +11,26 @@ final installedAppsProvider = FutureProvider<List<InstalledAppInfo>>((ref) async
   return blocking.getInstalledApps();
 });
 
+/// Set di package installati senza label né icone. Endpoint native cheap
+/// (`getInstalledPackageNames`, ~50ms) che non decoda le bitmap come fa
+/// invece `getInstalledApps` (1-3s al cold start).
+///
+/// Esiste come provider separato perché i consumer che servono SOLO un
+/// "questo package è ancora installato?" (TodayLimitsCard filter, future
+/// guard simili) non devono aspettare il decode delle icone. Senza questo,
+/// la card "Today's limits" mostrava per ~3s entries fantasma di app già
+/// disinstallate, fino a quando `installedAppsProvider` finiva di caricare
+/// e il filtro UI poteva applicarsi.
+///
+/// Invalidazione: parallela a `installedAppsProvider` — i due sono
+/// fotografie consistenti dello stesso PackageManager a un istante T, e
+/// devono essere rinfrescati insieme (vedi `events_refresher.dart`).
+final installedPackageNamesProvider = FutureProvider<Set<String>>((ref) async {
+  final blocking = ref.watch(platformChannelServiceProvider).blocking;
+  final names = await blocking.getInstalledPackageNames();
+  return names.toSet();
+});
+
 /// Set di package che dichiarano un'activity HOME (sono altri launcher
 /// installati: Nova, Pixel Launcher, AGM Launcher, ecc.). Usati per
 /// filtrare il drawer di Koru — mostrare un altro launcher tra le app

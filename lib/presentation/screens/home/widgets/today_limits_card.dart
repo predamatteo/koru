@@ -57,31 +57,32 @@ class _TodayLimitsCardState extends ConsumerState<TodayLimitsCard> {
     final limits = limitsAsync.valueOrNull ?? const <String, AppLimitConfig>{};
     if (limits.isEmpty) return const SizedBox.shrink();
 
+    // Fonte autoritativa per "questo pkg è ancora installato?":
+    // [installedPackageNamesProvider] è cheap (~50ms, no icon decode)
+    // quindi è disponibile entro un frame anche al cold start. La lista
+    // ricca [installedAppsProvider] serve solo per i label (e arriva
+    // 1-3s più tardi: fino ad allora fallback su `packageName` raw).
+    //
+    // Senza questo split, la card mostrava per ~3s tutte le entries del
+    // JSON `koru_app_limits.json` — incluse quelle di app disinstallate
+    // mentre Koru era in background e che non sono ancora state ripulite
+    // dal cleanup async — perché il filtro era gated sulla lista ricca.
+    final pkgNamesAsync = ref.watch(installedPackageNamesProvider);
     final appsAsync = ref.watch(installedAppsProvider);
-    final apps = appsAsync.valueOrNull;
+    final installedNames = pkgNamesAsync.valueOrNull;
     final appsByPkg = {
-      for (final a in apps ?? const []) a.packageName: a,
+      for (final a in appsAsync.valueOrNull ?? const <InstalledAppInfo>[])
+        a.packageName: a,
     };
 
-    // Filtra entries per package non piu' installati. Bug riportato: dopo
-    // disinstallazione di un'app con limite il JSON `koru_app_limits.json`
-    // conservava la entry, facendola riapparire come voce fantasma sotto
-    // "Today's limits". Il cleanup persistente avviene via
-    // [packageEventsRefresherProvider] (su PACKAGE_REMOVED) e via
-    // [appLifecycleInvalidatorProvider] (sweep al resume); qui filtriamo
-    // anche per coprire la finestra fra il momento in cui la entry diventa
-    // stale e il momento in cui il cleanup arriva al disco.
-    //
-    // Se la lista installedApps non e' ancora caricata (apps == null) o
-    // ritorna vuota (errore native, cold start, dispositivo senza app
-    // visibili), mostriamo tutto: meglio mostrare entries reali in
-    // eccesso che nascondere temporaneamente entries valide. Il filtro
-    // serve a coprire il caso steady-state in cui c'e' una lista reale
-    // di app installate e il pkg del limit non vi compare (uninstall
-    // gia' avvenuto, cleanup non ancora persistito).
-    final filterActive = apps != null && apps.isNotEmpty;
+    // Se la lista cheap non e' ancora caricata (primissimo frame del cold
+    // start, errore native, dispositivo senza app visibili) NON filtriamo
+    // — meglio mostrare entries reali in eccesso che nascondere entries
+    // valide per qualche millisecondo. In steady-state e' sempre caricata,
+    // quindi non c'e' regressione visibile rispetto a prima.
+    final filterActive = installedNames != null && installedNames.isNotEmpty;
     final entries = limits.entries
-        .where((e) => !filterActive || appsByPkg.containsKey(e.key))
+        .where((e) => !filterActive || installedNames.contains(e.key))
         .toList()
       ..sort((a, b) => b.value.minutes.compareTo(a.value.minutes));
     if (entries.isEmpty) return const SizedBox.shrink();
