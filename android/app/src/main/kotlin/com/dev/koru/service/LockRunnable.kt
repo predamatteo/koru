@@ -172,31 +172,13 @@ class LockRunnable(
             return
         }
 
-        // 1) Profile-based blocking (logica originale).
-        // O13: snapshot tramite toList() — loadProfiles() può sostituire
-        // l'intera lista da un altro callback (reloadProfiles via Flutter
-        // bridge). Iterando direttamente su `profiles` si rischiava
-        // ConcurrentModificationException quando il broadcast arrivava
-        // a metà ciclo.
-        val profilesSnapshot = profiles.toList()
-        for (profile in profilesSnapshot) {
-            if (!isProfileActiveNow(profile)) continue
-
-            val relation = findBlockingRelation(profile, pkg) ?: continue
-            if (currentlyBlockingPackage != pkg) {
-                currentlyBlockingPackage = pkg
-                val appLabel = getAppLabel(pkg)
-                Log.w(TAG, ">>> [BACKUP] BLOCKING $pkg ($appLabel) by profile '${profile.title}'")
-                onBlock(pkg, appLabel, profile, relation)
-                try {
-                    NativeDatabase.insertBlockSession(context, pkg, System.currentTimeMillis())
-                } catch (_: Exception) {}
-            }
-            return
-        }
-
-        // 2) Daily usage limit (backup di KoruAccessibilityService.checkAppBlocking
-        //    daily-limit branch). Stesso store, stesso UsageCounter.
+        // 1) Daily usage limit FIRST: deve vincere sul profile block quando
+        //    il cap e' superato. Coerente con KoruAccessibilityService
+        //    (path primario). Bug pre-fix: profile loop girava prima quindi
+        //    un'app bloccata SIA da profilo SIA da limit (con cap gia' superato)
+        //    finiva nel ramo onBlock (APP_BLOCKED, bypass dopo ~9s) invece
+        //    che in onLimitBlock (USAGE_LIMIT, strict/progressive). L'utente
+        //    poteva aprire l'app col countdown nonostante il cap fosse finito.
         val limitMinutes = AppUsageLimitsStore.limitMinutesFor(context, pkg)
         if (limitMinutes > 0) {
             val todayMs = UsageCounter.todayForegroundMs(context, pkg)
@@ -218,6 +200,29 @@ class LockRunnable(
                 }
                 return
             }
+        }
+
+        // 2) Profile-based blocking (logica originale).
+        // O13: snapshot tramite toList() — loadProfiles() può sostituire
+        // l'intera lista da un altro callback (reloadProfiles via Flutter
+        // bridge). Iterando direttamente su `profiles` si rischiava
+        // ConcurrentModificationException quando il broadcast arrivava
+        // a metà ciclo.
+        val profilesSnapshot = profiles.toList()
+        for (profile in profilesSnapshot) {
+            if (!isProfileActiveNow(profile)) continue
+
+            val relation = findBlockingRelation(profile, pkg) ?: continue
+            if (currentlyBlockingPackage != pkg) {
+                currentlyBlockingPackage = pkg
+                val appLabel = getAppLabel(pkg)
+                Log.w(TAG, ">>> [BACKUP] BLOCKING $pkg ($appLabel) by profile '${profile.title}'")
+                onBlock(pkg, appLabel, profile, relation)
+                try {
+                    NativeDatabase.insertBlockSession(context, pkg, System.currentTimeMillis())
+                } catch (_: Exception) {}
+            }
+            return
         }
 
         if (currentlyBlockingPackage != null) {

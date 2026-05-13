@@ -796,6 +796,65 @@ class KoruAccessibilityService : AccessibilityService() {
             return true
         }
 
+        // Daily usage limit FIRST: deve vincere sul profile block quando il
+        // cap e' superato. Bug pre-fix: profile loop girava per primo, quindi
+        // un'app bloccata SIA da profilo SIA da daily limit (con cap gia'
+        // sforato) mostrava APP_BLOCKED + BypassPolicy() di default (countdown
+        // ~9s + "Open anyway") invece del USAGE_LIMIT overlay strict/progressive.
+        // L'utente attendeva il countdown e poteva aprire l'app nonostante il
+        // tempo fosse gia' finito (e in strict mode il bypass non dovrebbe
+        // essere consentito affatto). Lo spostamento del check qui fa sì
+        // che il USAGE_LIMIT overlay prevalga e il messaging rifletta la
+        // realtà. La schedulazione del re-check (caso cap non ancora
+        // raggiunto) resta DOPO il profile loop.
+        val limitEntry = AppUsageLimitsStore.entryFor(applicationContext, packageName)
+        val limitMinutes = limitEntry?.minutes ?: 0
+        val limitTodayMs = if (limitMinutes > 0) {
+            UsageCounter.todayForegroundMs(applicationContext, packageName)
+        } else 0L
+        val limitMs = limitMinutes * 60_000L
+        if (limitMinutes > 0 && limitTodayMs >= limitMs) {
+            val isStrict = limitEntry?.strict ?: true
+            Log.w(TAG, ">>> BLOCKING APP (daily limit, strict=$isStrict): $packageName " +
+                "${limitTodayMs / 60_000}min used, cap=${limitMinutes}min")
+            currentlyBlockingPackage = packageName
+            cancelLimitCheck(packageName)
+            val appLabel = getAppLabel(packageName)
+            val limitRelation = snapshot.profileApps.values.asSequence()
+                .flatten()
+                .firstOrNull { it.packageName == packageName }
+            val limitBaseConfig = OverlayConfig.fromJsonString(limitRelation?.overlayConfigJson)
+            val (overlayConfig, policy) = OverlayPolicies.buildUsageLimitOverlay(
+                applicationContext,
+                packageName,
+                baseConfig = limitBaseConfig,
+                isStrict = isStrict,
+            )
+            mainHandler.post {
+                overlayManager?.show(
+                    packageName = packageName,
+                    appLabel = appLabel,
+                    profileTitle = if (isStrict) "Daily limit · strict" else "Daily limit",
+                    reason = BlockReason.USAGE_LIMIT,
+                    config = overlayConfig,
+                    profileEmoji = "⏳",
+                    bypassPolicy = policy,
+                )
+            }
+            performGoHomeForBlock(blockedPackage = packageName)
+            val now = System.currentTimeMillis()
+            try {
+                NativeDatabase.insertRestrictedAccessEvent(
+                    applicationContext,
+                    packageName,
+                    eventType = 0,
+                    restrictionType = 3, // USAGE_LIMIT
+                    timestamp = now,
+                )
+            } catch (_: Exception) {}
+            return true
+        }
+
         for (profile in snapshot.profiles) {
             if (!isProfileActiveNow(profile, snapshot)) continue
 
@@ -841,66 +900,16 @@ class KoruAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Daily usage limit (globale, non legato a profili): se l'utente ha
-        // superato i minuti concessi per questo pkg oggi → overlay.
-        val limitEntry = AppUsageLimitsStore.entryFor(applicationContext, packageName)
-        val limitMinutes = limitEntry?.minutes ?: 0
+        // Daily limit esiste ma cap non ancora raggiunto: pianifica un
+        // re-check fra (limitMs - limitTodayMs) ms cosi' se l'utente resta
+        // dentro l'app il blocco scatta nel momento in cui il cap viene
+        // toccato, non solo al prossimo cambio di window state. Senza
+        // questo timer, un utente che entra a 28' e resta dentro continua
+        // a usare l'app oltre i 30' senza che nulla lo fermi (bug osservato
+        // su Instagram). Il caso "cap gia' superato" e' gestito sopra prima
+        // del profile loop.
         if (limitMinutes > 0) {
-            val todayMs = UsageCounter.todayForegroundMs(applicationContext, packageName)
-            val limitMs = limitMinutes * 60_000L
-            if (todayMs >= limitMs) {
-                val isStrict = limitEntry?.strict ?: true
-                Log.w(TAG, ">>> BLOCKING APP (daily limit, strict=$isStrict): $packageName " +
-                    "${todayMs / 60_000}min used, cap=${limitMinutes}min")
-                currentlyBlockingPackage = packageName
-                cancelLimitCheck(packageName)
-                val appLabel = getAppLabel(packageName)
-                // Recupera la palette utente dalla relation app→profilo se
-                // presente, cosi' la versione USAGE_LIMIT eredita colori/copy
-                // custom invece di usare OverlayConfig.DEFAULT a tappeto.
-                val limitRelation = snapshot.profileApps.values.asSequence()
-                    .flatten()
-                    .firstOrNull { it.packageName == packageName }
-                val limitBaseConfig = OverlayConfig.fromJsonString(limitRelation?.overlayConfigJson)
-                val (overlayConfig, policy) = OverlayPolicies.buildUsageLimitOverlay(
-                    applicationContext,
-                    packageName,
-                    baseConfig = limitBaseConfig,
-                    isStrict = isStrict,
-                )
-                mainHandler.post {
-                    overlayManager?.show(
-                        packageName = packageName,
-                        appLabel = appLabel,
-                        profileTitle = if (isStrict) "Daily limit · strict" else "Daily limit",
-                        reason = BlockReason.USAGE_LIMIT,
-                        config = overlayConfig,
-                        profileEmoji = "\u23F3", // ⏳
-                        bypassPolicy = policy,
-                    )
-                }
-                performGoHomeForBlock(blockedPackage = packageName)
-                val now = System.currentTimeMillis()
-                try {
-                    NativeDatabase.insertRestrictedAccessEvent(
-                        applicationContext,
-                        packageName,
-                        eventType = 0,
-                        restrictionType = 3, // USAGE_LIMIT
-                        timestamp = now,
-                    )
-                } catch (_: Exception) {}
-                return true
-            } else {
-                // Cap non ancora raggiunto: pianifica un re-check fra
-                // (limitMs - todayMs) ms così se l'utente resta dentro
-                // l'app il blocco scatta nel momento in cui il cap viene
-                // toccato, non solo al prossimo cambio di window state.
-                // Senza questo timer, un utente che entra a 28' e resta
-                // dentro continua a usare l'app oltre i 30' senza che
-                // nulla lo fermi (bug osservato su Instagram).
-                scheduleLimitCheck(packageName, limitMs - todayMs)
-            }
+            scheduleLimitCheck(packageName, limitMs - limitTodayMs)
         }
 
         // Nessun profilo blocca questo pkg — se avevamo un overlay, dismiss.
