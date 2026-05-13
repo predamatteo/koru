@@ -123,9 +123,30 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
         ],
       ),
-      StatefulShellRoute.indexedStack(
+      StatefulShellRoute(
         builder: (context, state, navigationShell) =>
             LauncherShell(navigationShell: navigationShell),
+        // Lazy IndexedStack: al cold start solo la tab visibile viene
+        // costruita, le altre restano `SizedBox.shrink` finché l'utente
+        // non le tocca. Questo evita che HomeScreen + ProfilesListScreen +
+        // FocusScreen + StatisticsScreen + SettingsScreen vengano
+        // istanziate tutte insieme (l'IndexedStack di default builda tutti
+        // i children in parallelo). Riduce drasticamente il numero di
+        // provider FutureProvider/StreamProvider attivati al boot — in
+        // particolare evita due chiamate `getUsageStats` (UsageStatsManager
+        // native, ~hundreds of ms) di StatisticsScreen quando l'utente
+        // parte sulla Home.
+        //
+        // Lo stato di navigazione di ogni branch resta preservato dopo la
+        // prima visita: una volta che `_visited[i]` diventa true, il
+        // Navigator del branch resta nel tree (anche quando l'utente passa
+        // a un altro tab) — IndexedStack lo nasconde con Offstage senza
+        // distruggerlo.
+        navigatorContainerBuilder: (context, navigationShell, children) =>
+            _LazyShellContainer(
+          currentIndex: navigationShell.currentIndex,
+          children: children,
+        ),
         branches: [
           StatefulShellBranch(
             navigatorKey: shellNavigatorHomeKey,
@@ -321,3 +342,61 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+/// IndexedStack che costruisce ogni branch solo alla prima visita.
+///
+/// Sostituisce il container default di `StatefulShellRoute.indexedStack` che
+/// monta tutti i Navigator dei branch al primo build dello shell, causando
+/// la costruzione contemporanea di HomeScreen + ProfilesListScreen +
+/// FocusScreen + StatisticsScreen + SettingsScreen al cold start — e con
+/// loro l'attivazione in parallelo di tutti i provider che quelle schermate
+/// `ref.watch`, fra cui chiamate native onerose (UsageStats, PackageManager
+/// scan + icon decode) della Stats tab anche quando l'utente entra in app
+/// dalla Home.
+///
+/// Una volta visitato, un branch resta nel tree (IndexedStack lo nasconde
+/// con Offstage), quindi lo stato di navigazione interno è preservato fra
+/// tab switch.
+class _LazyShellContainer extends StatefulWidget {
+  const _LazyShellContainer({
+    required this.currentIndex,
+    required this.children,
+  });
+
+  final int currentIndex;
+  final List<Widget> children;
+
+  @override
+  State<_LazyShellContainer> createState() => _LazyShellContainerState();
+}
+
+class _LazyShellContainerState extends State<_LazyShellContainer> {
+  late final List<bool> _visited =
+      List<bool>.filled(widget.children.length, false, growable: false);
+
+  @override
+  void initState() {
+    super.initState();
+    _visited[widget.currentIndex] = true;
+  }
+
+  @override
+  void didUpdateWidget(covariant _LazyShellContainer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_visited[widget.currentIndex]) {
+      _visited[widget.currentIndex] = true;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IndexedStack(
+      index: widget.currentIndex,
+      sizing: StackFit.expand,
+      children: [
+        for (var i = 0; i < widget.children.length; i++)
+          _visited[i] ? widget.children[i] : const SizedBox.shrink(),
+      ],
+    );
+  }
+}
