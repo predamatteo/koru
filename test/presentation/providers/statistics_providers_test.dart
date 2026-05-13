@@ -25,7 +25,7 @@ void main() {
       );
     });
 
-    test('can be set to week / month', () {
+    test('can be set to week', () {
       final h = buildTestContainer();
       addTearDown(h.dispose);
 

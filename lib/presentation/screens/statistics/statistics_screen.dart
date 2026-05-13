@@ -189,7 +189,6 @@ class _DeltaText extends StatelessWidget {
   String _periodRef() => switch (period) {
         StatisticsPeriod.today => 'yesterday',
         StatisticsPeriod.week => 'last week',
-        StatisticsPeriod.month => 'last month',
       };
 
   @override

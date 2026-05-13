@@ -3,20 +3,18 @@ import 'package:koru/domain/entities/statistics_period.dart';
 
 void main() {
   group('StatisticsPeriod metadata', () {
-    test('daysBack is 1 / 7 / 30', () {
+    test('daysBack is 1 / 7', () {
       expect(StatisticsPeriod.today.daysBack, 1);
       expect(StatisticsPeriod.week.daysBack, 7);
-      expect(StatisticsPeriod.month.daysBack, 30);
     });
 
     test('label exposes the user-facing string', () {
       expect(StatisticsPeriod.today.label, 'Today');
       expect(StatisticsPeriod.week.label, 'This week');
-      expect(StatisticsPeriod.month.label, 'This month');
     });
 
-    test('there are exactly 3 periods', () {
-      expect(StatisticsPeriod.values.length, 3);
+    test('there are exactly 2 periods', () {
+      expect(StatisticsPeriod.values.length, 2);
     });
   });
 
@@ -34,14 +32,6 @@ void main() {
         now: DateTime(2026, 4, 17),
       );
       expect(range.from, '2026-04-11');
-      expect(range.to, '2026-04-17');
-    });
-
-    test('month spans 30 days inclusive (March 19..April 17)', () {
-      final range = StatisticsPeriod.month.currentRange(
-        now: DateTime(2026, 4, 17),
-      );
-      expect(range.from, '2026-03-19');
       expect(range.to, '2026-04-17');
     });
 
@@ -76,16 +66,6 @@ void main() {
       final range = StatisticsPeriod.week.currentRangeMs(now: now);
       final startOfDay = DateTime(2026, 4, 17);
       final expectedFrom = startOfDay.subtract(const Duration(days: 6));
-
-      expect(range.from, expectedFrom.millisecondsSinceEpoch);
-      expect(range.to, now.millisecondsSinceEpoch);
-    });
-
-    test('month: from is startOfDay shifted back by 29 days', () {
-      final now = DateTime(2026, 4, 17, 14, 30);
-      final range = StatisticsPeriod.month.currentRangeMs(now: now);
-      final startOfDay = DateTime(2026, 4, 17);
-      final expectedFrom = startOfDay.subtract(const Duration(days: 29));
 
       expect(range.from, expectedFrom.millisecondsSinceEpoch);
       expect(range.to, now.millisecondsSinceEpoch);

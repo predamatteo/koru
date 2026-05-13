@@ -1,7 +1,6 @@
 enum StatisticsPeriod {
   today('Today', 1),
-  week('This week', 7),
-  month('This month', 30);
+  week('This week', 7);
 
   const StatisticsPeriod(this.label, this.daysBack);
 
