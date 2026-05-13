@@ -14,7 +14,6 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
-import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.dev.koru.MainActivity
@@ -66,12 +65,20 @@ class LockForegroundService : Service() {
     /// dal suo polling thread, quindi qui wrappiamo tutto in mainHandler.post.
     private val mainHandler: Handler = Handler(Looper.getMainLooper())
 
-    /// PARTIAL_WAKE_LOCK acquisito quando il blocking è attivo. Senza
-    /// questo, il sistema può addormentare il loop di polling proprio
-    /// nel momento in cui serve di più (utente con schermo che ha appena
-    /// fatto auto-off). Timeout 10 min: se LockRunnable è ancora vivo
-    /// rinnova; se è morto, il wakelock muore con il service.
-    private var wakeLock: PowerManager.WakeLock? = null
+    /// NOTA STORICA: qui c'era un PARTIAL_WAKE_LOCK ("Koru::Blocking") acquisito
+    /// per 10 min all'avvio del service. È stato rimosso perché:
+    /// - Il polling reale è 5s (accessibility vivo) o 10s (schermo off);
+    ///   serve davvero 300ms solo nel BACKUP path (accessibility morto), che è
+    ///   uno scenario d'emergenza, non lo stato comune.
+    /// - L'FGS già garantisce al processo priorità di scheduling sufficiente
+    ///   per un poll così rado; non serve forzare la CPU sveglia.
+    /// - OEM aggressivi (Oppo/ColorOS, OnePlus, MIUI) flaggano i partial wake
+    ///   lock lunghi con la notifica "X sta scaricando la batteria, ottimizza
+    ///   ora" anche quando il consumo reale è trascurabile. Per il nostro use
+    ///   case il wake lock era pessimismo prematuro: costava molto in
+    ///   percezione utente per zero beneficio tangibile.
+    /// - Durante doze l'utente NON sta usando app → il blocking non serve
+    ///   svegliarsi; quando torna interactive il loop riparte naturalmente.
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -150,7 +157,6 @@ class LockForegroundService : Service() {
                 } catch (e: Exception) {
                     Log.e(TAG, "startForeground failed", e)
                 }
-                acquireWakeLock()
                 startBlocking()
                 return START_STICKY
             }
@@ -168,7 +174,6 @@ class LockForegroundService : Service() {
 
     override fun onDestroy() {
         stopBlocking()
-        releaseWakeLock()
         quickBlockManager.stop()
         overlayManager?.destroy()
         overlayManager = null
@@ -177,36 +182,6 @@ class LockForegroundService : Service() {
         }
         reloadReceiver = null
         super.onDestroy()
-    }
-
-    /// Acquisisce un PARTIAL_WAKE_LOCK con timeout 10 min. Timeout
-    /// importante per evitare leak permanente: se per qualunque ragione
-    /// il release non viene chiamato (crash, kill), il sistema rilascia
-    /// da solo dopo 10 min. LockRunnable può ri-acquisire periodicamente
-    /// se vuole estendere oltre.
-    private fun acquireWakeLock() {
-        if (wakeLock?.isHeld == true) return
-        try {
-            val pm = getSystemService(POWER_SERVICE) as PowerManager
-            wakeLock = pm.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "Koru::Blocking",
-            ).apply {
-                setReferenceCounted(false)
-                acquire(10 * 60 * 1000L /* 10 min */)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "acquireWakeLock failed", e)
-        }
-    }
-
-    private fun releaseWakeLock() {
-        try {
-            wakeLock?.let { if (it.isHeld) it.release() }
-        } catch (e: Exception) {
-            Log.e(TAG, "releaseWakeLock failed", e)
-        }
-        wakeLock = null
     }
 
     private fun setBlockingPersistenceFlag(active: Boolean) {
@@ -307,7 +282,6 @@ class LockForegroundService : Service() {
         lockRunnable = null
         currentLockRunnable = null
         mainHandler.post { overlayManager?.dismiss() }
-        releaseWakeLock()
         isRunning = false
         setBlockingPersistenceFlag(false)
         sendServiceStateEvent(false)
