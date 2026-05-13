@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/di/providers.dart';
 import '../../platform/service_event_channel.dart';
+import 'app_limits_provider.dart';
 import 'app_list_provider.dart';
 import 'mood_provider.dart';
 import 'profile_providers.dart';
@@ -86,6 +87,32 @@ Future<void> _smartRefreshInstalledApps(Ref ref) async {
     name: 'EventsRefresher',
   );
   _invalidateInstalledApps(ref);
+  // Sweep limits per app rimosse: il diff ci dice solo CHE qualcosa
+  // e' cambiato, non cosa. Passiamo il fresh set come authoritative —
+  // cleanupUninstalled e' no-op se non ci sono entries stale.
+  unawaited(_cleanupStaleAppLimits(ref, freshSet));
+}
+
+/// Rimuove dalle preferenze app_limits le entry per package non piu'
+/// installati. Chiamata su PACKAGE_REMOVED e su resume.
+Future<void> _cleanupStaleAppLimits(
+  Ref ref,
+  Set<String> installedPackages,
+) async {
+  try {
+    // Forza l'inizializzazione del provider se non lo era ancora — senza
+    // questo `state.valueOrNull` dentro cleanupUninstalled sarebbe null
+    // e la pulizia diventerebbe no-op silenziosa al primo trigger.
+    await ref.read(appLimitsProvider.future);
+    await ref
+        .read(appLimitsProvider.notifier)
+        .cleanupUninstalled(installedPackages);
+  } catch (e) {
+    developer.log(
+      'cleanupUninstalled failed: $e',
+      name: 'EventsRefresher',
+    );
+  }
 }
 
 /// Ascolta lo stream di eventi native (BLOCKING_STATE / IN_APP_SECTION_DETECTED
@@ -173,6 +200,15 @@ final packageEventsRefresherProvider = Provider<void>((ref) {
       'Package ${event.kind}: ${event.packageName} — scheduling refresh',
       name: 'PackageEventsRefresher',
     );
+    // Cleanup immediato del limit per il pkg rimosso: indipendente dal
+    // debounce della lista app (per il quale aspettiamo 400ms per
+    // coalescere ADDED+REPLACED). Il limit cleanup non beneficia del
+    // batching e prima viene rimossa la entry meglio e' (UI fantasma).
+    if (event.kind == 'removed') {
+      unawaited(
+        ref.read(appLimitsProvider.notifier).clear(event.packageName),
+      );
+    }
     debounce?.cancel();
     debounce = Timer(const Duration(milliseconds: 400), () {
       ref.invalidate(installedAppsProvider);

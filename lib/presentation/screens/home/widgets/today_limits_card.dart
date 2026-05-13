@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,22 +12,79 @@ import '../../../providers/app_list_provider.dart';
 /// Card riepilogo delle app con un daily limit attivo: mostra
 /// progress bar usato/cap per ogni app. Visibile solo se almeno un
 /// limite è impostato.
-class TodayLimitsCard extends ConsumerWidget {
+class TodayLimitsCard extends ConsumerStatefulWidget {
   const TodayLimitsCard({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TodayLimitsCard> createState() => _TodayLimitsCardState();
+}
+
+class _TodayLimitsCardState extends ConsumerState<TodayLimitsCard> {
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    // Polling 15s del usage minutes per ogni limite visibile. Bug riportato:
+    // senza questo ticker, i progress bar restavano fermi finche' l'utente
+    // non chiudeva e riapriva Koru. Tenere il polling QUI invece che dentro
+    // [usageTodayMinutesProvider] evita di trasformare quel provider in
+    // StreamProvider (cambierebbe l'API e farebbe time-out i test esistenti
+    // che fanno `read(...future)`).
+    //
+    // Trade-off 15s: bilancia freschezza percepita con budget chiamate
+    // native (`getUsageTodayMs` legge UsageStats, ~few ms ognuna). Per
+    // 5 app con limite attivo = 20 query/min, trascurabile.
+    _ticker = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (!mounted) return;
+      final limits = ref.read(appLimitsProvider).valueOrNull;
+      if (limits == null) return;
+      for (final pkg in limits.keys) {
+        ref.invalidate(usageTodayMinutesProvider(pkg));
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final limitsAsync = ref.watch(appLimitsProvider);
     final limits = limitsAsync.valueOrNull ?? const <String, AppLimitConfig>{};
     if (limits.isEmpty) return const SizedBox.shrink();
 
     final appsAsync = ref.watch(installedAppsProvider);
+    final apps = appsAsync.valueOrNull;
     final appsByPkg = {
-      for (final a in appsAsync.valueOrNull ?? const []) a.packageName: a,
+      for (final a in apps ?? const []) a.packageName: a,
     };
 
-    final entries = limits.entries.toList()
+    // Filtra entries per package non piu' installati. Bug riportato: dopo
+    // disinstallazione di un'app con limite il JSON `koru_app_limits.json`
+    // conservava la entry, facendola riapparire come voce fantasma sotto
+    // "Today's limits". Il cleanup persistente avviene via
+    // [packageEventsRefresherProvider] (su PACKAGE_REMOVED) e via
+    // [appLifecycleInvalidatorProvider] (sweep al resume); qui filtriamo
+    // anche per coprire la finestra fra il momento in cui la entry diventa
+    // stale e il momento in cui il cleanup arriva al disco.
+    //
+    // Se la lista installedApps non e' ancora caricata (apps == null) o
+    // ritorna vuota (errore native, cold start, dispositivo senza app
+    // visibili), mostriamo tutto: meglio mostrare entries reali in
+    // eccesso che nascondere temporaneamente entries valide. Il filtro
+    // serve a coprire il caso steady-state in cui c'e' una lista reale
+    // di app installate e il pkg del limit non vi compare (uninstall
+    // gia' avvenuto, cleanup non ancora persistito).
+    final filterActive = apps != null && apps.isNotEmpty;
+    final entries = limits.entries
+        .where((e) => !filterActive || appsByPkg.containsKey(e.key))
+        .toList()
       ..sort((a, b) => b.value.minutes.compareTo(a.value.minutes));
+    if (entries.isEmpty) return const SizedBox.shrink();
 
     return Card(
       child: Padding(

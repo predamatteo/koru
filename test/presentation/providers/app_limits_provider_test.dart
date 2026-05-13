@@ -199,6 +199,50 @@ void main() {
       final next = h.container.read(appLimitsProvider).valueOrNull!;
       expect(next, isEmpty);
     });
+
+    test('cleanupUninstalled() removes entries for non-installed packages',
+        () async {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      when(() => h.blocking.getAppDailyLimits()).thenAnswer(
+        (_) async => {
+          'com.installed': const AppLimitConfig(minutes: 30, strict: true),
+          'com.gone': const AppLimitConfig(minutes: 60, strict: false),
+        },
+      );
+      when(() => h.blocking.setAppDailyLimits(any()))
+          .thenAnswer((_) async => true);
+
+      await h.container.read(appLimitsProvider.future);
+      await h.container
+          .read(appLimitsProvider.notifier)
+          .cleanupUninstalled({'com.installed'});
+
+      final next = h.container.read(appLimitsProvider).valueOrNull!;
+      expect(next.keys, ['com.installed']);
+      verify(() => h.blocking.setAppDailyLimits(any())).called(1);
+    });
+
+    test('cleanupUninstalled() is no-op when all packages are installed',
+        () async {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      when(() => h.blocking.getAppDailyLimits()).thenAnswer(
+        (_) async => {
+          'com.a': const AppLimitConfig(minutes: 30, strict: true),
+          'com.b': const AppLimitConfig(minutes: 60, strict: false),
+        },
+      );
+
+      await h.container.read(appLimitsProvider.future);
+      await h.container
+          .read(appLimitsProvider.notifier)
+          .cleanupUninstalled({'com.a', 'com.b'});
+
+      verifyNever(() => h.blocking.setAppDailyLimits(any()));
+    });
   });
 
   group('usageTodayMinutesProvider', () {

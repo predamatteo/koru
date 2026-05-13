@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/di/providers.dart';
@@ -66,6 +68,30 @@ class AppLimitsNotifier extends AsyncNotifier<Map<String, AppLimitConfig>> {
   }
 
   Future<void> clear(String packageName) => setLimit(packageName, 0);
+
+  /// Rimuove entry per package che non sono piu' installate sul device.
+  /// No-op se non ci sono entries stale. La pulizia e' idempotente: se
+  /// piu' callsite la invocano in rapida successione (es. resume +
+  /// PACKAGE_REMOVED arrivati ravvicinati), il secondo trova nulla da
+  /// fare e ritorna subito.
+  ///
+  /// Senza questa pulizia il JSON `koru_app_limits.json` cresce
+  /// indefinitamente con app disinstallate, che riappaiono nella card
+  /// "Today's limits" come voci fantasma.
+  Future<void> cleanupUninstalled(Set<String> installedPackages) async {
+    final current = state.valueOrNull;
+    if (current == null || current.isEmpty) return;
+    final cleaned = <String, AppLimitConfig>{
+      for (final e in current.entries)
+        if (installedPackages.contains(e.key)) e.key: e.value,
+    };
+    if (cleaned.length == current.length) return;
+    state = AsyncData(cleaned);
+    await ref
+        .read(platformChannelServiceProvider)
+        .blocking
+        .setAppDailyLimits(cleaned);
+  }
 }
 
 final appLimitsProvider =
@@ -74,7 +100,9 @@ final appLimitsProvider =
 );
 
 /// Minuti di utilizzo oggi (foreground) per `packageName`. Ricomputato a
-/// ogni rebuild del provider — invalidare per refresh.
+/// ogni rebuild del provider — invalidare per refresh. I consumer che
+/// mostrano un timer in tempo reale (TodayLimitsCard) gestiscono il polling
+/// internamente con un `Timer.periodic` + `ref.invalidate`.
 ///
 /// Arrotondamento: round al minuto più vicino invece di floor. Il floor
 /// sottrae fino a 59s per display, facendo sembrare l'utilizzo reale
