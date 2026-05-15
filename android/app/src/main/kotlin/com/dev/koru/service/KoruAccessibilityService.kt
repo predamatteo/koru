@@ -373,7 +373,7 @@ class KoruAccessibilityService : AccessibilityService() {
                 // [OverlayManager.clearBypass] (vedi
                 // [lastBypassedActiveForeground]) → al rientro l'overlay
                 // con countdown ricompare. Una sessione = una scelta.
-                Log.i(TAG, "Bypass granted for $pkg: ${durationMs / 60_000}min")
+                Log.i(TAG, "BYPASS-GRANTED: $pkg for ${durationMs / 60_000}min (TTL until ${System.currentTimeMillis() + durationMs})")
                 try {
                     NativeDatabase.insertRestrictedAccessEvent(
                         applicationContext,
@@ -532,14 +532,15 @@ class KoruAccessibilityService : AccessibilityService() {
         val prevBypassed = lastBypassedActiveForeground
         if (prevBypassed != null && pkg != prevBypassed) {
             val realFg = ForegroundDetector.detect(applicationContext)?.primaryPackage
+            Log.i(TAG, "BYPASS-REVOKE-CHECK: prev=$prevBypassed event=$pkg realFg=$realFg")
             if (realFg != null && realFg != prevBypassed) {
-                Log.i(TAG, "Bypass auto-revoke: user left $prevBypassed (real fg=$realFg, event=$pkg)")
+                Log.i(TAG, "BYPASS-REVOKE-DO: user left $prevBypassed (real fg=$realFg, event=$pkg)")
                 OverlayManager.clearBypass(prevBypassed)
                 pendingBypassExpiryChecks.remove(prevBypassed)
                     ?.let { mainHandler.removeCallbacks(it) }
                 lastBypassedActiveForeground = null
             } else {
-                Log.d(TAG, "Bypass revoke skipped: $prevBypassed still real fg (event=$pkg, realFg=$realFg)")
+                Log.i(TAG, "BYPASS-REVOKE-SKIP: $prevBypassed still real fg (event=$pkg, realFg=$realFg)")
             }
         }
 
@@ -767,6 +768,7 @@ class KoruAccessibilityService : AccessibilityService() {
         // l'auto-revoke al prossimo cambio di foreground (vedi
         // [onAccessibilityEvent]).
         if (OverlayManager.isBypassed(packageName)) {
+            Log.i(TAG, "BYPASS-ACTIVE: $packageName in foreground, tracking for auto-revoke")
             lastBypassedActiveForeground = packageName
             return false
         }
@@ -1216,6 +1218,10 @@ class KoruAccessibilityService : AccessibilityService() {
     /// - tutti i package referenziati dai profili attivi
     /// - browser noti (per intercettare URL websites)
     /// - settings (per StrictModeEnforcer)
+    /// - launcher/systemui (per rilevare quando l'utente esce dall'app
+    ///   bypassata → trigger auto-revoke del bypass in onAccessibilityEvent;
+    ///   senza questi il servizio NON riceve TYPE_WINDOW_STATE_CHANGED
+    ///   quando si torna alla home e il bypass resta attivo indefinitamente)
     ///
     /// Se l'unione e' vuota lasciamo `packageNames = null` (= ricevi da tutti),
     /// altrimenti il servizio non riceverebbe alcun evento prima del primo
@@ -1229,7 +1235,8 @@ class KoruAccessibilityService : AccessibilityService() {
                 .flatten()
                 .map { it.packageName }
                 .toSet()
-            val watched = profilePackages + KNOWN_BROWSERS + SETTINGS_PACKAGES
+            val watched = profilePackages + KNOWN_BROWSERS + SETTINGS_PACKAGES +
+                skipPackages + packageName
             // Skip se il set non e' cambiato: ricreare AccessibilityServiceInfo
             // forza il system_server a re-validare il manifest e re-bindare
             // il service — operazione non gratuita, va evitata se inutile.
