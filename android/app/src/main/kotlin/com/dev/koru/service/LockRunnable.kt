@@ -49,6 +49,14 @@ class LockRunnable(
     private var iterationCount = 0
     private var currentlyBlockingPackage: String? = null
 
+    /// Ultimo pkg bypassato che era effettivamente foreground. Mirror del
+    /// tracking in KoruAccessibilityService: quando il foreground cambia
+    /// verso un'altra app (o launcher), il bypass del pkg precedente viene
+    /// revocato. Garantisce che il backup polling abbia lo stesso behavior
+    /// del path primario quando l'AccessibilityService è morto.
+    /// Granularità: limitata al periodo di poll (300ms/5s/10s).
+    private var lastBypassedForegroundPkg: String? = null
+
     private val skipPackages = mutableSetOf<String>().apply {
         add(context.packageName)
         add("com.android.systemui")
@@ -143,6 +151,20 @@ class LockRunnable(
         }
         val pkg = foreground.primaryPackage ?: return
 
+        // Auto-revoke del bypass on app exit. Se l'ultimo pkg bypassato
+        // tracciato è diverso dal foreground attuale (sia un'altra app,
+        // sia skipPackages → launcher), l'utente è uscito → revoca il
+        // bypass residuo. Allinea il path backup al primario in
+        // KoruAccessibilityService. UsageStats qui è già la fonte
+        // authoritative del foreground (ForegroundDetector sopra),
+        // quindi non serve doppia verifica.
+        val prevBypassed = lastBypassedForegroundPkg
+        if (prevBypassed != null && pkg != prevBypassed) {
+            OverlayManager.clearBypass(prevBypassed)
+            lastBypassedForegroundPkg = null
+            Log.i(TAG, "[BACKUP] Bypass auto-revoke: user left $prevBypassed (now $pkg)")
+        }
+
         if (skipPackages.contains(pkg)) {
             if (currentlyBlockingPackage != null) {
                 currentlyBlockingPackage = null
@@ -164,7 +186,10 @@ class LockRunnable(
 
         // Bypass attivo (utente ha scelto "Open anyway" con TTL): rispetta
         // il bypass come fa l'AccessibilityService, senza rifare HOME.
+        // Tracciamo il pkg come "bypassato e in foreground" così che il
+        // prossimo cambio di foreground possa innescare l'auto-revoke.
         if (OverlayManager.isBypassed(pkg)) {
+            lastBypassedForegroundPkg = pkg
             if (currentlyBlockingPackage != null) {
                 currentlyBlockingPackage = null
                 onUnblock()

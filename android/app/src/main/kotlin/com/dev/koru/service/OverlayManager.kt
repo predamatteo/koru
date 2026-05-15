@@ -116,9 +116,14 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
         /// Package name → timestamp ms fino a cui il blocco è bypassato.
         /// Dopo che l'utente tocca "Open anyway" sull'overlay, sceglie
         /// esplicitamente una durata (1/5/15/30 min) dal duration picker;
-        /// il bypass resta valido per quella durata indipendentemente dal
-        /// fatto che l'utente esca e rientri nell'app. Scaduta la durata,
-        /// al prossimo ingresso il blocco si riattiva.
+        /// il bypass resta valido per quella durata MENTRE l'app è in
+        /// foreground. Non appena l'utente esce dall'app (verso un'altra
+        /// app o verso il launcher), il bypass viene revocato dal caller
+        /// — KoruAccessibilityService.onAccessibilityEvent (path primario)
+        /// o LockRunnable.checkAndBlock (backup polling) — via
+        /// [clearBypass]. Al prossimo rientro nell'app, l'overlay con
+        /// countdown ricompare: ogni sessione richiede una scelta esplicita,
+        /// allineato al pattern Opal/ScreenZen.
         ///
         /// ConcurrentHashMap perché letto/scritto da thread misti:
         /// AccessibilityService (binder), LockRunnable (polling thread),

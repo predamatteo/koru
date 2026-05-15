@@ -271,6 +271,17 @@ class KoruAccessibilityService : AccessibilityService() {
     @Volatile
     private var lastForegroundPackage: String? = null
 
+    /// Pkg dell'ultima app bypassata che era effettivamente in foreground.
+    /// Usato per implementare l'auto-revoke del bypass quando l'utente esce
+    /// dall'app: se il foreground cambia verso un pkg diverso (launcher,
+    /// systemui o un'altra app), il bypass del pkg precedente viene azzerato.
+    /// Il prossimo rientro nell'app ri-mostra l'overlay con countdown invece
+    /// di sfruttare il timer residuo, allineando il comportamento al pattern
+    /// "ogni session richiede un'intenzione esplicita" che si aspettano gli
+    /// utenti dei limiti temporali non-strict.
+    @Volatile
+    private var lastBypassedActiveForeground: String? = null
+
     private val skipPackages = setOf(
         // "android" è il pkg del framework: viene attribuito a TYPE_WINDOWS_CHANGED
         // emessi quando aggiungiamo il nostro overlay via WindowManager.addView.
@@ -356,9 +367,12 @@ class KoruAccessibilityService : AccessibilityService() {
             }
             onBypassOpen = { pkg, durationMs ->
                 // Il bypass è stato registrato in OverlayManager.Companion via
-                // markBypassed(pkg, durationMs) — resterà valido per la
-                // durata scelta dall'utente indipendentemente dal fatto che
-                // esca e rientri nell'app.
+                // markBypassed(pkg, durationMs). Resterà valido per la durata
+                // scelta MENTRE l'app è in foreground; se l'utente esce e
+                // rientra, `onAccessibilityEvent` revoca il bypass tramite
+                // [OverlayManager.clearBypass] (vedi
+                // [lastBypassedActiveForeground]) → al rientro l'overlay
+                // con countdown ricompare. Una sessione = una scelta.
                 Log.i(TAG, "Bypass granted for $pkg: ${durationMs / 60_000}min")
                 try {
                     NativeDatabase.insertRestrictedAccessEvent(
@@ -494,6 +508,40 @@ class KoruAccessibilityService : AccessibilityService() {
         val isWindowChange = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
             event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED
         if (!isWindowChange) return
+
+        // Auto-revoke del bypass on app exit. Quando l'ultimo pkg bypassato in
+        // foreground non corrisponde al pkg dell'evento corrente, significa che
+        // l'utente sta passando ad un'altra app (o al launcher): il bypass
+        // residuo va azzerato così che il prossimo rientro nell'app mostri di
+        // nuovo l'overlay con countdown invece di sfruttare il timer ancora
+        // attivo. Comportamento allineato a Opal/ScreenZen: ogni "session"
+        // richiede una scelta esplicita.
+        //
+        // Authoritative check via UsageStats. Eventi accessibility per pkg
+        // diverso possono essere ghost (transizione di un'app uscente, o
+        // framework events come "android"/packageName mentre il nostro overlay
+        // si monta sopra l'app stessa). UsageStats riporta il foreground reale,
+        // che è la verità: se differisce ancora dal prevBypassed siamo davanti
+        // ad un cambio reale → revoca; se è ancora prevBypassed l'evento è un
+        // ghost e lasciamo il bypass intatto.
+        //
+        // Quando UsageStats non risponde (raro: permission revoke runtime,
+        // boot prematuro) preferiamo conservare il bypass: una mancata revoca
+        // è meno invasiva di una revoca falsa che farebbe ri-comparire
+        // l'overlay nel mezzo della sessione legittima dell'utente.
+        val prevBypassed = lastBypassedActiveForeground
+        if (prevBypassed != null && pkg != prevBypassed) {
+            val realFg = ForegroundDetector.detect(applicationContext)?.primaryPackage
+            if (realFg != null && realFg != prevBypassed) {
+                Log.i(TAG, "Bypass auto-revoke: user left $prevBypassed (real fg=$realFg, event=$pkg)")
+                OverlayManager.clearBypass(prevBypassed)
+                pendingBypassExpiryChecks.remove(prevBypassed)
+                    ?.let { mainHandler.removeCallbacks(it) }
+                lastBypassedActiveForeground = null
+            } else {
+                Log.d(TAG, "Bypass revoke skipped: $prevBypassed still real fg (event=$pkg, realFg=$realFg)")
+            }
+        }
 
         // Strict Mode check (blocks settings/recent/uninstall based on mask)
         if (StrictModeEnforcer.handleEvent(this, event)) return
@@ -715,7 +763,13 @@ class KoruAccessibilityService : AccessibilityService() {
     ): Boolean {
         // Bypass timed: l'utente ha scelto una durata esplicita dal duration
         // picker. Finché quella durata non scade, non mostriamo l'overlay.
-        if (OverlayManager.isBypassed(packageName)) return false
+        // Tracciamo il pkg come "bypassato e in foreground" per abilitare
+        // l'auto-revoke al prossimo cambio di foreground (vedi
+        // [onAccessibilityEvent]).
+        if (OverlayManager.isBypassed(packageName)) {
+            lastBypassedActiveForeground = packageName
+            return false
+        }
 
         // GHOST-EVENT GUARD. TYPE_WINDOW_STATE_CHANGED / TYPE_WINDOWS_CHANGED
         // possono essere emessi anche per un'app che sta PERDENDO il
@@ -1276,6 +1330,7 @@ class KoruAccessibilityService : AccessibilityService() {
         pendingLimitChecks.clear()
         pendingBackFallbacks.values.forEach { mainHandler.removeCallbacks(it) }
         pendingBackFallbacks.clear()
+        lastBypassedActiveForeground = null
         overlayManager?.destroy()
         overlayManager = null
         NativeDatabase.close()
