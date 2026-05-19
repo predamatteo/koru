@@ -32,6 +32,15 @@ android {
         release {
             // TODO: sostituire con signing config di release.
             signingConfig = signingConfigs.getByName("debug")
+            // R8 e' attivato di default su release dal Flutter Gradle Plugin
+            // (AGP 8+). proguard-rules.pro contiene -dontwarn per annotation
+            // di compile-time referenziate da Tink ma non incluse nell'APK
+            // (senza, il task minifyReleaseWithR8 falliva con "Missing class
+            // com.google.errorprone.annotations.* / javax.annotation.*").
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 
