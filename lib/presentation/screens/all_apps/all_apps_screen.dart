@@ -92,7 +92,14 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final appsAsync = ref.watch(installedAppsProvider);
+    // Stale-while-revalidate: `unwrapPrevious()` evita di mostrare il
+    // CircularProgressIndicator quando `installedAppsProvider` transita
+    // in `AsyncLoading.copyWithPrevious` (smart-refresh post-resume o
+    // PACKAGE_*). Senza, l'utente vedeva il drawer "ricaricarsi" per
+    // 1-3s ad ogni rientro home, anche se la lista cached era valida —
+    // il fix `73d174c` aveva coperto `filteredAppsProvider` ma aveva
+    // mancato questo consumer diretto.
+    final appsAsync = ref.watch(installedAppsProvider).unwrapPrevious();
     final grouped = ref.watch(groupedAppsProvider);
 
     return Scaffold(

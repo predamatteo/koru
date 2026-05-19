@@ -6,7 +6,19 @@ import '../../platform/blocking_channel.dart';
 import 'app_list_provider.dart';
 
 /// Stream dei package names favoriti (ordine orderIndex crescente).
+///
+/// `keepAlive`: in modalita' "Koru default launcher" l'unico subscriber
+/// e' FavoritesList sotto LauncherHomeScreen. Durante transizioni rapide
+/// (HOME intent re-emesso → `ctx.go('/launcher')` quando gia' su
+/// /launcher, push/pop di /launcher/drawer, shortcut "K" verso /home) il
+/// listener puo' essere brevemente smontato. Senza keepAlive il provider
+/// auto-dispone e al re-subscribe il `valueOrNull` di
+/// `favoriteAppsProvider` resta `null` per un frame extra (Drift
+/// `.watch()` deve ri-emettere il primo snapshot) → favoriti vuoti
+/// visibili per qualche centinaio di ms. Costo: < 1KB persistente (lista
+/// di package name).
 final favoritesProvider = StreamProvider<List<String>>((ref) {
+  ref.keepAlive();
   final db = ref.watch(appDatabaseProvider);
   return db.watchFavorites().map((rows) => rows.map((r) => r.packageName).toList(growable: false));
 });

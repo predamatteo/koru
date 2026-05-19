@@ -51,7 +51,12 @@ class _LauncherShortcutPickerScreenState
 
   @override
   Widget build(BuildContext context) {
-    final appsAsync = ref.watch(installedAppsProvider);
+    // Stale-while-revalidate: `unwrapPrevious()` evita lo spinner durante
+    // un reload (smart-refresh post-resume / PACKAGE_*) — il picker e' un
+    // path del launcher, lo stesso blink che si vedeva nel drawer (vedi
+    // AllAppsScreen) era percepibile anche qui se l'utente apriva il
+    // picker subito dopo il rientro home.
+    final appsAsync = ref.watch(installedAppsProvider).unwrapPrevious();
     final currentPkg = ref.watch(effectiveShortcutPackageProvider(widget.slot));
     final notifier = ref.read(launcherShortcutsProvider.notifier);
 

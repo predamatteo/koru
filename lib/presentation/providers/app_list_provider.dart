@@ -6,7 +6,24 @@ import '../../platform/blocking_channel.dart';
 import 'app_personalization_provider.dart';
 
 /// Lista completa di app installate (caricata una volta dal native).
+///
+/// `keepAlive`: previene auto-dispose quando l'unico subscriber sparisce
+/// per anche un solo frame. In modalita' "Koru default launcher" l'unico
+/// consumer steady-state e' la FavoritesList sotto LauncherHomeScreen;
+/// durante navigazioni rapide (HOME intent re-emesso, push/pop di
+/// `/launcher/drawer`, transizione fra LauncherHomeScreen e HomeScreen via
+/// shortcut "K") il listener puo' venire brevemente smontato — senza
+/// keepAlive Riverpod disponeva il provider, e al re-subscribe ripartiva
+/// da `AsyncLoading` puro **senza previous**. Risultato: `unwrapPrevious()`
+/// nei downstream (`favoriteAppsProvider`, `filteredAppsProvider`) non
+/// aveva nulla da unwrappare → favoriti spariti / drawer vuoto per 1-3s
+/// finche' il fetch nativo non completava (PackageManager scan + decode
+/// icone PNG). Trade-off: ~200KB-1MB di icone decoded restano in memoria
+/// anche se nessuno guarda — costo trascurabile su qualunque device
+/// moderno, e su steady-state e' comunque sempre subscribed via
+/// HomeScreen pre-warm.
 final installedAppsProvider = FutureProvider<List<InstalledAppInfo>>((ref) async {
+  ref.keepAlive();
   final blocking = ref.watch(platformChannelServiceProvider).blocking;
   return blocking.getInstalledApps();
 });
@@ -26,6 +43,12 @@ final installedAppsProvider = FutureProvider<List<InstalledAppInfo>>((ref) async
 /// fotografie consistenti dello stesso PackageManager a un istante T, e
 /// devono essere rinfrescati insieme (vedi `events_refresher.dart`).
 final installedPackageNamesProvider = FutureProvider<Set<String>>((ref) async {
+  // keepAlive parallelo a [installedAppsProvider] — i due sono fotografie
+  // dello stesso PackageManager e devono restare entrambi vivi per la
+  // sessione, altrimenti `TodayLimitsCard` perde il filtro ed espone
+  // entries fantasma di app disinstallate (lo stesso sintomo gia' fixato
+  // in 7102d54 ma ricomparente quando il provider auto-dispone).
+  ref.keepAlive();
   final blocking = ref.watch(platformChannelServiceProvider).blocking;
   final names = await blocking.getInstalledPackageNames();
   return names.toSet();
