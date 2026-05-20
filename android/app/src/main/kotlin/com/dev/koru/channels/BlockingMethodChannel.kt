@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -303,11 +302,18 @@ object BlockingMethodChannel {
     private fun getInstalledApps(context: Context): List<Map<String, Any?>> {
         val pm = context.packageManager
         val launcherPkgs = resolveLauncherPackages(pm)
+        val launchablePkgs = resolveLaunchablePackages(pm)
         return pm.getInstalledApplications(PackageManager.GET_META_DATA)
-            .filter {
-                it.flags and ApplicationInfo.FLAG_SYSTEM == 0 ||
-                    pm.getLaunchIntentForPackage(it.packageName) != null
-            }
+            // Solo app con un'activity lanciabile (MAIN + CATEGORY_LAUNCHER),
+            // come ogni launcher stock. Il vecchio criterio
+            // `FLAG_SYSTEM == 0 || hasLaunchIntent` lasciava passare i
+            // componenti Google distribuiti via Play Store (Android System
+            // SafetyCore, Key Verifier, ...) e le tastiere/IME: NON sono di
+            // sistema (FLAG_SYSTEM == 0) ma non hanno front-door → comparivano
+            // nel drawer pur non essendo apribili (tap = niente). Gating per
+            // membership nel set launchable li esclude tutti, senza denylist
+            // hardcoded da mantenere quando Google ne aggiunge altri.
+            .filter { launchablePkgs.contains(it.packageName) }
             .map { app ->
                 mapOf(
                     "packageName" to app.packageName,
@@ -336,17 +342,39 @@ object BlockingMethodChannel {
         }
     }
 
+    /// Set di package che dichiarano almeno un'activity con
+    /// CATEGORY_LAUNCHER, cioè sono apribili dal drawer (hanno un'icona
+    /// "front-door"). È il criterio di visibilità del drawer Koru: tutto
+    /// ciò che non è in questo set — componenti Play come SafetyCore /
+    /// Key Verifier, IME/tastiere, servizi di background — non è apribile
+    /// e va nascosto. Speculare a [resolveLauncherPackages] ma con
+    /// CATEGORY_LAUNCHER al posto di CATEGORY_HOME.
+    private fun resolveLaunchablePackages(pm: PackageManager): Set<String> {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        return try {
+            pm.queryIntentActivities(intent, 0)
+                .mapNotNull { it.activityInfo?.packageName }
+                .toSet()
+        } catch (_: Exception) {
+            emptySet()
+        }
+    }
+
     /// Variante "cheap" usata dal lifecycle observer Dart per il diff-based
     /// refresh: ritorna solo i package names launchable, senza label e
     /// senza icone, evitando il decode delle bitmap (operazione costosa
     /// che — se eseguita ad ogni resume — causa un freeze visibile della UI).
     private fun getInstalledPackageNames(context: Context): List<String> {
         val pm = context.packageManager
+        // Stesso criterio di [getInstalledApps] — i due endpoint DEVONO
+        // ritornare lo stesso set di package: sono fotografie consistenti
+        // dello stesso PackageManager (TodayLimitsCard incrocia questa lista
+        // col drawer per filtrare le entries fantasma di app disinstallate).
+        // Una sola queryIntentActivities invece di N getLaunchIntentForPackage:
+        // questo è il path "cheap" invocato a ogni resume.
+        val launchablePkgs = resolveLaunchablePackages(pm)
         return pm.getInstalledApplications(0)
-            .filter {
-                it.flags and ApplicationInfo.FLAG_SYSTEM == 0 ||
-                    pm.getLaunchIntentForPackage(it.packageName) != null
-            }
+            .filter { launchablePkgs.contains(it.packageName) }
             .map { it.packageName }
             .sorted()
     }
