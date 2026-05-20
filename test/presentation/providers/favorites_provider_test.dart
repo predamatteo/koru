@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koru/platform/blocking_channel.dart';
 import 'package:koru/presentation/providers/app_list_provider.dart';
@@ -87,6 +89,53 @@ void main() {
       await h.container.read(installedAppsProvider.future);
 
       expect(h.container.read(favoriteAppsProvider), isEmpty);
+    });
+
+    // Regressione del bug ricorrente (73d174c → e3c930d): durante un reload
+    // di installedAppsProvider (invalidate da PACKAGE_* o smart-refresh al
+    // resume) il provider entra in AsyncLoading.copyWithPrevious, che CONSERVA
+    // il valore precedente. I favoriti devono restare visibili (stale-while-
+    // revalidate). Con il vecchio `.unwrapPrevious().valueOrNull` il previous
+    // veniva scartato → lista vuota per tutta la durata del rescan nativo
+    // (1-3s): è lo "spariscono i preferiti" osservato sul device.
+    test('keeps favorites visible while installedApps reloads', () async {
+      final app = InstalledAppInfo(packageName: 'com.a', label: 'Alpha');
+      var completer = Completer<List<InstalledAppInfo>>();
+      final h = buildTestContainer(extra: [
+        installedAppsProvider.overrideWith((ref) => completer.future),
+      ]);
+      addTearDown(h.dispose);
+
+      await h.db.addFavorite('com.a', label: 'Alpha');
+      await h.container.read(favoritesProvider.stream).first;
+      // Tiene vivo il downstream così ricomputa ad ogni cambio di stato.
+      keepProviderAlive(h.container, favoriteAppsProvider);
+
+      // Primo load completo.
+      completer.complete([app]);
+      await h.container.read(installedAppsProvider.future);
+      expect(
+        h.container.read(favoriteAppsProvider).map((a) => a.packageName),
+        ['com.a'],
+      );
+
+      // Reload: nuova fetch pendente + invalidate → loading-con-previous.
+      completer = Completer<List<InstalledAppInfo>>();
+      h.container.invalidate(installedAppsProvider);
+      await Future<void>.delayed(Duration.zero);
+
+      final reloading = h.container.read(installedAppsProvider);
+      expect(reloading.isLoading, isTrue, reason: 'deve essere in reload');
+      expect(reloading.hasValue, isTrue, reason: 'previous deve essere conservato');
+      expect(
+        h.container.read(favoriteAppsProvider).map((a) => a.packageName),
+        ['com.a'],
+        reason: 'i favoriti devono restare visibili durante il reload',
+      );
+
+      // Cleanup: completa la fetch pendente.
+      completer.complete([app]);
+      await h.container.read(installedAppsProvider.future);
     });
   });
 

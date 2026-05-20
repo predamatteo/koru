@@ -51,12 +51,12 @@ class _LauncherShortcutPickerScreenState
 
   @override
   Widget build(BuildContext context) {
-    // Stale-while-revalidate: `unwrapPrevious()` evita lo spinner durante
-    // un reload (smart-refresh post-resume / PACKAGE_*) — il picker e' un
-    // path del launcher, lo stesso blink che si vedeva nel drawer (vedi
-    // AllAppsScreen) era percepibile anche qui se l'utente apriva il
-    // picker subito dopo il rientro home.
-    final appsAsync = ref.watch(installedAppsProvider).unwrapPrevious();
+    // Stale-while-revalidate: `skipLoadingOnRefresh`/`skipLoadingOnReload`
+    // tengono visibile la lista cached durante un reload (smart-refresh
+    // post-resume / PACKAGE_*) — il picker è un path del launcher, lo stesso
+    // blink del drawer (vedi AllAppsScreen) si vedeva anche qui. NON usare
+    // `unwrapPrevious()`: rimetterebbe lo spinner ad ogni reload.
+    final appsAsync = ref.watch(installedAppsProvider);
     final currentPkg = ref.watch(effectiveShortcutPackageProvider(widget.slot));
     final notifier = ref.read(launcherShortcutsProvider.notifier);
 
@@ -101,6 +101,8 @@ class _LauncherShortcutPickerScreenState
         ),
       ),
       body: appsAsync.when(
+        skipLoadingOnRefresh: true,
+        skipLoadingOnReload: true,
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('$e')),
         data: (apps) {

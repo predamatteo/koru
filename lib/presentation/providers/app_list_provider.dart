@@ -14,9 +14,9 @@ import 'app_personalization_provider.dart';
 /// `/launcher/drawer`, transizione fra LauncherHomeScreen e HomeScreen via
 /// shortcut "K") il listener puo' venire brevemente smontato — senza
 /// keepAlive Riverpod disponeva il provider, e al re-subscribe ripartiva
-/// da `AsyncLoading` puro **senza previous**. Risultato: `unwrapPrevious()`
-/// nei downstream (`favoriteAppsProvider`, `filteredAppsProvider`) non
-/// aveva nulla da unwrappare → favoriti spariti / drawer vuoto per 1-3s
+/// da `AsyncLoading` puro **senza previous**. Risultato: i downstream
+/// (`favoriteAppsProvider`, `filteredAppsProvider`) leggevano `valueOrNull`
+/// su un loading puro → null → favoriti spariti / drawer vuoto per 1-3s
 /// finche' il fetch nativo non completava (PackageManager scan + decode
 /// icone PNG). Trade-off: ~200KB-1MB di icone decoded restano in memoria
 /// anche se nessuno guarda — costo trascurabile su qualunque device
@@ -90,13 +90,14 @@ final appSearchQueryProvider = StateProvider<String>((_) => '');
 /// filtrata (anche se ha CATEGORY_HOME): l'utente la cerca esplicitamente.
 final filteredAppsProvider = Provider<List<InstalledAppInfo>>((ref) {
   // Stale-while-revalidate: mostra la lista cached anche durante un reload
-  // (invalidate da PACKAGE_*/smart-refresh). Senza `unwrapPrevious()` il
-  // drawer "All apps" e i provider downstream (grouped, favorite) sarebbero
-  // vuoti per 1-3s mentre `getInstalledApps` rifa lo scan PackageManager
-  // con decode delle icone — perceived come blink/sfarfallio al rientro
-  // home. Sul primissimo cold start (no previous) resta lista vuota.
-  final apps =
-      ref.watch(installedAppsProvider).unwrapPrevious().valueOrNull ?? const [];
+  // (invalidate da PACKAGE_*/smart-refresh). `.valueOrNull` ritorna per
+  // contratto il valore precedente durante l'AsyncLoading.copyWithPrevious,
+  // quindi il drawer "All apps" e i downstream (grouped, favorite) restano
+  // pieni mentre `getInstalledApps` rifa lo scan PackageManager (1-3s) —
+  // niente blink/sfarfallio al rientro home. NON usare `unwrapPrevious()`:
+  // scarterebbe il previous → lista vuota per tutto il reload (era questo
+  // l'errore di 73d174c/e3c930d). Sul cold start (no previous) resta vuota.
+  final apps = ref.watch(installedAppsProvider).valueOrNull ?? const [];
   final query = ref.watch(appSearchQueryProvider).trim().toLowerCase();
   final personalization = ref.watch(appPersonalizationProvider);
   final launcherPkgs =

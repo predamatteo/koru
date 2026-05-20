@@ -92,14 +92,15 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
 
   @override
   Widget build(BuildContext context) {
-    // Stale-while-revalidate: `unwrapPrevious()` evita di mostrare il
-    // CircularProgressIndicator quando `installedAppsProvider` transita
-    // in `AsyncLoading.copyWithPrevious` (smart-refresh post-resume o
-    // PACKAGE_*). Senza, l'utente vedeva il drawer "ricaricarsi" per
-    // 1-3s ad ogni rientro home, anche se la lista cached era valida —
-    // il fix `73d174c` aveva coperto `filteredAppsProvider` ma aveva
-    // mancato questo consumer diretto.
-    final appsAsync = ref.watch(installedAppsProvider).unwrapPrevious();
+    // Stale-while-revalidate: `skipLoadingOnRefresh`/`skipLoadingOnReload`
+    // fanno sì che `.when` mostri il ramo `data` (lista cached) anche quando
+    // `installedAppsProvider` è in `AsyncLoading.copyWithPrevious`
+    // (smart-refresh post-resume o PACKAGE_*); lo spinner appare SOLO al
+    // primo load (no previous). NON usare `unwrapPrevious()`: scarterebbe il
+    // previous e rimetterebbe lo spinner ad ogni reload — era il blink di
+    // 1-3s al rientro home che i fix 73d174c/e3c930d volevano togliere ma
+    // ottenevano l'opposto invertendo la semantica dell'API.
+    final appsAsync = ref.watch(installedAppsProvider);
     final grouped = ref.watch(groupedAppsProvider);
 
     return Scaffold(
@@ -113,6 +114,8 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
             const AppSearchBar(),
             Expanded(
               child: appsAsync.when(
+                skipLoadingOnRefresh: true,
+                skipLoadingOnReload: true,
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (err, _) => Center(
                   child: Text(

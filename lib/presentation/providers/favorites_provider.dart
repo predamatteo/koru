@@ -28,17 +28,24 @@ final favoritesProvider = StreamProvider<List<String>>((ref) {
 ///
 /// Stale-while-revalidate su [installedAppsProvider]: quando viene invalidato
 /// (PACKAGE_ADDED/REMOVED/REPLACED, oppure smart refresh al resume rileva un
-/// delta), Riverpod transita in AsyncLoading.copyWithPrevious. Senza
-/// `unwrapPrevious()` `valueOrNull` tornerebbe null durante il reload —
-/// 1-3s in cui la lista favoriti del launcher rimane vuota (e poi torna,
-/// causando il "blink" / "a scatti" percepito al rientro home).
-/// Con `unwrapPrevious()` continuiamo a mostrare la lista cached finche'
-/// la nuova fetch non completa; poi sostituiamo seamless. Sul primissimo
-/// cold start (mai caricata, no previous) il fallback resta lista vuota.
+/// delta), Riverpod transita in AsyncLoading.copyWithPrevious — uno stato di
+/// loading che CONSERVA il valore precedente. Leggiamo quindi `.valueOrNull`
+/// direttamente: per contratto di AsyncValue ritorna il previous durante il
+/// loading, così la lista favoriti del launcher resta visibile mentre il
+/// rescan nativo (1-3s per PackageManager + decode icone) gira, e viene
+/// sostituita seamless al completamento.
+///
+/// NB: NON usare `unwrapPrevious()` qui. Fa l'opposto di ciò che serve —
+/// scarta il previous e riduce lo stato a un AsyncLoading puro, quindi
+/// `.valueOrNull` tornerebbe null e i favoriti SPARIREBBERO per tutta la
+/// durata del reload (bug ricorrente 73d174c → e3c930d: avevano invertito
+/// la semantica dell'API credendo che `unwrapPrevious()` preservasse il
+/// cached). Sul primissimo cold start (no previous) `.valueOrNull` è
+/// comunque null → fallback lista vuota, corretto.
 final favoriteAppsProvider = Provider<List<InstalledAppInfo>>((ref) {
   final favPackages = ref.watch(favoritesProvider).valueOrNull ?? const <String>[];
-  final installed = ref.watch(installedAppsProvider).unwrapPrevious().valueOrNull ??
-      const <InstalledAppInfo>[];
+  final installed =
+      ref.watch(installedAppsProvider).valueOrNull ?? const <InstalledAppInfo>[];
   final byPkg = {for (final a in installed) a.packageName: a};
   return favPackages
       .map((p) => byPkg[p])
