@@ -52,6 +52,14 @@ object WebsiteMatcher {
     fun matchesAny(rules: List<NativeWebsiteRule>, url: String, domain: String): Boolean =
         rules.any { matches(it, url, domain) }
 
+    /// Come [matchesAny] ma ritorna la prima regola che matcha (o null).
+    /// Il caller usa `rule.name` (il pattern del dominio bloccato) come chiave
+    /// del bypass per-dominio: e' stabile rispetto alle varianti
+    /// www/sottodominio della URL rilevata (es. sia "reddit.com" che
+    /// "old.reddit.com" matchano la regola "reddit.com" → stessa chiave).
+    fun firstMatch(rules: List<NativeWebsiteRule>, url: String, domain: String): NativeWebsiteRule? =
+        rules.firstOrNull { matches(it, url, domain) }
+
     /// Estrae il domain (host) da una URL stringa. Strip di schema (http/https),
     /// path (`/...`), porta (`:8080`). Ritorna null se vuoto.
     private fun extractDomain(url: String): String? {

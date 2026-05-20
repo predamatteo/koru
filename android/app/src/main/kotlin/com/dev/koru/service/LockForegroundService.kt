@@ -106,8 +106,8 @@ class LockForegroundService : Service() {
         // (l'OverlayManager si è già marcato il bypass internamente via
         // markBypassed, ma lo rimarchiamo qui per esplicitezza in caso
         // il flusso cambi in futuro). Lanciamo l'app target.
-        overlayManager?.onBypassOpen = { pkg, durationMs ->
-            OverlayManager.markBypassed(pkg, durationMs)
+        overlayManager?.onBypassOpen = { pkg, durationMs, domain ->
+            OverlayManager.markBypassed(pkg, durationMs, domain)
             try {
                 val launch = packageManager.getLaunchIntentForPackage(pkg)
                 launch?.flags = Intent.FLAG_ACTIVITY_NEW_TASK or

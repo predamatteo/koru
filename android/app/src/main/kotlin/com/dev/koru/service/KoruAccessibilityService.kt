@@ -365,9 +365,11 @@ class KoruAccessibilityService : AccessibilityService() {
                     Log.w(TAG, "Failed to log intention: ${e.message}")
                 }
             }
-            onBypassOpen = { pkg, durationMs ->
+            onBypassOpen = { pkg, durationMs, domain ->
                 // Il bypass è stato registrato in OverlayManager.Companion via
-                // markBypassed(pkg, durationMs). Resterà valido per la durata
+                // markBypassed(pkg, durationMs, domain). domain non-null = blocco
+                // website → bypass per-dominio (sblocca solo quel sito, non tutto
+                // il browser). Resterà valido per la durata
                 // scelta MENTRE l'app è in foreground; se l'utente esce e
                 // rientra, `onAccessibilityEvent` revoca il bypass tramite
                 // [OverlayManager.clearBypass] (vedi
@@ -399,7 +401,7 @@ class KoruAccessibilityService : AccessibilityService() {
                         Log.i(TAG, "Daily-limit bypass count for $pkg → $n")
                     }
                 }
-                scheduleBypassExpiryCheck(pkg, durationMs)
+                scheduleBypassExpiryCheck(pkg, durationMs, domain)
                 // Discriminator: nel flow APP_BLOCKED/USAGE_LIMIT/FOCUS_MODE/...
                 // abbiamo fatto performGlobalAction(GLOBAL_ACTION_HOME), quindi
                 // l'app non è più in foreground e va rilanciata via startActivity.
@@ -536,8 +538,19 @@ class KoruAccessibilityService : AccessibilityService() {
             if (realFg != null && realFg != prevBypassed) {
                 Log.i(TAG, "BYPASS-REVOKE-DO: user left $prevBypassed (real fg=$realFg, event=$pkg)")
                 OverlayManager.clearBypass(prevBypassed)
-                pendingBypassExpiryChecks.remove(prevBypassed)
-                    ?.let { mainHandler.removeCallbacks(it) }
+                // Cancella i timer di scadenza sia per-app (chiave = pkg) sia
+                // per-dominio (chiavi `pkg|dominio`), simmetrico a clearBypass:
+                // i timer dei siti sono registrati con chiave composita, quindi
+                // un remove(pkg) singolo li lascerebbe orfani → showExtension-
+                // Prompt fantasma dopo l'uscita dal browser.
+                val expiryIt = pendingBypassExpiryChecks.entries.iterator()
+                while (expiryIt.hasNext()) {
+                    val e = expiryIt.next()
+                    if (e.key == prevBypassed || e.key.startsWith("$prevBypassed|")) {
+                        mainHandler.removeCallbacks(e.value)
+                        expiryIt.remove()
+                    }
+                }
                 lastBypassedActiveForeground = null
             } else {
                 Log.i(TAG, "BYPASS-REVOKE-SKIP: $prevBypassed still real fg (event=$pkg, realFg=$realFg)")
@@ -615,19 +628,22 @@ class KoruAccessibilityService : AccessibilityService() {
      * "Close app" (HOME). Se l'utente è già uscito, no-op (al rientro
      * scatterà spontaneamente [checkAppBlocking]).
      */
-    private fun scheduleBypassExpiryCheck(pkg: String, durationMs: Long) {
-        // Cancella eventuale runnable precedente per lo stesso pkg
+    private fun scheduleBypassExpiryCheck(pkg: String, durationMs: Long, domain: String? = null) {
+        // Chiave del runnable: per i siti e' pkg+dominio, cosi' bypass su due
+        // domini diversi nello stesso browser hanno timer indipendenti.
+        val mapKey = if (domain.isNullOrEmpty()) pkg else "$pkg|$domain"
+        // Cancella eventuale runnable precedente per la stessa chiave
         // (es. utente ri-tocca "Open anyway" → nuova durata sostituisce la vecchia).
-        pendingBypassExpiryChecks.remove(pkg)?.let { mainHandler.removeCallbacks(it) }
+        pendingBypassExpiryChecks.remove(mapKey)?.let { mainHandler.removeCallbacks(it) }
 
         val r = object : Runnable {
             override fun run() {
                 // Service hygiene: skip se il service e' stato distrutto.
                 if (instance != this@KoruAccessibilityService) return
-                pendingBypassExpiryChecks.remove(pkg)
+                pendingBypassExpiryChecks.remove(mapKey)
                 // Double-check: il bypass potrebbe essere stato esteso nel frattempo.
-                if (OverlayManager.isBypassed(pkg)) {
-                    Log.d(TAG, "Bypass re-check for $pkg: still bypassed (renewed?), skipping")
+                if (OverlayManager.isBypassed(pkg, domain)) {
+                    Log.d(TAG, "Bypass re-check for $mapKey: still bypassed (renewed?), skipping")
                     return
                 }
                 // Se l'utente non è più nell'app bypassata, non serve far nulla:
@@ -637,10 +653,10 @@ class KoruAccessibilityService : AccessibilityService() {
                     return
                 }
                 Log.i(TAG, "Bypass TTL expired and user still in $pkg → showing extension prompt")
-                showExtensionPrompt(pkg)
+                showExtensionPrompt(pkg, domain)
             }
         }
-        pendingBypassExpiryChecks[pkg] = r
+        pendingBypassExpiryChecks[mapKey] = r
         // Piccolo grace (500ms) per evitare race col check `isBypassed`.
         mainHandler.postDelayed(r, durationMs + 500L)
     }
@@ -702,8 +718,9 @@ class KoruAccessibilityService : AccessibilityService() {
      * dismiss e basta; se sceglie "Close", fa HOME manualmente via
      * onReturnHome. Loggato come BLOCK_TRIGGERED per analytics.
      */
-    private fun showExtensionPrompt(pkg: String) {
-        val appLabel = getAppLabel(pkg)
+    private fun showExtensionPrompt(pkg: String, domain: String? = null) {
+        // Per i blocchi website il "label" e' il dominio, non l'app browser.
+        val appLabel = domain ?: getAppLabel(pkg)
         val snapshot = profilesSnapshot.get()
         // Cerchiamo una relation app→profilo per ereditare la palette
         // dell'overlay config; in assenza usiamo DEFAULT.
@@ -740,6 +757,7 @@ class KoruAccessibilityService : AccessibilityService() {
                 config = config,
                 profileEmoji = matchingProfile?.emoji,
                 bypassPolicy = policy,
+                blockedDomain = domain,
             )
         }
         try {
@@ -1048,21 +1066,6 @@ class KoruAccessibilityService : AccessibilityService() {
         rootNode: AccessibilityNodeInfo,
         snapshot: ProfilesSnapshot = profilesSnapshot.get(),
     ) {
-        // Bypass timed attivo sul browser: l'utente ha scelto "Open anyway" +
-        // durata su un blocco website. Finché il TTL non scade non ri-mostriamo
-        // l'overlay — stesso early-return di checkAppBlocking (~riga 770). Senza
-        // questo guard il blocco dei domini tornava SUBITO dopo il bypass
-        // (funzionava per le app ma non per i siti, perche' solo checkApp-
-        // Blocking onorava isBypassed). Tracciamo il pkg come bypassato-in-
-        // foreground per l'auto-revoke quando l'utente esce dal browser (vedi
-        // onAccessibilityEvent / lastBypassedActiveForeground). NB: il bypass e'
-        // per-package, quindi sblocca l'intero browser per la durata scelta,
-        // coerente con la granularita' del bypass delle app.
-        if (OverlayManager.isBypassed(packageName)) {
-            lastBypassedActiveForeground = packageName
-            return
-        }
-
         val configs = BrowserConfigLoader.getConfigsForPackage(applicationContext, packageName)
         if (configs.isEmpty()) {
             Log.w(TAG, "  → no browser configs for $packageName")
@@ -1090,43 +1093,58 @@ class KoruAccessibilityService : AccessibilityService() {
             val matchedProfile = snapshot.profiles.firstOrNull { it.id == profileId }
             if (matchedProfile == null || !isProfileActiveNow(matchedProfile, snapshot)) continue
             Log.d(TAG, "  profile $profileId has ${rules.size} rules: ${rules.map { "${it.name}(type=${it.blockingType},any=${it.isAnywhereInUrl})" }}")
-            if (WebsiteMatcher.matchesAny(rules, detected.fullUrl, detected.domain)) {
-                Log.w(TAG, ">>> BLOCKING SITE: ${detected.domain} by profile $profileId")
-                val profileTitle = matchedProfile.title
-                // Setta currentlyBlockingPackage cosi' quando l'utente cambia
-                // tab a un sito non bloccato (o naviga via dal browser),
-                // il path "no profile blocks this pkg" di checkAppBlocking
-                // smonta correttamente l'overlay (era un bug: dopo blocco
-                // website l'overlay restava montato anche su tab pulita).
-                currentlyBlockingPackage = packageName
-                mainHandler.post {
-                    overlayManager?.show(
-                        packageName = packageName,
-                        appLabel = detected.domain,
-                        profileTitle = profileTitle,
-                        reason = BlockReason.WEBSITE_BLOCKED,
-                        profileEmoji = matchedProfile.emoji,
-                    )
-                }
-                // WEBSITE_BLOCKED: forceHome=true. L'utente sta navigando in
-                // un browser; BACK porta alla pagina precedente del browser,
-                // che spesso è la stessa scheda. La user-intent "non aprire
-                // questo sito" si soddisfa solo chiudendo il browser fino
-                // a fuori — HOME è il fix per gli stessi pattern di IG/YT.
-                performGoHomeForBlock(forceHome = true, blockedPackage = packageName)
-                val now = System.currentTimeMillis()
-                try {
-                    NativeDatabase.insertBlockSession(applicationContext, detected.domain, now)
-                    NativeDatabase.insertRestrictedAccessEvent(
-                        applicationContext,
-                        packageName,
-                        eventType = 0,
-                        restrictionType = 2, // WEBSITE
-                        timestamp = now,
-                    )
-                } catch (_: Exception) {}
+            val matchedRule = WebsiteMatcher.firstMatch(rules, detected.fullUrl, detected.domain) ?: continue
+
+            // Bypass PER-DOMINIO: l'utente ha scelto "Open anyway" + durata su
+            // QUESTO dominio. Finché il TTL non scade non ri-mostriamo l'overlay,
+            // ma solo per questo dominio — gli altri siti bloccati nel browser
+            // restano bloccati. La chiave e' il name della regola che ha fatto
+            // match (stabile su www/sottodomini). Tracciamo il browser come
+            // bypassato-in-foreground per l'auto-revoke all'uscita (clearBypass
+            // azzera tutti i domini del package). Stesso spirito del guard di
+            // checkAppBlocking (~riga 770), ma a granularita' dominio.
+            val bypassDomain = matchedRule.name.lowercase().trim()
+            if (OverlayManager.isBypassed(packageName, bypassDomain)) {
+                lastBypassedActiveForeground = packageName
                 return
             }
+
+            Log.w(TAG, ">>> BLOCKING SITE: ${detected.domain} by profile $profileId (rule=$bypassDomain)")
+            val profileTitle = matchedProfile.title
+            // Setta currentlyBlockingPackage cosi' quando l'utente cambia
+            // tab a un sito non bloccato (o naviga via dal browser),
+            // il path "no profile blocks this pkg" di checkAppBlocking
+            // smonta correttamente l'overlay (era un bug: dopo blocco
+            // website l'overlay restava montato anche su tab pulita).
+            currentlyBlockingPackage = packageName
+            mainHandler.post {
+                overlayManager?.show(
+                    packageName = packageName,
+                    appLabel = detected.domain,
+                    profileTitle = profileTitle,
+                    reason = BlockReason.WEBSITE_BLOCKED,
+                    profileEmoji = matchedProfile.emoji,
+                    blockedDomain = bypassDomain,
+                )
+            }
+            // WEBSITE_BLOCKED: forceHome=true. L'utente sta navigando in
+            // un browser; BACK porta alla pagina precedente del browser,
+            // che spesso è la stessa scheda. La user-intent "non aprire
+            // questo sito" si soddisfa solo chiudendo il browser fino
+            // a fuori — HOME è il fix per gli stessi pattern di IG/YT.
+            performGoHomeForBlock(forceHome = true, blockedPackage = packageName)
+            val now = System.currentTimeMillis()
+            try {
+                NativeDatabase.insertBlockSession(applicationContext, detected.domain, now)
+                NativeDatabase.insertRestrictedAccessEvent(
+                    applicationContext,
+                    packageName,
+                    eventType = 0,
+                    restrictionType = 2, // WEBSITE
+                    timestamp = now,
+                )
+            } catch (_: Exception) {}
+            return
         }
     }
 

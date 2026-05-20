@@ -173,4 +173,38 @@ class WebsiteMatcherTest {
             WebsiteMatcher.matchesAny(rules, "facebook.com", "facebook.com")
         ).isFalse()
     }
+
+    // -------- firstMatch (chiave del bypass per-dominio) --------
+
+    @Test
+    fun firstMatch_returnsTheMatchingRule() {
+        val rules = listOf(
+            rule("twitter.com", type = 0),
+            rule("facebook.com", type = 0),
+            rule("instagram.com", type = 0),
+        )
+        assertThat(
+            WebsiteMatcher.firstMatch(rules, "facebook.com", "facebook.com")?.name
+        ).isEqualTo("facebook.com")
+    }
+
+    @Test
+    fun firstMatch_noMatch_returnsNull() {
+        val rules = listOf(rule("twitter.com", type = 0), rule("instagram.com", type = 0))
+        assertThat(
+            WebsiteMatcher.firstMatch(rules, "facebook.com", "facebook.com")
+        ).isNull()
+    }
+
+    @Test
+    fun firstMatch_subdomainMapsToSameRuleName_stableBypassKey() {
+        // Proprieta' chiave per il bypass per-dominio: sia "reddit.com" che
+        // un suo sottodominio matchano la STESSA regola → stesso name → stessa
+        // chiave di bypass (navigare reddit.com → old.reddit.com non ri-blocca).
+        val rules = listOf(rule("reddit.com", type = 0))
+        val a = WebsiteMatcher.firstMatch(rules, "reddit.com", "reddit.com")?.name
+        val b = WebsiteMatcher.firstMatch(rules, "old.reddit.com", "old.reddit.com")?.name
+        assertThat(a).isEqualTo("reddit.com")
+        assertThat(b).isEqualTo("reddit.com")
+    }
 }

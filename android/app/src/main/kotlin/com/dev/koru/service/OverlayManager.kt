@@ -144,22 +144,37 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
             }
         }
 
-        fun isBypassed(packageName: String): Boolean {
+        /// Chiave del bypass. Per le APP e' il solo package (sblocca l'intera
+        /// app). Per i SITI e' `package|dominio` cosi' "Open anyway" su
+        /// reddit.com sblocca SOLO reddit.com e non l'intero browser: gli
+        /// altri domini bloccati restano bloccati. Il `dominio` e' il name
+        /// della regola che ha fatto match (vedi WebsiteMatcher.firstMatch),
+        /// stabile rispetto alle varianti www/sottodominio della URL.
+        private fun bypassKey(packageName: String, domain: String?): String =
+            if (domain.isNullOrEmpty()) packageName else "$packageName|$domain"
+
+        fun isBypassed(packageName: String, domain: String? = null): Boolean {
             pruneExpired()
-            val until = bypassedPackages[packageName] ?: return false
+            val until = bypassedPackages[bypassKey(packageName, domain)] ?: return false
             return System.currentTimeMillis() < until
         }
 
-        fun markBypassed(packageName: String, durationMs: Long) {
+        fun markBypassed(packageName: String, durationMs: Long, domain: String? = null) {
             pruneExpired()
-            bypassedPackages[packageName] = System.currentTimeMillis() + durationMs
+            bypassedPackages[bypassKey(packageName, domain)] = System.currentTimeMillis() + durationMs
         }
 
-        /// Rimuove immediatamente il bypass per questo pacchetto.
-        /// Usato per debug / reset manuale — il flusso normale fa
-        /// affidamento sulla scadenza naturale via TTL.
+        /// Rimuove il bypass per questo pacchetto: sia quello per-app (chiave
+        /// = package) sia TUTTI i per-dominio (chiavi `package|*`).
+        /// Chiamato dall'auto-revoke quando l'utente esce dall'app/browser,
+        /// quindi deve azzerare ogni variante per quel package.
         fun clearBypass(packageName: String) {
             bypassedPackages.remove(packageName)
+            val prefix = "$packageName|"
+            val it = bypassedPackages.keys.iterator()
+            while (it.hasNext()) {
+                if (it.next().startsWith(prefix)) it.remove()
+            }
         }
 
         /// Revoca tutti i bypass attivi. Esposto per strict mode toggle:
@@ -210,7 +225,8 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
 
     /// Callback quando l'utente sceglie una durata dal duration picker
     /// (dopo aver toccato "Open anyway" sul countdown) → bypass timed + app launch.
-    var onBypassOpen: ((pkg: String, durationMs: Long) -> Unit)? = null
+    /// `domain` non-null solo per i blocchi website (scope per-dominio del bypass).
+    var onBypassOpen: ((pkg: String, durationMs: Long, domain: String?) -> Unit)? = null
 
     init {
         savedStateRegistryController.performRestore(null)
@@ -220,6 +236,12 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
     private var _profileEmoji = mutableStateOf<String?>(null)
     private var _bypassPolicy = mutableStateOf(BypassPolicy())
 
+    /// Dominio bloccato quando reason == WEBSITE_BLOCKED (il name della regola
+    /// che ha fatto match). Null per i blocchi app/sezione/focus. Usato come
+    /// scope del bypass: "Open anyway" su un sito sblocca solo quel dominio
+    /// (vedi markBypassed/onBypass). Resettato ad ogni show() → niente leak.
+    private var _blockedDomain = mutableStateOf<String?>(null)
+
     fun show(
         packageName: String,
         appLabel: String,
@@ -228,6 +250,7 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
         config: OverlayConfig = OverlayConfig.DEFAULT,
         profileEmoji: String? = null,
         bypassPolicy: BypassPolicy = BypassPolicy(),
+        blockedDomain: String? = null,
     ): Unit = synchronized(this) {
         // Se l'overlay è già visibile MA per un pacchetto diverso, forziamo
         // la dismiss + re-create. Questo previene il bug del countdown
@@ -250,6 +273,7 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
         _config.value = config
         _profileEmoji.value = profileEmoji
         _bypassPolicy.value = bypassPolicy
+        _blockedDomain.value = blockedDomain
 
         if (isShowing) return@synchronized
 
@@ -314,8 +338,8 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
                             },
                             onGoHome = { forceHome -> onReturnHome?.invoke(forceHome) },
                             onBypass = { durationMs ->
-                                markBypassed(_currentPackageName.value, durationMs)
-                                onBypassOpen?.invoke(_currentPackageName.value, durationMs)
+                                markBypassed(_currentPackageName.value, durationMs, _blockedDomain.value)
+                                onBypassOpen?.invoke(_currentPackageName.value, durationMs, _blockedDomain.value)
                             },
                         )
                     }
