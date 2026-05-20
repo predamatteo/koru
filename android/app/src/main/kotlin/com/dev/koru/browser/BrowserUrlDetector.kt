@@ -148,9 +148,18 @@ object BrowserUrlDetector {
             }
         }
 
-        // b) text che assomiglia a una URL (regex su tutto).
+        // b) text che assomiglia a una URL — SOLO su nodi editabili. La
+        // address bar e' un EditText/AutocompleteEditText (isEditable=true);
+        // tile dei preferiti, suggerimenti, bookmark e testo dentro la pagina
+        // NON lo sono. Senza questo gate il ramo catturava qualsiasi nodo con
+        // testo URL-like: bastava avere "reddit.com" tra i preferiti perche'
+        // l'overlay scattasse all'apertura di Chrome, senza navigare (idem un
+        // dominio bloccato citato nel corpo di una pagina). Le address bar con
+        // view-id noto sono gia' coperte dallo step 1; il ramo (a) copre
+        // quelle con view-id riconoscibile. Qui restringiamo il catch-all ai
+        // soli campi di input.
         val rawText = node.text?.toString()
-        if (rawText != null && rawText.length < 500 && !rawText.contains(' ')) {
+        if (node.isEditable && rawText != null && rawText.length < 500 && !rawText.contains(' ')) {
             val match = URL_LIKE_REGEX.find(rawText.lowercase())
             if (match != null) {
                 val candidate = match.value
