@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:koru/platform/blocking_channel.dart';
 import 'package:koru/presentation/providers/app_list_provider.dart';
 import 'package:koru/presentation/providers/favorites_provider.dart';
 
@@ -31,111 +30,120 @@ void main() {
   });
 
   group('favoriteAppsProvider', () {
-    test('resolves favorites against installedAppsProvider preserving order',
-        () async {
-      // Override installedAppsProvider con un valore noto e statico.
-      final installed = [
-        InstalledAppInfo(packageName: 'com.b', label: 'Beta'),
-        InstalledAppInfo(packageName: 'com.a', label: 'Alpha'),
-        InstalledAppInfo(packageName: 'com.c', label: 'Charlie'),
-      ];
+    test('resolves favorites from db preserving orderIndex order', () async {
       final h = buildTestContainer(extra: [
-        installedAppsProvider.overrideWith((ref) async => installed),
+        installedPackageNamesProvider
+            .overrideWith((ref) async => {'com.a', 'com.b', 'com.c'}),
       ]);
       addTearDown(h.dispose);
 
       await h.db.addFavorite('com.a', label: 'Alpha');
       await h.db.addFavorite('com.c', label: 'Charlie');
 
-      // Drena lo stream (force resolve favoritesProvider).
-      await h.container.read(favoritesProvider.stream).first;
-      // Risolve FutureProvider.
-      await h.container.read(installedAppsProvider.future);
+      await h.container.read(favoriteEntriesProvider.stream).first;
+      await h.container.read(installedPackageNamesProvider.future);
 
       final result = h.container.read(favoriteAppsProvider);
       expect(result.map((a) => a.packageName), ['com.a', 'com.c']);
+      // Label risolti dal DB (tabella applications), non dal native.
+      expect(result.map((a) => a.label), ['Alpha', 'Charlie']);
     });
 
-    test('skips favorites for apps no longer installed', () async {
-      final installed = [
-        InstalledAppInfo(packageName: 'com.a', label: 'Alpha'),
-      ];
+    test('hides favorites for apps no longer installed', () async {
       final h = buildTestContainer(extra: [
-        installedAppsProvider.overrideWith((ref) async => installed),
+        // com.b favorito ma NON nel set installato → filtrato.
+        installedPackageNamesProvider.overrideWith((ref) async => {'com.a'}),
       ]);
       addTearDown(h.dispose);
 
-      // com.b è favorito ma NON è installato — deve essere filtrato.
       await h.db.addFavorite('com.a', label: 'Alpha');
       await h.db.addFavorite('com.b', label: 'Beta');
 
-      await h.container.read(favoritesProvider.stream).first;
-      await h.container.read(installedAppsProvider.future);
+      await h.container.read(favoriteEntriesProvider.stream).first;
+      await h.container.read(installedPackageNamesProvider.future);
 
       final result = h.container.read(favoriteAppsProvider);
       expect(result.map((a) => a.packageName), ['com.a']);
     });
 
     test('returns empty list when no favorites are stored', () async {
-      final installed = [
-        InstalledAppInfo(packageName: 'com.a', label: 'Alpha'),
-      ];
       final h = buildTestContainer(extra: [
-        installedAppsProvider.overrideWith((ref) async => installed),
+        installedPackageNamesProvider.overrideWith((ref) async => {'com.a'}),
       ]);
       addTearDown(h.dispose);
 
-      await h.container.read(favoritesProvider.stream).first;
-      await h.container.read(installedAppsProvider.future);
+      await h.container.read(installedPackageNamesProvider.future);
 
       expect(h.container.read(favoriteAppsProvider), isEmpty);
     });
 
-    // Regressione del bug ricorrente (73d174c → e3c930d): durante un reload
-    // di installedAppsProvider (invalidate da PACKAGE_* o smart-refresh al
-    // resume) il provider entra in AsyncLoading.copyWithPrevious, che CONSERVA
-    // il valore precedente. I favoriti devono restare visibili (stale-while-
-    // revalidate). Con il vecchio `.unwrapPrevious().valueOrNull` il previous
-    // veniva scartato → lista vuota per tutta la durata del rescan nativo
-    // (1-3s): è lo "spariscono i preferiti" osservato sul device.
-    test('keeps favorites visible while installedApps reloads', () async {
-      final app = InstalledAppInfo(packageName: 'com.a', label: 'Alpha');
-      var completer = Completer<List<InstalledAppInfo>>();
+    // Regressione del flicker ricorrente (73d174c → e3c930d → 1c98db7): i
+    // favoriti NON devono mai collassare a vuoto per uno stato di loading del
+    // provider delle app installate. Il fix li disaccoppia (vengono dal DB) e
+    // filtra le disinstallate SOLO quando il set di package e' pronto e non
+    // vuoto; finche' non lo e', li mostra tutti.
+    test('shows favorites unfiltered while installed names not ready', () async {
+      // installedPackageNamesProvider resta pending → valueOrNull == null.
+      final completer = Completer<Set<String>>();
       final h = buildTestContainer(extra: [
-        installedAppsProvider.overrideWith((ref) => completer.future),
+        installedPackageNamesProvider.overrideWith((ref) => completer.future),
       ]);
       addTearDown(h.dispose);
 
       await h.db.addFavorite('com.a', label: 'Alpha');
-      await h.container.read(favoritesProvider.stream).first;
-      // Tiene vivo il downstream così ricomputa ad ogni cambio di stato.
+      await h.db.addFavorite('com.b', label: 'Beta');
+      await h.container.read(favoriteEntriesProvider.stream).first;
       keepProviderAlive(h.container, favoriteAppsProvider);
 
-      // Primo load completo.
-      completer.complete([app]);
-      await h.container.read(installedAppsProvider.future);
+      // Set non ancora caricato → mostra TUTTI i favoriti (mai vuoto).
+      expect(
+        h.container.read(favoriteAppsProvider).map((a) => a.packageName),
+        ['com.a', 'com.b'],
+        reason: 'durante il loading del set i favoriti restano visibili',
+      );
+
+      // A set caricato (com.b risulta disinstallato) filtra correttamente.
+      completer.complete({'com.a'});
+      await h.container.read(installedPackageNamesProvider.future);
+      expect(
+        h.container.read(favoriteAppsProvider).map((a) => a.packageName),
+        ['com.a'],
+      );
+    });
+
+    test('keeps favorites visible while installed names reloads', () async {
+      var completer = Completer<Set<String>>();
+      final h = buildTestContainer(extra: [
+        installedPackageNamesProvider.overrideWith((ref) => completer.future),
+      ]);
+      addTearDown(h.dispose);
+
+      await h.db.addFavorite('com.a', label: 'Alpha');
+      await h.container.read(favoriteEntriesProvider.stream).first;
+      keepProviderAlive(h.container, favoriteAppsProvider);
+
+      completer.complete({'com.a'});
+      await h.container.read(installedPackageNamesProvider.future);
       expect(
         h.container.read(favoriteAppsProvider).map((a) => a.packageName),
         ['com.a'],
       );
 
-      // Reload: nuova fetch pendente + invalidate → loading-con-previous.
-      completer = Completer<List<InstalledAppInfo>>();
-      h.container.invalidate(installedAppsProvider);
+      // Reload: loading-con-previous → valueOrNull mantiene il set.
+      completer = Completer<Set<String>>();
+      h.container.invalidate(installedPackageNamesProvider);
       await Future<void>.delayed(Duration.zero);
-
-      final reloading = h.container.read(installedAppsProvider);
+      final reloading = h.container.read(installedPackageNamesProvider);
       expect(reloading.isLoading, isTrue, reason: 'deve essere in reload');
-      expect(reloading.hasValue, isTrue, reason: 'previous deve essere conservato');
+      expect(reloading.hasValue, isTrue, reason: 'previous conservato');
       expect(
         h.container.read(favoriteAppsProvider).map((a) => a.packageName),
         ['com.a'],
-        reason: 'i favoriti devono restare visibili durante il reload',
+        reason: 'i favoriti restano visibili durante il reload',
       );
 
-      // Cleanup: completa la fetch pendente.
-      completer.complete([app]);
-      await h.container.read(installedAppsProvider.future);
+      completer.complete({'com.a'});
+      await h.container.read(installedPackageNamesProvider.future);
     });
   });
 

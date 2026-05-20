@@ -23,33 +23,50 @@ final favoritesProvider = StreamProvider<List<String>>((ref) {
   return db.watchFavorites().map((rows) => rows.map((r) => r.packageName).toList(growable: false));
 });
 
-/// Risolve i package favoriti in oggetti InstalledAppInfo
-/// preservando l'ordine di favoritesProvider e filtrando app non più installate.
+/// Stream dei favoriti con label, risolto dal DB locale (join favorites →
+/// applications). keepAlive come [favoritesProvider]: unico subscriber a
+/// regime e' la home del launcher, che durante navigazioni rapide puo'
+/// smontarsi per un frame.
+final favoriteEntriesProvider =
+    StreamProvider<List<({String packageName, String label})>>((ref) {
+  ref.keepAlive();
+  final db = ref.watch(appDatabaseProvider);
+  return db.watchFavoritesWithLabels();
+});
+
+/// Risolve i favoriti in [InstalledAppInfo] per la home del launcher.
 ///
-/// Stale-while-revalidate su [installedAppsProvider]: quando viene invalidato
-/// (PACKAGE_ADDED/REMOVED/REPLACED, oppure smart refresh al resume rileva un
-/// delta), Riverpod transita in AsyncLoading.copyWithPrevious — uno stato di
-/// loading che CONSERVA il valore precedente. Leggiamo quindi `.valueOrNull`
-/// direttamente: per contratto di AsyncValue ritorna il previous durante il
-/// loading, così la lista favoriti del launcher resta visibile mentre il
-/// rescan nativo (1-3s per PackageManager + decode icone) gira, e viene
-/// sostituita seamless al completamento.
+/// Ordine e label vengono dal DB locale ([favoriteEntriesProvider]: package +
+/// label dalla tabella `applications`), NON dal lento `installedAppsProvider`.
+/// La lista favoriti mostra solo testo (FavoritesList) e il context menu usa
+/// solo label/packageName — nessuno usa l'icona — quindi non ha senso gateare
+/// i favoriti sul native `getInstalledApps` (scan PackageManager + decode
+/// icone, 1-3s).
 ///
-/// NB: NON usare `unwrapPrevious()` qui. Fa l'opposto di ciò che serve —
-/// scarta il previous e riduce lo stato a un AsyncLoading puro, quindi
-/// `.valueOrNull` tornerebbe null e i favoriti SPARIREBBERO per tutta la
-/// durata del reload (bug ricorrente 73d174c → e3c930d: avevano invertito
-/// la semantica dell'API credendo che `unwrapPrevious()` preservasse il
-/// cached). Sul primissimo cold start (no previous) `.valueOrNull` è
-/// comunque null → fallback lista vuota, corretto.
+/// Perche' il disaccoppiamento e non l'ennesimo ritocco di keepAlive/
+/// valueOrNull: il flicker "favoriti spariti" e' ricomparso per 3 commit
+/// (73d174c, e3c930d, 1c98db7) perche' `favoriteAppsProvider` intersecava i
+/// favoriti con `installedAppsProvider`, provider VOLATILE (invalidato da
+/// PACKAGE_*/smart-refresh, ricreato puro all'avvio). Qualunque suo
+/// reload/dispose con previous mancante svuotava la lista → favoriti vuoti.
+///
+/// Filtro app disinstallate: la tabella `applications` accumula (nessun
+/// hard-delete), quindi un favorito di app rimossa resterebbe. Filtriamo
+/// contro [installedPackageNamesProvider] — endpoint CHEAP (~50ms, no decode
+/// icone), non quello pesante. CRUCIALE: filtriamo SOLO quando il set e'
+/// caricato e non vuoto; se e' null (cold start) o vuoto (glitch nativo: un
+/// device ha sempre centinaia di package) mostriamo TUTTI i favoriti. Cosi'
+/// la lista non puo' MAI collassare a vuoto per uno stato di loading — il
+/// caso di fallimento esatto che causava il flicker. `iconBytes` resta null.
 final favoriteAppsProvider = Provider<List<InstalledAppInfo>>((ref) {
-  final favPackages = ref.watch(favoritesProvider).valueOrNull ?? const <String>[];
-  final installed =
-      ref.watch(installedAppsProvider).valueOrNull ?? const <InstalledAppInfo>[];
-  final byPkg = {for (final a in installed) a.packageName: a};
-  return favPackages
-      .map((p) => byPkg[p])
-      .whereType<InstalledAppInfo>()
+  final entries = ref.watch(favoriteEntriesProvider).valueOrNull ??
+      const <({String packageName, String label})>[];
+  final installedNames =
+      ref.watch(installedPackageNamesProvider).valueOrNull;
+  final canFilter = installedNames != null && installedNames.isNotEmpty;
+  return entries
+      .where((e) => !canFilter || installedNames.contains(e.packageName))
+      .map((e) => InstalledAppInfo(packageName: e.packageName, label: e.label))
       .toList(growable: false);
 });
 

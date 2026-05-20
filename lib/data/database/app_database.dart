@@ -307,6 +307,34 @@ class AppDatabase extends _$AppDatabase {
   Stream<List<Favorite>> watchFavorites() => (select(favorites)
         ..orderBy([(f) => OrderingTerm.asc(f.orderIndex)]))
       .watch();
+
+  /// Stream dei favoriti CON label, risolto via join su `applications` (dove
+  /// `addFavorite` salva sempre il label dell'app favoritata). Permette di
+  /// renderizzare la lista favoriti della home launcher SENZA dipendere dal
+  /// lento `getInstalledApps` nativo (scan PackageManager + decode icone,
+  /// 1-3s): la home mostra solo testo e il label vive gia' nel DB locale.
+  /// Cosi' i favoriti compaiono subito al cold start e non spariscono durante
+  /// un reload/dispose di installedAppsProvider (flicker ricorrente). Left
+  /// join + fallback al packageName: anche se per qualche motivo manca la riga
+  /// in `applications`, il favorito resta visibile (col package come label).
+  Stream<List<({String packageName, String label})>> watchFavoritesWithLabels() {
+    final query = select(favorites).join([
+      leftOuterJoin(
+        applications,
+        applications.packageName.equalsExp(favorites.packageName),
+      ),
+    ])
+      ..orderBy([OrderingTerm.asc(favorites.orderIndex)]);
+    return query.watch().map((rows) => rows.map((row) {
+          final fav = row.readTable(favorites);
+          final app = row.readTableOrNull(applications);
+          return (
+            packageName: fav.packageName,
+            label: app?.label ?? fav.packageName,
+          );
+        }).toList(growable: false));
+  }
+
   Future<List<Favorite>> getFavorites() => (select(favorites)
         ..orderBy([(f) => OrderingTerm.asc(f.orderIndex)]))
       .get();
