@@ -60,6 +60,7 @@ final List<ProviderOrFamily> _koruDataProviders = [
   // ── Screen time (UsageStatsManager nativo) ─────────────────────────────
   periodUsageProvider,
   previousPeriodScreenTimeMsProvider,
+  weeklyDailyUsageProvider,
 
   // ── Profili (SQLite) ───────────────────────────────────────────────────
   profilesProvider,

@@ -125,6 +125,12 @@ object BlockingMethodChannel {
                             ?: System.currentTimeMillis()
                         result.success(getUsageStats(activity, startMs, endMs))
                     }
+                    "getUsageStatsByDay" -> {
+                        val startMs = call.longArg("startMs")
+                        val endMs = call.longArg("endMs").takeIf { it > 0 }
+                            ?: System.currentTimeMillis()
+                        result.success(getUsageStatsByDay(activity, startMs, endMs))
+                    }
                     "startQuickBlock" -> {
                         val durationMs = call.longArg("durationMs")
                         val whitelist = (call.argument<List<String>>("whitelist") ?: emptyList())
@@ -389,6 +395,33 @@ object BlockingMethodChannel {
                     "packageName" to pkg,
                     "totalTimeMs" to ms,
                     "lastTimeUsed" to (lastUsed[pkg] ?: 0L),
+                )
+            }
+    }
+
+    /// Come [getUsageStats] ma diviso per giorno locale: una lista di
+    /// `{ dayStartMs, apps: [{ packageName, totalTimeMs }] }`, un entry per
+    /// giorno con utilizzo, ordinata per `dayStartMs` crescente e con le app
+    /// di ciascun giorno ordinate per tempo desc. Una sola passata di
+    /// `queryEvents` copre tutta la finestra (vedi
+    /// [UsageCounter.foregroundMsPerPackagePerDay]).
+    private fun getUsageStatsByDay(
+        context: Context,
+        startMs: Long,
+        endMs: Long,
+    ): List<Map<String, Any>> {
+        val perDay = UsageCounter.foregroundMsPerPackagePerDay(context, startMs, endMs)
+        return perDay.entries
+            .sortedBy { it.key }
+            .map { (dayStart, totals) ->
+                mapOf(
+                    "dayStartMs" to dayStart,
+                    "apps" to totals.entries
+                        .filter { it.value > 0 }
+                        .sortedByDescending { it.value }
+                        .map { (pkg, ms) ->
+                            mapOf("packageName" to pkg, "totalTimeMs" to ms)
+                        },
                 )
             }
     }

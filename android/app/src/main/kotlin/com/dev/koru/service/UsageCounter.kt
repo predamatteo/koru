@@ -44,8 +44,14 @@ object UsageCounter {
     }
 
     /**
-     * Calcola il tempo in foreground (ms) per ogni package nella finestra
-     * [startMs, endMs] usando una state machine su `queryEvents`.
+     * Esegue la state machine su `queryEvents` per la finestra
+     * [startMs, endMs] e invoca [onSession] per ogni sessione di foreground
+     * con `(packageName, fromTs, toTs)` RAW (non clippati né splittati): è il
+     * chiamante a decidere come accumulare (totale piatto vs per-giorno).
+     *
+     * Condiviso tra [foregroundMsPerPackage] e [foregroundMsPerPackagePerDay]
+     * così le due viste non possono divergere su come una sessione viene
+     * riconosciuta.
      *
      * Algoritmo portato da minimalist_phone (decompiled: a.java:323-397):
      *
@@ -65,19 +71,20 @@ object UsageCounter {
      *    RESUMED (Chrome tabs, splash, ads). Lo salviamo e lo usiamo
      *    come boundary solo se la finestra si chiude senza altri eventi.
      */
-    fun foregroundMsPerPackage(
+    private fun forEachForegroundSession(
         context: Context,
         startMs: Long,
         endMs: Long,
-    ): Map<String, Long> {
+        onSession: (pkg: String, fromTs: Long, toTs: Long) -> Unit,
+    ) {
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE)
-            as? UsageStatsManager ?: return emptyMap()
+            as? UsageStatsManager ?: return
         // Query da 24h prima per catturare sessioni ancora aperte all'inizio
-        // della finestra. Lo span viene clippato a [startMs, endMs].
+        // della finestra. Lo span viene clippato dal chiamante.
         val queryStart = startMs - 24L * 60 * 60 * 1000
         val events = try {
             usm.queryEvents(queryStart, endMs)
-        } catch (_: Exception) { return emptyMap() }
+        } catch (_: Exception) { return }
 
         data class Ev(val ts: Long, val type: Int, val pkg: String)
         val all = ArrayList<Ev>()
@@ -94,7 +101,6 @@ object UsageCounter {
         }
         all.sortBy { it.ts }
 
-        val totals = HashMap<String, Long>()
         val now = System.currentTimeMillis()
         val windowClose = minOf(endMs, now)
 
@@ -104,10 +110,7 @@ object UsageCounter {
 
         fun closeCurrent(closeTs: Long) {
             val pkg = currentPkg ?: return
-            if (closeTs > currentStart) {
-                val span = clippedSpan(currentStart, closeTs, startMs, endMs)
-                if (span > 0) totals[pkg] = (totals[pkg] ?: 0L) + span
-            }
+            if (closeTs > currentStart) onSession(pkg, currentStart, closeTs)
             currentPkg = null
             currentStart = 0L
         }
@@ -145,8 +148,91 @@ object UsageCounter {
             val closeAt = if (stopped > currentStart) stopped else windowClose
             closeCurrent(closeAt)
         }
+    }
 
+    /**
+     * Tempo in foreground (ms) per package nella finestra [startMs, endMs].
+     */
+    fun foregroundMsPerPackage(
+        context: Context,
+        startMs: Long,
+        endMs: Long,
+    ): Map<String, Long> {
+        val totals = HashMap<String, Long>()
+        forEachForegroundSession(context, startMs, endMs) { pkg, from, to ->
+            val span = clippedSpan(from, to, startMs, endMs)
+            if (span > 0) totals[pkg] = (totals[pkg] ?: 0L) + span
+        }
         return totals
+    }
+
+    /**
+     * Come [foregroundMsPerPackage] ma con i totali divisi per giorno locale:
+     * `Map<dayStartMs, Map<package, ms>>`, dove `dayStartMs` è la mezzanotte
+     * locale del giorno. Le sessioni a cavallo della mezzanotte vengono
+     * spezzate e attribuite a ciascun giorno. I giorni senza utilizzo non
+     * compaiono nella mappa (il chiamante riempie gli zeri se serve).
+     *
+     * Usato dalla vista "settimana" delle statistiche per il breakdown
+     * per-app del singolo giorno: una sola passata di `queryEvents` copre
+     * tutta la finestra.
+     */
+    fun foregroundMsPerPackagePerDay(
+        context: Context,
+        startMs: Long,
+        endMs: Long,
+    ): Map<Long, Map<String, Long>> {
+        val buckets = HashMap<Long, HashMap<String, Long>>()
+        forEachForegroundSession(context, startMs, endMs) { pkg, from, to ->
+            val s = maxOf(from, startMs)
+            val e = minOf(to, endMs)
+            if (e <= s) return@forEachForegroundSession
+            for ((dayStart, ms) in splitByLocalDay(s, e)) {
+                if (ms <= 0) continue
+                val day = buckets.getOrPut(dayStart) { HashMap() }
+                day[pkg] = (day[pkg] ?: 0L) + ms
+            }
+        }
+        return buckets
+    }
+
+    /**
+     * Divide [fromTs, toTs] in segmenti `(dayStartMs, ms)` allineati alla
+     * mezzanotte locale. Robusto al DST: i confini sono calcolati con
+     * [Calendar] (non con un offset fisso di 24h). Ritorna lista vuota se
+     * la finestra è degenere.
+     */
+    internal fun splitByLocalDay(fromTs: Long, toTs: Long): List<Pair<Long, Long>> {
+        if (toTs <= fromTs) return emptyList()
+        val out = ArrayList<Pair<Long, Long>>()
+        var s = fromTs
+        while (s < toTs) {
+            val dayStart = localDayStart(s)
+            val nextDay = nextLocalDayStart(dayStart)
+            val segEnd = minOf(toTs, nextDay)
+            out.add(dayStart to (segEnd - s))
+            s = segEnd
+        }
+        return out
+    }
+
+    private fun localDayStart(ts: Long): Long {
+        val cal = Calendar.getInstance().apply {
+            timeInMillis = ts
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        return cal.timeInMillis
+    }
+
+    private fun nextLocalDayStart(dayStartMs: Long): Long {
+        val cal = Calendar.getInstance().apply {
+            timeInMillis = dayStartMs
+            add(Calendar.DAY_OF_MONTH, 1)
+        }
+        return cal.timeInMillis
     }
 
     private fun clippedSpan(

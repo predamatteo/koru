@@ -148,6 +148,43 @@ void main() {
     });
   });
 
+  group('BlockingChannel - usage stats by day', () {
+    test('getUsageStatsByDay passes args and parses DailyUsage list', () async {
+      setMockHandler((_) async => [
+            {
+              'dayStartMs': 1000,
+              'apps': [
+                {'packageName': 'com.a', 'totalTimeMs': 5000},
+                {'packageName': 'com.b', 'totalTimeMs': 2000},
+              ],
+            },
+            {
+              'dayStartMs': 2000,
+              'apps': <Map<String, Object?>>[],
+            },
+          ]);
+      final result =
+          await BlockingChannel().getUsageStatsByDay(startMs: 1, endMs: 9);
+      expect(result, hasLength(2));
+      expect(result.first.dayStartMs, 1000);
+      expect(result.first.apps, hasLength(2));
+      expect(result.first.apps.first.packageName, 'com.a');
+      expect(result.first.totalMs, 7000);
+      expect(result.last.apps, isEmpty);
+      expect(result.last.totalMs, 0);
+      expect(calls.first.method, 'getUsageStatsByDay');
+      expect(calls.first.arguments, {'startMs': 1, 'endMs': 9});
+    });
+
+    test('getUsageStatsByDay returns empty list when native returns null',
+        () async {
+      setMockHandler((_) async => null);
+      final result =
+          await BlockingChannel().getUsageStatsByDay(startMs: 0, endMs: 0);
+      expect(result, isEmpty);
+    });
+  });
+
   group('BlockingChannel - quick block / pomodoro', () {
     test('startQuickBlock sends durationMs + whitelist', () async {
       setMockHandler((_) async => true);
@@ -549,6 +586,39 @@ void main() {
       });
       expect(info.totalTimeMs, 1000);
       expect(info.lastTimeUsed, 500);
+    });
+  });
+
+  group('DailyUsage.fromMap', () {
+    test('parses dayStartMs and apps, sums totalMs', () {
+      final d = DailyUsage.fromMap(<dynamic, dynamic>{
+        'dayStartMs': 1234,
+        'apps': [
+          {'packageName': 'com.a', 'totalTimeMs': 1000},
+          {'packageName': 'com.b', 'totalTimeMs': 500},
+        ],
+      });
+      expect(d.dayStartMs, 1234);
+      expect(d.apps, hasLength(2));
+      expect(d.apps.first.packageName, 'com.a');
+      expect(d.apps.first.lastTimeUsed, 0);
+      expect(d.totalMs, 1500);
+    });
+
+    test('handles missing apps as empty', () {
+      final d = DailyUsage.fromMap(<dynamic, dynamic>{'dayStartMs': 5});
+      expect(d.apps, isEmpty);
+      expect(d.totalMs, 0);
+    });
+
+    test('coerces num totalTimeMs via toInt()', () {
+      final d = DailyUsage.fromMap(<dynamic, dynamic>{
+        'dayStartMs': 0,
+        'apps': [
+          {'packageName': 'com.a', 'totalTimeMs': 1000.9},
+        ],
+      });
+      expect(d.apps.first.totalTimeMs, 1000);
     });
   });
 }

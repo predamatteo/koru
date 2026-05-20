@@ -142,4 +142,125 @@ void main() {
       expect(top, isEmpty);
     });
   });
+
+  group('weeklyDailyUsageProvider', () {
+    test('returns 7 ascending days, zero-filled, mapping native data',
+        () async {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      final now = DateTime.now();
+      final todayKey =
+          DateTime(now.year, now.month, now.day).millisecondsSinceEpoch;
+
+      when(() => h.blocking.getUsageStatsByDay(
+            startMs: any(named: 'startMs'),
+            endMs: any(named: 'endMs'),
+          )).thenAnswer((_) async => [
+            DailyUsage(
+              dayStartMs: todayKey,
+              apps: [
+                AppUsageInfo(
+                    packageName: 'com.a', totalTimeMs: 3000, lastTimeUsed: 0),
+              ],
+            ),
+          ]);
+
+      final week = await h.container.read(weeklyDailyUsageProvider.future);
+      expect(week, hasLength(7));
+      for (var i = 1; i < week.length; i++) {
+        expect(week[i].dayStartMs, greaterThan(week[i - 1].dayStartMs));
+      }
+      // The last bucket is today and carries the native data.
+      expect(week.last.dayStartMs, todayKey);
+      expect(week.last.apps, hasLength(1));
+      expect(week.last.totalMs, 3000);
+      // Earlier days are zero-filled.
+      expect(week.first.apps, isEmpty);
+      expect(week.first.totalMs, 0);
+    });
+
+    test('queries roughly a 7-day window', () async {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      ({int start, int end})? captured;
+      when(() => h.blocking.getUsageStatsByDay(
+            startMs: any(named: 'startMs'),
+            endMs: any(named: 'endMs'),
+          )).thenAnswer((inv) async {
+        captured = (
+          start: inv.namedArguments[#startMs] as int,
+          end: inv.namedArguments[#endMs] as int,
+        );
+        return const <DailyUsage>[];
+      });
+
+      await h.container.read(weeklyDailyUsageProvider.future);
+      expect(captured, isNotNull);
+      final spanDays =
+          (captured!.end - captured!.start) / (24 * 3600 * 1000);
+      // 6 full days back + part of today → between ~6 and ~7 days.
+      expect(spanDays, greaterThan(5.9));
+      expect(spanDays, lessThan(7.1));
+    });
+  });
+
+  group('selectedDayUsageProvider', () {
+    test('is null when no day is selected', () async {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      when(() => h.blocking.getUsageStatsByDay(
+            startMs: any(named: 'startMs'),
+            endMs: any(named: 'endMs'),
+          )).thenAnswer((_) async => const <DailyUsage>[]);
+
+      await h.container.read(weeklyDailyUsageProvider.future);
+      expect(h.container.read(selectedDayUsageProvider), isNull);
+    });
+
+    test('returns the matching day when one is selected', () async {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      final now = DateTime.now();
+      final todayKey =
+          DateTime(now.year, now.month, now.day).millisecondsSinceEpoch;
+      when(() => h.blocking.getUsageStatsByDay(
+            startMs: any(named: 'startMs'),
+            endMs: any(named: 'endMs'),
+          )).thenAnswer((_) async => [
+            DailyUsage(
+              dayStartMs: todayKey,
+              apps: [
+                AppUsageInfo(
+                    packageName: 'com.a', totalTimeMs: 1000, lastTimeUsed: 0),
+              ],
+            ),
+          ]);
+
+      await h.container.read(weeklyDailyUsageProvider.future);
+      h.container.read(selectedStatsDayProvider.notifier).state = todayKey;
+
+      final sel = h.container.read(selectedDayUsageProvider);
+      expect(sel, isNotNull);
+      expect(sel!.dayStartMs, todayKey);
+      expect(sel.totalMs, 1000);
+    });
+
+    test('is null when the selected day is not in the week data', () async {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      when(() => h.blocking.getUsageStatsByDay(
+            startMs: any(named: 'startMs'),
+            endMs: any(named: 'endMs'),
+          )).thenAnswer((_) async => const <DailyUsage>[]);
+
+      await h.container.read(weeklyDailyUsageProvider.future);
+      h.container.read(selectedStatsDayProvider.notifier).state = 99;
+      expect(h.container.read(selectedDayUsageProvider), isNull);
+    });
+  });
 }

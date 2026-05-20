@@ -75,6 +75,35 @@ class AppUsageInfo {
       );
 }
 
+/// Utilizzo foreground di un singolo giorno (mezzanotte locale →
+/// mezzanotte locale): la lista delle app con i rispettivi ms in
+/// foreground in quel giorno. Prodotto dal bucketing nativo
+/// `getUsageStatsByDay`, che fa una sola passata di `queryEvents`.
+class DailyUsage {
+  DailyUsage({required this.dayStartMs, required this.apps});
+
+  /// Mezzanotte locale del giorno, in ms epoch.
+  final int dayStartMs;
+  final List<AppUsageInfo> apps;
+
+  /// Somma dei ms in foreground di tutte le app del giorno.
+  int get totalMs => apps.fold<int>(0, (sum, a) => sum + a.totalTimeMs);
+
+  factory DailyUsage.fromMap(Map<dynamic, dynamic> map) => DailyUsage(
+        dayStartMs: (map['dayStartMs'] as num).toInt(),
+        apps: ((map['apps'] as List<dynamic>?) ?? const <dynamic>[])
+            .cast<Map<dynamic, dynamic>>()
+            .map(
+              (e) => AppUsageInfo(
+                packageName: e['packageName'] as String,
+                totalTimeMs: (e['totalTimeMs'] as num).toInt(),
+                lastTimeUsed: 0,
+              ),
+            )
+            .toList(growable: false),
+      );
+}
+
 /// Flutter-side facade per com.koru/blocking MethodChannel.
 class BlockingChannel {
   BlockingChannel();
@@ -121,6 +150,25 @@ class BlockingChannel {
     return raw
         .cast<Map<dynamic, dynamic>>()
         .map(AppUsageInfo.fromMap)
+        .toList(growable: false);
+  }
+
+  /// Variante per-giorno di [getUsageStats]: ritorna un [DailyUsage] per
+  /// ogni giorno con utilizzo nella finestra `[startMs, endMs]`, con le app
+  /// del giorno e i loro ms in foreground. Usato dalla vista "settimana"
+  /// delle statistiche per il drill-down sul singolo giorno.
+  Future<List<DailyUsage>> getUsageStatsByDay({
+    required int startMs,
+    required int endMs,
+  }) async {
+    final raw = await _channel.invokeMethod<List<dynamic>>(
+      'getUsageStatsByDay',
+      {'startMs': startMs, 'endMs': endMs},
+    );
+    if (raw == null) return const [];
+    return raw
+        .cast<Map<dynamic, dynamic>>()
+        .map(DailyUsage.fromMap)
         .toList(growable: false);
   }
 
