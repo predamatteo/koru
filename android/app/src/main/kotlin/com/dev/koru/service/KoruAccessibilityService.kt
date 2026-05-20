@@ -1067,11 +1067,17 @@ class KoruAccessibilityService : AccessibilityService() {
         }
 
         for ((profileId, rules) in snapshot.websiteRulesCache) {
+            // Gating temporale: blocca i domini solo se il profilo è attivo
+            // ORA (time interval, dayFlags, pausa, onUntil, wifi). Senza questo
+            // il blocco domini restava SEMPRE attivo ignorando lo schedule del
+            // profilo — stesso check di checkAppBlocking (~915) e del section
+            // blocking (~996), che invece lo applicano correttamente.
+            val matchedProfile = snapshot.profiles.firstOrNull { it.id == profileId }
+            if (matchedProfile == null || !isProfileActiveNow(matchedProfile, snapshot)) continue
             Log.d(TAG, "  profile $profileId has ${rules.size} rules: ${rules.map { "${it.name}(type=${it.blockingType},any=${it.isAnywhereInUrl})" }}")
             if (WebsiteMatcher.matchesAny(rules, detected.fullUrl, detected.domain)) {
                 Log.w(TAG, ">>> BLOCKING SITE: ${detected.domain} by profile $profileId")
-                val matchedProfile = snapshot.profiles.firstOrNull { it.id == profileId }
-                val profileTitle = matchedProfile?.title ?: "Koru"
+                val profileTitle = matchedProfile.title
                 // Setta currentlyBlockingPackage cosi' quando l'utente cambia
                 // tab a un sito non bloccato (o naviga via dal browser),
                 // il path "no profile blocks this pkg" di checkAppBlocking
@@ -1084,7 +1090,7 @@ class KoruAccessibilityService : AccessibilityService() {
                         appLabel = detected.domain,
                         profileTitle = profileTitle,
                         reason = BlockReason.WEBSITE_BLOCKED,
-                        profileEmoji = matchedProfile?.emoji,
+                        profileEmoji = matchedProfile.emoji,
                     )
                 }
                 // WEBSITE_BLOCKED: forceHome=true. L'utente sta navigando in
