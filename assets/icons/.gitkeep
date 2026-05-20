@@ -1,0 +1,4 @@
+# Mantiene in git la cartella assets/icons/ dichiarata in pubspec.yaml
+# (sezione flutter > assets). Senza una directory esistente, `flutter test`
+# e la build emettono: "unable to find directory entry: assets/icons/".
+# Puoi rimuovere questo file appena aggiungi le prime icone reali.
