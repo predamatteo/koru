@@ -23,9 +23,9 @@ class AppListView extends ConsumerWidget {
       return Center(
         child: Text(
           'No matching apps',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: KoruColors.textSecondary,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: KoruColors.textSecondary),
         ),
       );
     }
@@ -33,24 +33,27 @@ class AppListView extends ConsumerWidget {
     final items = <Widget>[const SizedBox(height: 4)];
     for (final entry in grouped.entries) {
       items.add(_SectionHeader(letter: entry.key));
-      items.addAll(entry.value.map(
-        (app) => _AppTile(
-          app: app,
-          isFavorite: favs.contains(app.packageName),
-          onTap: () => blocking.launchApp(app.packageName),
-          onLongPress: () => showAppContextMenu(
-            context: context,
+      items.addAll(
+        entry.value.map(
+          (app) => _AppTile(
             app: app,
             isFavorite: favs.contains(app.packageName),
-            favoritesController: favoritesController,
-            blocking: blocking,
+            onTap: () => blocking.launchApp(app.packageName),
+            onLongPress: () => showAppContextMenu(
+              context: context,
+              app: app,
+              isFavorite: favs.contains(app.packageName),
+              favoritesController: favoritesController,
+              blocking: blocking,
+            ),
           ),
         ),
-      ));
+      );
     }
 
     return ListView(
       controller: scrollController,
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.only(right: 42),
       children: items,
     );
@@ -109,9 +112,11 @@ Future<void> showAppContextMenu({
                 messenger?.hideCurrentSnackBar();
                 messenger?.showSnackBar(
                   SnackBar(
-                    content: Text(isFavorite
-                        ? 'Removed ${app.label} from favorites'
-                        : 'Added ${app.label} to favorites'),
+                    content: Text(
+                      isFavorite
+                          ? 'Removed ${app.label} from favorites'
+                          : 'Added ${app.label} to favorites',
+                    ),
                     duration: const Duration(seconds: 2),
                   ),
                 );
@@ -161,10 +166,10 @@ class _SectionHeader extends StatelessWidget {
       child: Text(
         letter,
         style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: KoruColors.textSecondary,
-              letterSpacing: 3,
-              fontWeight: FontWeight.w500,
-            ),
+          color: KoruColors.textSecondary,
+          letterSpacing: 3,
+          fontWeight: FontWeight.w500,
+        ),
       ),
     );
   }
@@ -202,11 +207,7 @@ class _AppTile extends StatelessWidget {
                 ),
               ),
               if (isFavorite)
-                const Icon(
-                  Icons.star,
-                  size: 16,
-                  color: KoruColors.primary,
-                ),
+                const Icon(Icons.star, size: 16, color: KoruColors.primary),
             ],
           ),
         ),

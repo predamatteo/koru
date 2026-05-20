@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
 import '../../providers/monochrome_provider.dart';
+import '../../widgets/koru_pull_to_refresh.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -18,91 +19,94 @@ class SettingsScreen extends ConsumerWidget {
         elevation: 0,
         scrolledUnderElevation: 0,
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, kBottomNavClearance),
-        children: [
-          _Section(
-            label: 'Appearance',
-            children: [
-              _Tile(
-                icon: Icons.palette_outlined,
-                title: 'Font',
-                onTap: () => context.push('/settings/font'),
-              ),
-              _SwitchTile(
-                icon: Icons.invert_colors_outlined,
-                title: 'Monochrome',
-                value: monochrome,
-                onChanged: (v) =>
-                    ref.read(monochromeProvider.notifier).setEnabled(v),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          _Section(
-            label: 'Launcher',
-            children: [
-              _Tile(
-                icon: Icons.home_outlined,
-                title: 'Set as default',
-                onTap: () => context.push('/settings/launcher'),
-              ),
-              _Tile(
-                icon: Icons.apps_outlined,
-                title: 'App personalization',
-                onTap: () => context.push('/settings/app-personalization'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          _Section(
-            label: 'Discipline',
-            children: [
-              _Tile(
-                icon: Icons.shield_outlined,
-                title: 'Strict mode',
-                onTap: () => context.push('/settings/strict-mode'),
-              ),
-              _Tile(
-                icon: Icons.vpn_key_outlined,
-                title: 'Backdoor codes',
-                onTap: () => context.push('/settings/backdoor'),
-              ),
-              _Tile(
-                icon: Icons.hourglass_bottom_outlined,
-                title: 'App daily limits',
-                onTap: () => context.push('/settings/app-limits'),
-              ),
-              _Tile(
-                icon: Icons.notifications_off_outlined,
-                title: 'Notification filter',
-                onTap: () => context.push('/settings/notification-filter'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          _Section(
-            label: 'Permissions',
-            children: [
-              _Tile(
-                icon: Icons.verified_user_outlined,
-                title: 'Permissions',
-                onTap: () => context.push('/settings/permissions'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          _Section(
-            label: 'About',
-            children: [
-              _Tile(
-                icon: Icons.info_outline,
-                title: 'About Koru',
-                onTap: () => context.push('/settings/about'),
-              ),
-            ],
-          ),
-        ],
+      body: KoruPullToRefresh(
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, kBottomNavClearance),
+          children: [
+            _Section(
+              label: 'Appearance',
+              children: [
+                _Tile(
+                  icon: Icons.palette_outlined,
+                  title: 'Font',
+                  onTap: () => context.push('/settings/font'),
+                ),
+                _SwitchTile(
+                  icon: Icons.invert_colors_outlined,
+                  title: 'Monochrome',
+                  value: monochrome,
+                  onChanged: (v) =>
+                      ref.read(monochromeProvider.notifier).setEnabled(v),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            _Section(
+              label: 'Launcher',
+              children: [
+                _Tile(
+                  icon: Icons.home_outlined,
+                  title: 'Set as default',
+                  onTap: () => context.push('/settings/launcher'),
+                ),
+                _Tile(
+                  icon: Icons.apps_outlined,
+                  title: 'App personalization',
+                  onTap: () => context.push('/settings/app-personalization'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            _Section(
+              label: 'Discipline',
+              children: [
+                _Tile(
+                  icon: Icons.shield_outlined,
+                  title: 'Strict mode',
+                  onTap: () => context.push('/settings/strict-mode'),
+                ),
+                _Tile(
+                  icon: Icons.vpn_key_outlined,
+                  title: 'Backdoor codes',
+                  onTap: () => context.push('/settings/backdoor'),
+                ),
+                _Tile(
+                  icon: Icons.hourglass_bottom_outlined,
+                  title: 'App daily limits',
+                  onTap: () => context.push('/settings/app-limits'),
+                ),
+                _Tile(
+                  icon: Icons.notifications_off_outlined,
+                  title: 'Notification filter',
+                  onTap: () => context.push('/settings/notification-filter'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            _Section(
+              label: 'Permissions',
+              children: [
+                _Tile(
+                  icon: Icons.verified_user_outlined,
+                  title: 'Permissions',
+                  onTap: () => context.push('/settings/permissions'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            _Section(
+              label: 'About',
+              children: [
+                _Tile(
+                  icon: Icons.info_outline,
+                  title: 'About Koru',
+                  onTap: () => context.push('/settings/about'),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -161,11 +165,7 @@ class _Section extends StatelessWidget {
 
 /// Tile standard: icona leading verde, titolo, opzionale valore + chevron.
 class _Tile extends StatelessWidget {
-  const _Tile({
-    required this.icon,
-    required this.title,
-    required this.onTap,
-  });
+  const _Tile({required this.icon, required this.title, required this.onTap});
 
   final IconData icon;
   final String title;

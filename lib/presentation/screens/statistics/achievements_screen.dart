@@ -6,6 +6,7 @@ import '../../../core/constants/layout.dart';
 import '../../../domain/entities/achievement.dart';
 import '../../../domain/usecases/evaluate_achievements.dart';
 import '../../providers/achievements_provider.dart';
+import '../../widgets/koru_pull_to_refresh.dart';
 
 /// Schermata full list degli achievement, raggruppati per categoria,
 /// con progress bar "X / target" per ciascuno.
@@ -20,73 +21,76 @@ class AchievementsScreen extends ConsumerWidget {
     final unlocked = unlockedAsync.valueOrNull ?? const <String>{};
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Achievements'),
-      ),
-      body: statsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('$e')),
-        data: (stats) {
-          final byCategory = <AchievementCategory, List<Achievement>>{};
-          for (final a in kAchievementCatalog) {
-            byCategory.putIfAbsent(a.category, () => []).add(a);
-          }
+      appBar: AppBar(title: const Text('Achievements')),
+      body: KoruPullToRefresh(
+        child: statsAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text('$e')),
+          data: (stats) {
+            final byCategory = <AchievementCategory, List<Achievement>>{};
+            for (final a in kAchievementCatalog) {
+              byCategory.putIfAbsent(a.category, () => []).add(a);
+            }
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, kBottomNavClearance),
-            children: [
-              _HeaderCard(
-                unlockedCount: unlocked.length,
-                totalCount: kAchievementCatalog.length,
+            return ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(
+                16,
+                8,
+                16,
+                kBottomNavClearance,
               ),
-              const SizedBox(height: 16),
-              for (final entry in byCategory.entries) ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
-                  child: Text(
-                    _categoryLabel(entry.key).toUpperCase(),
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: KoruColors.textSecondary,
-                          letterSpacing: 2,
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
+              children: [
+                _HeaderCard(
+                  unlockedCount: unlocked.length,
+                  totalCount: kAchievementCatalog.length,
                 ),
-                for (final a in entry.value)
-                  _AchievementTile(
-                    achievement: a,
-                    unlocked: unlocked.contains(a.id),
-                    progress: achievementProgress(a, stats),
+                const SizedBox(height: 16),
+                for (final entry in byCategory.entries) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+                    child: Text(
+                      _categoryLabel(entry.key).toUpperCase(),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: KoruColors.textSecondary,
+                        letterSpacing: 2,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
-                const SizedBox(height: 8),
+                  for (final a in entry.value)
+                    _AchievementTile(
+                      achievement: a,
+                      unlocked: unlocked.contains(a.id),
+                      progress: achievementProgress(a, stats),
+                    ),
+                  const SizedBox(height: 8),
+                ],
               ],
-            ],
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
 }
 
 String _categoryLabel(AchievementCategory c) => switch (c) {
-      AchievementCategory.focus => 'Focus',
-      AchievementCategory.consistency => 'Consistency',
-      AchievementCategory.discipline => 'Discipline',
-      AchievementCategory.setup => 'Setup',
-    };
+  AchievementCategory.focus => 'Focus',
+  AchievementCategory.consistency => 'Consistency',
+  AchievementCategory.discipline => 'Discipline',
+  AchievementCategory.setup => 'Setup',
+};
 
 Color _tintFor(AchievementCategory c) => switch (c) {
-      AchievementCategory.focus => KoruColors.primary,
-      AchievementCategory.consistency => KoruColors.secondary,
-      AchievementCategory.discipline => KoruColors.danger,
-      AchievementCategory.setup => KoruColors.textSecondary,
-    };
+  AchievementCategory.focus => KoruColors.primary,
+  AchievementCategory.consistency => KoruColors.secondary,
+  AchievementCategory.discipline => KoruColors.danger,
+  AchievementCategory.setup => KoruColors.textSecondary,
+};
 
 class _HeaderCard extends StatelessWidget {
-  const _HeaderCard({
-    required this.unlockedCount,
-    required this.totalCount,
-  });
+  const _HeaderCard({required this.unlockedCount, required this.totalCount});
 
   final int unlockedCount;
   final int totalCount;
@@ -106,15 +110,15 @@ class _HeaderCard extends StatelessWidget {
                 Text(
                   '$unlockedCount',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        color: KoruColors.primary,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    color: KoruColors.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 Text(
                   ' / $totalCount unlocked',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: KoruColors.textSecondary,
-                      ),
+                    color: KoruColors.textSecondary,
+                  ),
                 ),
               ],
             ),
@@ -125,8 +129,9 @@ class _HeaderCard extends StatelessWidget {
                 value: pct,
                 minHeight: 6,
                 backgroundColor: KoruColors.backgroundBase,
-                valueColor:
-                    const AlwaysStoppedAnimation<Color>(KoruColors.primary),
+                valueColor: const AlwaysStoppedAnimation<Color>(
+                  KoruColors.primary,
+                ),
               ),
             ),
           ],
@@ -150,8 +155,9 @@ class _AchievementTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tint = _tintFor(achievement.category);
-    final fraction =
-        achievement.target == 0 ? 0.0 : (progress / achievement.target).clamp(0.0, 1.0);
+    final fraction = achievement.target == 0
+        ? 0.0
+        : (progress / achievement.target).clamp(0.0, 1.0);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Container(

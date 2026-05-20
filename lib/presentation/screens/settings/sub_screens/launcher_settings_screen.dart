@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
 import '../../../../platform/permission_channel.dart';
+import '../../../widgets/koru_pull_to_refresh.dart';
 
 class LauncherSettingsScreen extends ConsumerStatefulWidget {
   const LauncherSettingsScreen({super.key});
@@ -13,8 +14,7 @@ class LauncherSettingsScreen extends ConsumerStatefulWidget {
       _LauncherSettingsScreenState();
 }
 
-class _LauncherSettingsScreenState
-    extends ConsumerState<LauncherSettingsScreen>
+class _LauncherSettingsScreenState extends ConsumerState<LauncherSettingsScreen>
     with WidgetsBindingObserver {
   bool _modeEnabled = false;
   bool _isDefault = false;
@@ -62,59 +62,63 @@ class _LauncherSettingsScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Launcher')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            color: _isDefault ? KoruColors.successContainer : null,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        _isDefault ? Icons.check_circle : Icons.home_outlined,
-                        color: _isDefault
-                            ? KoruColors.success
-                            : KoruColors.textSecondary,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _isDefault
-                              ? 'Koru is your default launcher'
-                              : 'Koru is not your default launcher',
-                          style: Theme.of(context).textTheme.titleMedium,
+      body: KoruPullToRefresh(
+        onRefresh: _refresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          children: [
+            Card(
+              color: _isDefault ? KoruColors.successContainer : null,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          _isDefault ? Icons.check_circle : Icons.home_outlined,
+                          color: _isDefault
+                              ? KoruColors.success
+                              : KoruColors.textSecondary,
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            _isDefault
+                                ? 'Koru is your default launcher'
+                                : 'Koru is not your default launcher',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: _modeEnabled,
-            onChanged: _toggleMode,
-            title: const Text('Make Koru selectable as launcher'),
-            subtitle: const Text(
-              'Enables the HOME activity. You still need to pick Koru '
-              'in the system chooser.',
+            const SizedBox(height: 16),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _modeEnabled,
+              onChanged: _toggleMode,
+              title: const Text('Make Koru selectable as launcher'),
+              subtitle: const Text(
+                'Enables the HOME activity. You still need to pick Koru '
+                'in the system chooser.',
+              ),
             ),
-          ),
-          if (_modeEnabled) ...[
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.settings_outlined),
-              label: const Text('Open system launcher picker'),
-              onPressed: () => _channel.openDefaultLauncherSettings(),
-            ),
+            if (_modeEnabled) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.settings_outlined),
+                label: const Text('Open system launcher picker'),
+                onPressed: () => _channel.openDefaultLauncherSettings(),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

@@ -6,6 +6,7 @@ import '../../../../core/constants/koru_colors.dart';
 import '../../../../platform/blocking_channel.dart';
 import '../../../providers/app_list_provider.dart';
 import '../../../providers/profile_providers.dart';
+import '../../../widgets/koru_pull_to_refresh.dart';
 
 /// Seleziona le app da bloccare (blocklist) o consentire (allowlist) per un profilo.
 class SetBlockedAppsScreen extends ConsumerStatefulWidget {
@@ -48,8 +49,9 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
     // refresh forzato: profileByIdProvider è una FutureProvider cached,
     // quindi senza invalidation espliciva ritornerebbe stale data tra
     // visite ripetute.
-    final profile = await ref
-        .refresh(profileByIdProvider(widget.profileId).future);
+    final profile = await ref.refresh(
+      profileByIdProvider(widget.profileId).future,
+    );
     if (!mounted) return;
     setState(() {
       _loaded = true;
@@ -57,7 +59,8 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
       // includevamo anche relations create per in-app sections o overlay
       // custom (isEnabled=false), che apparivano "pre-selezionate" senza
       // essere realmente bloccate.
-      _selected = profile?.apps
+      _selected =
+          profile?.apps
               .where((a) => a.isEnabled)
               .map((a) => a.packageName)
               .toSet() ??
@@ -80,9 +83,11 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) return apps;
     return apps
-        .where((a) =>
-            a.label.toLowerCase().contains(q) ||
-            a.packageName.toLowerCase().contains(q))
+        .where(
+          (a) =>
+              a.label.toLowerCase().contains(q) ||
+              a.packageName.toLowerCase().contains(q),
+        )
         .toList(growable: false);
   }
 
@@ -104,13 +109,17 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
               decoration: InputDecoration(
                 isDense: true,
                 hintText: 'Search apps',
-                prefixIcon: const Icon(Icons.search,
-                    color: KoruColors.textSecondary),
+                prefixIcon: const Icon(
+                  Icons.search,
+                  color: KoruColors.textSecondary,
+                ),
                 suffixIcon: _query.isEmpty
                     ? null
                     : IconButton(
-                        icon: const Icon(Icons.close,
-                            color: KoruColors.textSecondary),
+                        icon: const Icon(
+                          Icons.close,
+                          color: KoruColors.textSecondary,
+                        ),
                         onPressed: () {
                           _searchController.clear();
                           setState(() => _query = '');
@@ -127,63 +136,69 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
           ),
         ),
       ),
-      body: appsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('$e')),
-        data: (apps) {
-          if (!_loaded) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final filtered = _filter(apps);
-          if (filtered.isEmpty) {
-            return Center(
-              child: Text(
-                'No apps matching "$_query"',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+      body: KoruPullToRefresh(
+        child: appsAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text('$e')),
+          data: (apps) {
+            if (!_loaded) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final filtered = _filter(apps);
+            if (filtered.isEmpty) {
+              return Center(
+                child: Text(
+                  'No apps matching "$_query"',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: KoruColors.textSecondary,
+                  ),
+                ),
+              );
+            }
+            return ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              itemCount: filtered.length,
+              itemBuilder: (context, i) {
+                final app = filtered[i];
+                final checked = _selected.contains(app.packageName);
+                return CheckboxListTile(
+                  value: checked,
+                  activeColor: KoruColors.primary,
+                  checkColor: Colors.white,
+                  side: const BorderSide(
+                    color: KoruColors.textSecondary,
+                    width: 1.5,
+                  ),
+                  secondary: app.iconBytes != null
+                      ? Image.memory(app.iconBytes!, width: 40, height: 40)
+                      : const SizedBox(width: 40),
+                  title: Text(
+                    app.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    app.packageName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: KoruColors.textSecondary,
                     ),
-              ),
+                  ),
+                  onChanged: (v) {
+                    setState(() {
+                      if (v ?? false) {
+                        _selected.add(app.packageName);
+                      } else {
+                        _selected.remove(app.packageName);
+                      }
+                    });
+                  },
+                );
+              },
             );
-          }
-          return ListView.builder(
-            itemCount: filtered.length,
-            itemBuilder: (context, i) {
-              final app = filtered[i];
-              final checked = _selected.contains(app.packageName);
-              return CheckboxListTile(
-                value: checked,
-                activeColor: KoruColors.primary,
-                checkColor: Colors.white,
-                side: const BorderSide(
-                  color: KoruColors.textSecondary,
-                  width: 1.5,
-                ),
-                secondary: app.iconBytes != null
-                    ? Image.memory(app.iconBytes!, width: 40, height: 40)
-                    : const SizedBox(width: 40),
-                title: Text(app.label,
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text(
-                  app.packageName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: KoruColors.textSecondary,
-                      ),
-                ),
-                onChanged: (v) {
-                  setState(() {
-                    if (v ?? false) {
-                      _selected.add(app.packageName);
-                    } else {
-                      _selected.remove(app.packageName);
-                    }
-                  });
-                },
-              );
-            },
-          );
-        },
+          },
+        ),
       ),
     );
   }

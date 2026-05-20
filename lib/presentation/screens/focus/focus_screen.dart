@@ -8,6 +8,7 @@ import '../../../core/constants/layout.dart';
 import '../../../core/di/providers.dart';
 import '../../providers/focus_session_provider.dart';
 import '../../providers/focus_whitelist_provider.dart';
+import '../../widgets/koru_pull_to_refresh.dart';
 
 /// Landing screen del Focus tab: editorial heading mindful + card Quick
 /// Block con chip preset (tap = start immediato) + card Pomodoro con
@@ -26,20 +27,23 @@ class FocusScreen extends ConsumerWidget {
         elevation: 0,
         scrolledUnderElevation: 0,
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, kBottomNavClearance),
-        children: [
-          if (isActive) ...[
-            _ActiveBanner(tick: tickAsync.valueOrNull!),
-            const SizedBox(height: 24),
-          ] else ...[
-            const _Heading(),
-            const SizedBox(height: 24),
+      body: KoruPullToRefresh(
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, kBottomNavClearance),
+          children: [
+            if (isActive) ...[
+              _ActiveBanner(tick: tickAsync.valueOrNull!),
+              const SizedBox(height: 24),
+            ] else ...[
+              const _Heading(),
+              const SizedBox(height: 24),
+            ],
+            const _QuickBlockCard(),
+            const SizedBox(height: 16),
+            const _PomodoroCard(),
           ],
-          const _QuickBlockCard(),
-          const SizedBox(height: 16),
-          const _PomodoroCard(),
-        ],
+        ),
       ),
     );
   }
@@ -53,8 +57,15 @@ class _Heading extends StatelessWidget {
   ({String title, String subtitle}) _copy() {
     final h = DateTime.now().hour;
     if (h < 5) return (title: 'Late hours.', subtitle: 'Be kind to the mind.');
-    if (h < 12) return (title: 'A quiet morning.', subtitle: 'Choose one thing.');
-    if (h < 18) return (title: 'A single hour.', subtitle: 'Close the door on everything else.');
+    if (h < 12) {
+      return (title: 'A quiet morning.', subtitle: 'Choose one thing.');
+    }
+    if (h < 18) {
+      return (
+        title: 'A single hour.',
+        subtitle: 'Close the door on everything else.',
+      );
+    }
     return (title: 'Evening focus.', subtitle: 'Wind down, not scroll down.');
   }
 
@@ -69,10 +80,10 @@ class _Heading extends StatelessWidget {
           Text(
             c.title,
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  color: KoruColors.textPrimary,
-                  fontWeight: FontWeight.w500,
-                  height: 1.1,
-                ),
+              color: KoruColors.textPrimary,
+              fontWeight: FontWeight.w500,
+              height: 1.1,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
@@ -99,7 +110,9 @@ class _QuickBlockCard extends ConsumerWidget {
   Future<void> _start(WidgetRef ref, int minutes) async {
     final blocking = ref.read(platformChannelServiceProvider).blocking;
     final whitelist = ref.read(focusWhitelistProvider(FocusMode.quickBlock));
-    await ref.read(hiveSettingsServiceProvider).put(
+    await ref
+        .read(hiveSettingsServiceProvider)
+        .put(
           HiveKeys.quickTogglesBox,
           HiveKeys.lastQuickBlockDurationMinutes,
           minutes,
@@ -128,10 +141,10 @@ class _QuickBlockCard extends ConsumerWidget {
         Text(
           'One tap. Phone quiet.',
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: KoruColors.textPrimary,
-                fontWeight: FontWeight.w500,
-                height: 1.15,
-              ),
+            color: KoruColors.textPrimary,
+            fontWeight: FontWeight.w500,
+            height: 1.15,
+          ),
         ),
         const SizedBox(height: 20),
         Row(
@@ -163,7 +176,12 @@ class _QuickBlockCard extends ConsumerWidget {
 class _PomodoroCard extends ConsumerWidget {
   const _PomodoroCard();
 
-  Future<void> _start(WidgetRef ref, int workMin, int breakMin, int cycles) async {
+  Future<void> _start(
+    WidgetRef ref,
+    int workMin,
+    int breakMin,
+    int cycles,
+  ) async {
     final blocking = ref.read(platformChannelServiceProvider).blocking;
     final whitelist = ref.read(focusWhitelistProvider(FocusMode.pomodoro));
     await blocking.startPomodoro(
@@ -178,14 +196,20 @@ class _PomodoroCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final hive = ref.watch(hiveSettingsServiceProvider);
     final work = hive.getInt(
-        HiveKeys.quickTogglesBox, HiveKeys.lastPomodoroWorkMinutes,
-        defaultValue: 25);
+      HiveKeys.quickTogglesBox,
+      HiveKeys.lastPomodoroWorkMinutes,
+      defaultValue: 25,
+    );
     final brk = hive.getInt(
-        HiveKeys.quickTogglesBox, HiveKeys.lastPomodoroBreakMinutes,
-        defaultValue: 5);
+      HiveKeys.quickTogglesBox,
+      HiveKeys.lastPomodoroBreakMinutes,
+      defaultValue: 5,
+    );
     final cycles = hive.getInt(
-        HiveKeys.quickTogglesBox, HiveKeys.lastPomodoroCycles,
-        defaultValue: 4);
+      HiveKeys.quickTogglesBox,
+      HiveKeys.lastPomodoroCycles,
+      defaultValue: 4,
+    );
     final totalMinutes = (work + brk) * cycles;
     final totalHours = totalMinutes / 60;
 
@@ -198,10 +222,10 @@ class _PomodoroCard extends ConsumerWidget {
         Text(
           '$work on, $brk off.\nRepeat until done.',
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: KoruColors.textPrimary,
-                fontWeight: FontWeight.w500,
-                height: 1.15,
-              ),
+            color: KoruColors.textPrimary,
+            fontWeight: FontWeight.w500,
+            height: 1.15,
+          ),
         ),
         const SizedBox(height: 20),
         Row(
@@ -215,9 +239,7 @@ class _PomodoroCard extends ConsumerWidget {
                 ),
               ),
             ),
-            _PlayButton(
-              onTap: () => _start(ref, work, brk, cycles),
-            ),
+            _PlayButton(onTap: () => _start(ref, work, brk, cycles)),
           ],
         ),
       ],
@@ -238,11 +260,7 @@ class _PomodoroCard extends ConsumerWidget {
 // ─── Shared primitives ──────────────────────────────────────────────────────
 
 class _Card extends StatelessWidget {
-  const _Card({
-    required this.children,
-    required this.onTap,
-    this.trailing,
-  });
+  const _Card({required this.children, required this.onTap, this.trailing});
   final List<Widget> children;
   final VoidCallback onTap;
 
@@ -267,8 +285,7 @@ class _Card extends StatelessWidget {
               ),
             ),
           ),
-          if (trailing != null)
-            Positioned(top: 8, right: 8, child: trailing!),
+          if (trailing != null) Positioned(top: 8, right: 8, child: trailing!),
         ],
       ),
     );
@@ -314,11 +331,7 @@ class _CloseButton extends StatelessWidget {
         customBorder: const CircleBorder(),
         child: const Padding(
           padding: EdgeInsets.all(8),
-          child: Icon(
-            Icons.close,
-            size: 18,
-            color: KoruColors.danger,
-          ),
+          child: Icon(Icons.close, size: 18, color: KoruColors.danger),
         ),
       ),
     );
@@ -368,9 +381,7 @@ class _PresetChip extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
-              color: selected
-                  ? KoruColors.primary
-                  : Colors.transparent,
+              color: selected ? KoruColors.primary : Colors.transparent,
               width: 1.2,
             ),
           ),
@@ -449,10 +460,10 @@ class _ActiveBanner extends ConsumerWidget {
         Text(
           _fmt(remainingMs),
           style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                color: KoruColors.textPrimary,
-                fontWeight: FontWeight.w500,
-                letterSpacing: 2,
-              ),
+            color: KoruColors.textPrimary,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 2,
+          ),
         ),
         const SizedBox(height: 16),
         ClipRRect(
@@ -461,8 +472,7 @@ class _ActiveBanner extends ConsumerWidget {
             value: progress.clamp(0, 1).toDouble(),
             minHeight: 5,
             backgroundColor: KoruColors.surfaceElevated,
-            valueColor:
-                const AlwaysStoppedAnimation<Color>(KoruColors.primary),
+            valueColor: const AlwaysStoppedAnimation<Color>(KoruColors.primary),
           ),
         ),
       ],

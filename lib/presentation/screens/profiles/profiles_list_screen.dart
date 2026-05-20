@@ -6,6 +6,7 @@ import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
 import '../../../data/models/profile_model.dart';
 import '../../providers/profile_providers.dart';
+import '../../widgets/koru_pull_to_refresh.dart';
 
 class ProfilesListScreen extends ConsumerWidget {
   const ProfilesListScreen({super.key});
@@ -33,19 +34,31 @@ class ProfilesListScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: profilesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, _) => Center(child: Text('$err')),
-        data: (profiles) {
-          if (profiles.isEmpty) return const _EmptyProfilesHint();
-          return ListView.separated(
-            padding:
-                const EdgeInsets.fromLTRB(16, 8, 16, kBottomNavClearance),
-            itemCount: profiles.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (context, i) => _ProfileCard(profile: profiles[i]),
-          );
-        },
+      body: KoruPullToRefresh(
+        child: profilesAsync.when(
+          loading: () => const KoruRefreshableViewport(
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          error: (err, _) =>
+              KoruRefreshableViewport(child: Center(child: Text('$err'))),
+          data: (profiles) {
+            if (profiles.isEmpty) {
+              return const KoruRefreshableViewport(child: _EmptyProfilesHint());
+            }
+            return ListView.separated(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(
+                16,
+                8,
+                16,
+                kBottomNavClearance,
+              ),
+              itemCount: profiles.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              itemBuilder: (context, i) => _ProfileCard(profile: profiles[i]),
+            );
+          },
+        ),
       ),
     );
   }
@@ -58,9 +71,11 @@ class _ProfileCard extends ConsumerWidget {
   String _buildSubtitle() {
     final parts = <String>[profile.dayFlagsLabel];
     if (profile.hasTimeCondition && profile.intervals.isNotEmpty) {
-      parts.add(profile.intervals
-          .map((iv) => '${_fmt(iv.fromMinutes)}\u2013${_fmt(iv.toMinutes)}')
-          .join(', '));
+      parts.add(
+        profile.intervals
+            .map((iv) => '${_fmt(iv.fromMinutes)}\u2013${_fmt(iv.toMinutes)}')
+            .join(', '),
+      );
     }
     return parts.join(' \u00b7 ');
   }
@@ -134,10 +149,7 @@ class _ProfileCard extends ConsumerWidget {
                 ),
               ),
               // Divider
-              Container(
-                height: 1,
-                color: KoruColors.surfaceElevated,
-              ),
+              Container(height: 1, color: KoruColors.surfaceElevated),
               // Footer: apps count + Edit
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 10, 10, 10),
@@ -157,13 +169,11 @@ class _ProfileCard extends ConsumerWidget {
                     TextButton(
                       style: TextButton.styleFrom(
                         foregroundColor: KoruColors.primary,
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 14),
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
                         minimumSize: const Size(0, 32),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      onPressed: () =>
-                          context.push('/profiles/${profile.id}'),
+                      onPressed: () => context.push('/profiles/${profile.id}'),
                       child: const Text(
                         'Edit',
                         style: TextStyle(fontWeight: FontWeight.w600),
@@ -213,8 +223,11 @@ class _EmptyProfilesHint extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.shield_outlined,
-                size: 64, color: KoruColors.textSecondary),
+            const Icon(
+              Icons.shield_outlined,
+              size: 64,
+              color: KoruColors.textSecondary,
+            ),
             const SizedBox(height: 16),
             Text(
               'No profiles yet',
@@ -225,9 +238,9 @@ class _EmptyProfilesHint extends StatelessWidget {
               'Tap + to create your first profile and pick when and which '
               'apps to block.',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: KoruColors.textSecondary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: KoruColors.textSecondary),
             ),
           ],
         ),

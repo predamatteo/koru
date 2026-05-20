@@ -8,6 +8,7 @@ import '../../../core/constants/layout.dart';
 import '../../../core/di/providers.dart';
 import '../../providers/focus_session_provider.dart';
 import '../../providers/focus_whitelist_provider.dart';
+import '../../widgets/koru_pull_to_refresh.dart';
 
 class QuickBlockScreen extends ConsumerStatefulWidget {
   const QuickBlockScreen({super.key});
@@ -34,7 +35,9 @@ class _QuickBlockScreenState extends ConsumerState<QuickBlockScreen> {
   Future<void> _start() async {
     final blocking = ref.read(platformChannelServiceProvider).blocking;
     final whitelist = ref.read(focusWhitelistProvider(FocusMode.quickBlock));
-    await ref.read(hiveSettingsServiceProvider).put(
+    await ref
+        .read(hiveSettingsServiceProvider)
+        .put(
           HiveKeys.quickTogglesBox,
           HiveKeys.lastQuickBlockDurationMinutes,
           _minutes,
@@ -63,40 +66,43 @@ class _QuickBlockScreenState extends ConsumerState<QuickBlockScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, kBottomNavClearance),
-        children: [
-          if (isActive)
-            _ActiveCard(tick: tick!, onStop: _stop)
-          else ...[
-            const _SectionLabel('Duration'),
-            const SizedBox(height: 10),
-            _DurationStepper(
-              value: _minutes,
-              min: 5,
-              max: 240,
-              step: 5,
-              onChanged: (v) => setState(() => _minutes = v),
-            ),
-            const SizedBox(height: 14),
-            _PresetRow(
-              presets: _presets,
-              selected: _minutes,
-              onTap: (v) => setState(() => _minutes = v),
-            ),
-            const SizedBox(height: 24),
-            const _SectionLabel('Whitelist'),
-            const SizedBox(height: 10),
-            _WhitelistCard(
-              onTap: () => context.push('/focus/quick/whitelist'),
-            ),
-            const SizedBox(height: 32),
-            _StartButton(
-              label: 'Start ${_formatDuration(_minutes)}',
-              onTap: _start,
-            ),
+      body: KoruPullToRefresh(
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, kBottomNavClearance),
+          children: [
+            if (isActive)
+              _ActiveCard(tick: tick!, onStop: _stop)
+            else ...[
+              const _SectionLabel('Duration'),
+              const SizedBox(height: 10),
+              _DurationStepper(
+                value: _minutes,
+                min: 5,
+                max: 240,
+                step: 5,
+                onChanged: (v) => setState(() => _minutes = v),
+              ),
+              const SizedBox(height: 14),
+              _PresetRow(
+                presets: _presets,
+                selected: _minutes,
+                onTap: (v) => setState(() => _minutes = v),
+              ),
+              const SizedBox(height: 24),
+              const _SectionLabel('Whitelist'),
+              const SizedBox(height: 10),
+              _WhitelistCard(
+                onTap: () => context.push('/focus/quick/whitelist'),
+              ),
+              const SizedBox(height: 32),
+              _StartButton(
+                label: 'Start ${_formatDuration(_minutes)}',
+                onTap: _start,
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -150,8 +156,9 @@ class _ActiveCard extends StatelessWidget {
               value: progress.clamp(0, 1).toDouble(),
               minHeight: 5,
               backgroundColor: KoruColors.surfaceElevated,
-              valueColor:
-                  const AlwaysStoppedAnimation<Color>(KoruColors.primary),
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                KoruColors.primary,
+              ),
             ),
           ),
           const SizedBox(height: 24),
@@ -198,8 +205,7 @@ class _DurationStepper extends StatelessWidget {
           _StepperButton(
             icon: Icons.remove,
             enabled: value > min,
-            onTap: () =>
-                onChanged((value - step).clamp(min, max).toInt()),
+            onTap: () => onChanged((value - step).clamp(min, max).toInt()),
           ),
           Expanded(
             child: Column(
@@ -229,8 +235,7 @@ class _DurationStepper extends StatelessWidget {
           _StepperButton(
             icon: Icons.add,
             enabled: value < max,
-            onTap: () =>
-                onChanged((value + step).clamp(min, max).toInt()),
+            onTap: () => onChanged((value + step).clamp(min, max).toInt()),
           ),
         ],
       ),
@@ -316,9 +321,7 @@ class _PresetChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: selected
-          ? KoruColors.primary.withAlpha(40)
-          : KoruColors.surface,
+      color: selected ? KoruColors.primary.withAlpha(40) : KoruColors.surface,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         onTap: onTap,
@@ -357,8 +360,11 @@ class _WhitelistCard extends StatelessWidget {
       onTap: onTap,
       child: Row(
         children: [
-          const Icon(Icons.playlist_add_check,
-              color: KoruColors.primary, size: 22),
+          const Icon(
+            Icons.playlist_add_check,
+            color: KoruColors.primary,
+            size: 22,
+          ),
           const SizedBox(width: 14),
           const Expanded(
             child: Column(
@@ -383,8 +389,10 @@ class _WhitelistCard extends StatelessWidget {
               ],
             ),
           ),
-          Icon(Icons.chevron_right,
-              color: KoruColors.textSecondary.withAlpha(140)),
+          Icon(
+            Icons.chevron_right,
+            color: KoruColors.textSecondary.withAlpha(140),
+          ),
         ],
       ),
     );

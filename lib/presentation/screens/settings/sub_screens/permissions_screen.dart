@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
 import '../../../../platform/permission_channel.dart';
+import '../../../widgets/koru_pull_to_refresh.dart';
 
 /// Gestione permessi post-onboarding (utente che aveva premuto "Skip for now"
 /// o vuole verificare lo stato). Riutilizza il pattern di onboarding con
@@ -50,52 +51,56 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen>
     final s = _status;
     return Scaffold(
       appBar: AppBar(title: const Text('Permissions')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(
-            'Koru only runs on your device. Nothing ever leaves it.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: KoruColors.textSecondary,
-                ),
-          ),
-          const SizedBox(height: 16),
-          _PermTile(
-            title: 'Accessibility',
-            subtitle: 'Detect when you open a distracting app.',
-            granted: s?.accessibility ?? false,
-            required: true,
-            onGrant: () => _channel.openAccessibilitySettings(),
-          ),
-          _PermTile(
-            title: 'Usage access',
-            subtitle: 'Read time spent per app.',
-            granted: s?.usageStats ?? false,
-            required: true,
-            onGrant: () => _channel.openUsageStatsSettings(),
-          ),
-          _PermTile(
-            title: 'Display over other apps',
-            subtitle: 'Show the mindful overlay.',
-            granted: s?.overlay ?? false,
-            required: true,
-            onGrant: () => _channel.openOverlaySettings(),
-          ),
-          _PermTile(
-            title: 'Battery optimization',
-            subtitle: 'Keep the blocking engine alive in background.',
-            granted: s?.batteryOptimizationIgnored ?? false,
-            required: false,
-            onGrant: () => _channel.requestDisableBatteryOptimization(),
-          ),
-          _PermTile(
-            title: 'Notification listener',
-            subtitle: 'Filter notifications from blocked apps (Phase 2).',
-            granted: s?.notificationListener ?? false,
-            required: false,
-            onGrant: () => _channel.openNotificationListenerSettings(),
-          ),
-        ],
+      body: KoruPullToRefresh(
+        onRefresh: _refresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text(
+              'Koru only runs on your device. Nothing ever leaves it.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: KoruColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            _PermTile(
+              title: 'Accessibility',
+              subtitle: 'Detect when you open a distracting app.',
+              granted: s?.accessibility ?? false,
+              required: true,
+              onGrant: () => _channel.openAccessibilitySettings(),
+            ),
+            _PermTile(
+              title: 'Usage access',
+              subtitle: 'Read time spent per app.',
+              granted: s?.usageStats ?? false,
+              required: true,
+              onGrant: () => _channel.openUsageStatsSettings(),
+            ),
+            _PermTile(
+              title: 'Display over other apps',
+              subtitle: 'Show the mindful overlay.',
+              granted: s?.overlay ?? false,
+              required: true,
+              onGrant: () => _channel.openOverlaySettings(),
+            ),
+            _PermTile(
+              title: 'Battery optimization',
+              subtitle: 'Keep the blocking engine alive in background.',
+              granted: s?.batteryOptimizationIgnored ?? false,
+              required: false,
+              onGrant: () => _channel.requestDisableBatteryOptimization(),
+            ),
+            _PermTile(
+              title: 'Notification listener',
+              subtitle: 'Filter notifications from blocked apps (Phase 2).',
+              granted: s?.notificationListener ?? false,
+              required: false,
+              onGrant: () => _channel.openNotificationListenerSettings(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -140,9 +145,9 @@ class _PermTile extends StatelessWidget {
               child: Text(
                 'Required',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: KoruColors.textPrimary,
-                      letterSpacing: 1,
-                    ),
+                  color: KoruColors.textPrimary,
+                  letterSpacing: 1,
+                ),
               ),
             ),
         ],

@@ -12,6 +12,7 @@ import '../../providers/app_list_provider.dart';
 import '../../providers/mood_provider.dart';
 import '../../providers/screen_time_provider.dart';
 import '../../providers/statistics_providers.dart';
+import '../../widgets/koru_pull_to_refresh.dart';
 import '../mood/mood_check_in_sheet.dart';
 import 'widgets/achievements_grid.dart';
 import 'widgets/streaks_row.dart';
@@ -27,17 +28,9 @@ class StatisticsScreen extends ConsumerWidget {
         elevation: 0,
         scrolledUnderElevation: 0,
       ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(periodUsageProvider);
-          ref.invalidate(blockTriggeredCountProvider);
-          ref.invalidate(blockSkippedCountProvider);
-          ref.invalidate(perAppBreakdownProvider);
-          ref.invalidate(topIntentionsProvider);
-          ref.invalidate(focusTimeMsProvider);
-          ref.invalidate(todayMoodProvider);
-        },
+      body: KoruPullToRefresh(
         child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 8, 16, kBottomNavClearance),
           children: const [
             _PeriodSwitcher(),
@@ -187,19 +180,16 @@ class _DeltaText extends StatelessWidget {
   final StatisticsPeriod period;
 
   String _periodRef() => switch (period) {
-        StatisticsPeriod.today => 'yesterday',
-        StatisticsPeriod.week => 'last week',
-      };
+    StatisticsPeriod.today => 'yesterday',
+    StatisticsPeriod.week => 'last week',
+  };
 
   @override
   Widget build(BuildContext context) {
     if (previous == 0) {
       return Text(
         'no data from ${_periodRef()}',
-        style: const TextStyle(
-          color: KoruColors.textSecondary,
-          fontSize: 13,
-        ),
+        style: const TextStyle(color: KoruColors.textSecondary, fontSize: 13),
       );
     }
     final diff = current - previous;
@@ -319,8 +309,7 @@ class _AppUsageRow extends StatelessWidget {
             value: fraction.clamp(0, 1).toDouble(),
             minHeight: 5,
             backgroundColor: KoruColors.surfaceElevated,
-            valueColor:
-                const AlwaysStoppedAnimation<Color>(KoruColors.primary),
+            valueColor: const AlwaysStoppedAnimation<Color>(KoruColors.primary),
           ),
         ),
       ],
@@ -357,10 +346,7 @@ class _InterventionsCard extends ConsumerWidget {
             width: 90,
             height: 90,
             child: CustomPaint(
-              painter: _DonutPainter(
-                total: total,
-                respected: respected,
-              ),
+              painter: _DonutPainter(total: total, respected: respected),
             ),
           ),
           const SizedBox(width: 20),
@@ -410,10 +396,7 @@ class _LegendRow extends StatelessWidget {
         Expanded(
           child: Text(
             label,
-            style: const TextStyle(
-              color: KoruColors.textPrimary,
-              fontSize: 14,
-            ),
+            style: const TextStyle(color: KoruColors.textPrimary, fontSize: 14),
           ),
         ),
       ],
@@ -481,12 +464,12 @@ class _MoodJournalCard extends ConsumerWidget {
   const _MoodJournalCard();
 
   String _emojiFor(int mood) => switch (mood) {
-        1 => '😫',
-        2 => '😔',
-        3 => '😐',
-        4 => '🙂',
-        _ => '😊',
-      };
+    1 => '😫',
+    2 => '😔',
+    3 => '😐',
+    4 => '🙂',
+    _ => '😊',
+  };
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -538,8 +521,10 @@ class _MoodJournalCard extends ConsumerWidget {
           ),
           IconButton(
             tooltip: 'Journal',
-            icon: const Icon(Icons.edit_note_outlined,
-                color: KoruColors.textSecondary),
+            icon: const Icon(
+              Icons.edit_note_outlined,
+              color: KoruColors.textSecondary,
+            ),
             onPressed: () => context.push('/stats/journal'),
           ),
         ],

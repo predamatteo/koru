@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
 import '../../providers/journal_provider.dart';
+import '../../widgets/koru_pull_to_refresh.dart';
 
 /// Schermata journaling: editor per la entry di oggi + lista cronologica
 /// delle entry precedenti (ultimi 100 giorni). Una entry per giorno, upsert.
@@ -33,9 +34,9 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
     await ref.read(journalNotifierProvider).saveToday(text);
     if (mounted) {
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Entry saved')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Entry saved')));
     }
   }
 
@@ -62,77 +63,82 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, kBottomNavClearance),
-        children: [
-          Text(
-            'Today · ${DateFormat('EEE, d MMM').format(DateTime.now())}',
-            style: const TextStyle(
-              color: KoruColors.textSecondary,
-              fontSize: 12,
-              letterSpacing: 1.2,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            decoration: BoxDecoration(
-              color: KoruColors.surface,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            padding: const EdgeInsets.all(12),
-            child: TextField(
-              controller: _controller,
-              maxLines: null,
-              minLines: 6,
-              decoration: const InputDecoration(
-                hintText: 'What are you noticing today?',
-                hintStyle: TextStyle(color: KoruColors.textSecondary),
-                border: InputBorder.none,
+      body: KoruPullToRefresh(
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, kBottomNavClearance),
+          children: [
+            Text(
+              'Today · ${DateFormat('EEE, d MMM').format(DateTime.now())}',
+              style: const TextStyle(
+                color: KoruColors.textSecondary,
+                fontSize: 12,
+                letterSpacing: 1.2,
               ),
-              style: const TextStyle(height: 1.4),
             ),
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'PAST ENTRIES',
-            style: TextStyle(
-              color: KoruColors.textSecondary,
-              letterSpacing: 2,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                color: KoruColors.surface,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.all(12),
+              child: TextField(
+                controller: _controller,
+                maxLines: null,
+                minLines: 6,
+                decoration: const InputDecoration(
+                  hintText: 'What are you noticing today?',
+                  hintStyle: TextStyle(color: KoruColors.textSecondary),
+                  border: InputBorder.none,
+                ),
+                style: const TextStyle(height: 1.4),
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          allAsync.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.all(24),
-              child: Center(child: CircularProgressIndicator()),
+            const SizedBox(height: 24),
+            const Text(
+              'PAST ENTRIES',
+              style: TextStyle(
+                color: KoruColors.textSecondary,
+                letterSpacing: 2,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-            error: (e, _) => Text('$e'),
-            data: (entries) {
-              final past = entries.skip(1).toList(); // exclude today, already shown in editor
-              if (past.isEmpty) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  child: Text(
-                    'No past entries yet. Come back tomorrow.',
-                    style: TextStyle(color: KoruColors.textSecondary),
-                  ),
-                );
-              }
-              return Column(
-                children: [
-                  for (final e in past)
-                    _PastEntryCard(
-                      dayKey: e.dayStartDate,
-                      body: e.body,
-                      updatedAt: e.updatedAt,
+            const SizedBox(height: 8),
+            allAsync.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+              error: (e, _) => Text('$e'),
+              data: (entries) {
+                final past = entries
+                    .skip(1)
+                    .toList(); // exclude today, already shown in editor
+                if (past.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Text(
+                      'No past entries yet. Come back tomorrow.',
+                      style: TextStyle(color: KoruColors.textSecondary),
                     ),
-                ],
-              );
-            },
-          ),
-        ],
+                  );
+                }
+                return Column(
+                  children: [
+                    for (final e in past)
+                      _PastEntryCard(
+                        dayKey: e.dayStartDate,
+                        body: e.body,
+                        updatedAt: e.updatedAt,
+                      ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

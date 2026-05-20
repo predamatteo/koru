@@ -10,6 +10,7 @@ import '../../providers/app_list_provider.dart';
 import '../../providers/events_refresher.dart';
 import '../../providers/profile_providers.dart';
 import '../../providers/statistics_providers.dart';
+import '../../widgets/koru_pull_to_refresh.dart';
 import 'widgets/accessibility_health_banner.dart';
 import 'widgets/today_limits_card.dart';
 
@@ -37,23 +38,26 @@ class HomeScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Koru')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, kBottomNavClearance),
-        children: [
-          const AccessibilityHealthBanner(),
-          const _GreetingCard(),
-          const SizedBox(height: 12),
-          _ActiveProfileCard(
-            totalProfiles: allProfiles.length,
-            activeProfiles: activeProfiles,
-          ),
-          const SizedBox(height: 12),
-          _TodayStatsRow(blocksToday: blocksToday, focusMs: focusMs),
-          const SizedBox(height: 12),
-          const TodayLimitsCard(),
-          const SizedBox(height: 12),
-          const _QuickActionsCard(),
-        ],
+      body: KoruPullToRefresh(
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, kBottomNavClearance),
+          children: [
+            const AccessibilityHealthBanner(),
+            const _GreetingCard(),
+            const SizedBox(height: 12),
+            _ActiveProfileCard(
+              totalProfiles: allProfiles.length,
+              activeProfiles: activeProfiles,
+            ),
+            const SizedBox(height: 12),
+            _TodayStatsRow(blocksToday: blocksToday, focusMs: focusMs),
+            const SizedBox(height: 12),
+            const TodayLimitsCard(),
+            const SizedBox(height: 12),
+            const _QuickActionsCard(),
+          ],
+        ),
       ),
     );
   }
@@ -79,16 +83,13 @@ class _GreetingCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              _greeting(),
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
+            Text(_greeting(), style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 4),
             Text(
               'Take a breath. What do you want to focus on today?',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: KoruColors.textSecondary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: KoruColors.textSecondary),
             ),
           ],
         ),
@@ -118,13 +119,16 @@ class _ActiveProfileCard extends StatelessWidget {
       title = activeProfiles.map((p) => p.title).join(' · ');
     } else if (hasAny) {
       eyebrow = 'No profile active now';
-      title = '$totalProfiles ${totalProfiles == 1 ? 'profile' : 'profiles'} configured';
+      title =
+          '$totalProfiles ${totalProfiles == 1 ? 'profile' : 'profiles'} configured';
     } else {
       eyebrow = 'No profiles yet';
       title = 'Create one to get started';
     }
 
-    final primaryActive = activeProfiles.isNotEmpty ? activeProfiles.first : null;
+    final primaryActive = activeProfiles.isNotEmpty
+        ? activeProfiles.first
+        : null;
     final primaryActiveColor = primaryActive == null
         ? KoruColors.textSecondary
         : _parseHex(primaryActive.colorHex);
@@ -144,7 +148,9 @@ class _ActiveProfileCard extends StatelessWidget {
                   backgroundColor: primaryActiveColor.withValues(alpha: 0.2),
                   foregroundColor: primaryActiveColor,
                   child: Text(
-                    primaryActive!.emoji == 'NoIcon' ? '🌱' : primaryActive.emoji,
+                    primaryActive!.emoji == 'NoIcon'
+                        ? '🌱'
+                        : primaryActive.emoji,
                     style: const TextStyle(fontSize: 18),
                   ),
                 )
@@ -162,15 +168,12 @@ class _ActiveProfileCard extends StatelessWidget {
                     Text(
                       eyebrow,
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: KoruColors.textSecondary,
-                            letterSpacing: 2,
-                          ),
+                        color: KoruColors.textSecondary,
+                        letterSpacing: 2,
+                      ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
+                    Text(title, style: Theme.of(context).textTheme.titleMedium),
                   ],
                 ),
               ),
@@ -251,9 +254,9 @@ class _MiniStat extends StatelessWidget {
             Text(value, style: Theme.of(context).textTheme.headlineSmall),
             Text(
               label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: KoruColors.textSecondary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: KoruColors.textSecondary),
             ),
           ],
         ),
@@ -279,28 +282,34 @@ class _QuickActionsCard extends ConsumerWidget {
               child: Text(
                 'Quick actions',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: KoruColors.textSecondary,
-                      letterSpacing: 2,
-                    ),
+                  color: KoruColors.textSecondary,
+                  letterSpacing: 2,
+                ),
               ),
             ),
             ListTile(
-              leading: const Icon(Icons.timer_outlined,
-                  color: KoruColors.primary),
+              leading: const Icon(
+                Icons.timer_outlined,
+                color: KoruColors.primary,
+              ),
               title: const Text('Quick block'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => GoRouter.of(context).go('/focus/quick'),
             ),
             ListTile(
-              leading: const Icon(Icons.hourglass_bottom_outlined,
-                  color: KoruColors.primary),
+              leading: const Icon(
+                Icons.hourglass_bottom_outlined,
+                color: KoruColors.primary,
+              ),
               title: const Text('Pomodoro'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => GoRouter.of(context).go('/focus/pomodoro'),
             ),
             ListTile(
-              leading: const Icon(Icons.shield_outlined,
-                  color: KoruColors.primary),
+              leading: const Icon(
+                Icons.shield_outlined,
+                color: KoruColors.primary,
+              ),
               title: const Text('Manage profiles'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => GoRouter.of(context).go('/profiles'),

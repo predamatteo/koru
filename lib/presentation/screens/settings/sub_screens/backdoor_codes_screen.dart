@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
 import '../../../../platform/strict_mode_channel.dart';
+import '../../../widgets/koru_pull_to_refresh.dart';
 
 class BackdoorCodesScreen extends ConsumerStatefulWidget {
   const BackdoorCodesScreen({super.key});
@@ -136,92 +137,93 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Backdoor codes')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            color: KoruColors.secondaryContainer,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Your current weekly code',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 16),
-                  SelectableText(
-                    _currentCode ?? '••••••••',
-                    style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                          letterSpacing: 8,
-                          fontWeight: FontWeight.w700,
-                          fontFamily: 'Orbitron',
-                        ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Copia il codice in un posto sicuro. Ruota ogni settimana, '
-                    'è generato in modo casuale sul tuo dispositivo, funziona '
-                    'offline, e ogni codice è single-use: appena lo usi per '
-                    'sbloccare lo strict mode viene sostituito da uno nuovo.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: KoruColors.textSecondary,
-                          height: 1.4,
-                        ),
-                  ),
-                ],
+      body: KoruPullToRefresh(
+        onRefresh: _refreshCounters,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          children: [
+            Card(
+              color: KoruColors.secondaryContainer,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Your current weekly code',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 16),
+                    SelectableText(
+                      _currentCode ?? '••••••••',
+                      style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                        letterSpacing: 8,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'Orbitron',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Copia il codice in un posto sicuro. Ruota ogni settimana, '
+                      'è generato in modo casuale sul tuo dispositivo, funziona '
+                      'offline, e ogni codice è single-use: appena lo usi per '
+                      'sbloccare lo strict mode viene sostituito da uno nuovo.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: KoruColors.textSecondary,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Emergency unblock',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _codeController,
-            enabled: !inLockout && !_submitting,
-            textCapitalization: TextCapitalization.characters,
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
-              LengthLimitingTextInputFormatter(16),
-            ],
-            decoration: InputDecoration(
-              labelText: 'Inserisci il codice',
-              hintText: 'ABCD2345',
-              helperText: inLockout
-                  ? _formatLockoutMessage(_lockoutRemainingMs)
-                  : '$_attemptsLeft tentativi rimanenti prima del lockout',
-              helperStyle: TextStyle(
-                color: inLockout
-                    ? KoruColors.danger
-                    : (_attemptsLeft <= 1
-                        ? KoruColors.danger
-                        : KoruColors.textSecondary),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: (inLockout || _submitting) ? null : _validate,
-            child: _submitting
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Sblocca'),
-          ),
-          if (_validationResult != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 24),
             Text(
-              _validationResult!,
-              style: TextStyle(color: _resultColor),
+              'Emergency unblock',
+              style: Theme.of(context).textTheme.titleMedium,
             ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _codeController,
+              enabled: !inLockout && !_submitting,
+              textCapitalization: TextCapitalization.characters,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
+                LengthLimitingTextInputFormatter(16),
+              ],
+              decoration: InputDecoration(
+                labelText: 'Inserisci il codice',
+                hintText: 'ABCD2345',
+                helperText: inLockout
+                    ? _formatLockoutMessage(_lockoutRemainingMs)
+                    : '$_attemptsLeft tentativi rimanenti prima del lockout',
+                helperStyle: TextStyle(
+                  color: inLockout
+                      ? KoruColors.danger
+                      : (_attemptsLeft <= 1
+                            ? KoruColors.danger
+                            : KoruColors.textSecondary),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: (inLockout || _submitting) ? null : _validate,
+              child: _submitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Sblocca'),
+            ),
+            if (_validationResult != null) ...[
+              const SizedBox(height: 12),
+              Text(_validationResult!, style: TextStyle(color: _resultColor)),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

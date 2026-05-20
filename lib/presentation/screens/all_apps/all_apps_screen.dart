@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/app_list_provider.dart';
+import '../../widgets/koru_pull_to_refresh.dart';
 import 'widgets/app_list_view.dart';
 import 'widgets/app_search_bar.dart';
 import 'widgets/fast_scroller.dart';
@@ -125,7 +126,9 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
                 ),
                 data: (_) => Stack(
                   children: [
-                    AppListView(scrollController: _scrollController),
+                    KoruPullToRefresh(
+                      child: AppListView(scrollController: _scrollController),
+                    ),
                     Positioned(
                       top: 0,
                       bottom: 0,

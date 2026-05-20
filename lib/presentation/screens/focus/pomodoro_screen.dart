@@ -8,6 +8,7 @@ import '../../../core/constants/layout.dart';
 import '../../../core/di/providers.dart';
 import '../../providers/focus_session_provider.dart';
 import '../../providers/focus_whitelist_provider.dart';
+import '../../widgets/koru_pull_to_refresh.dart';
 
 class PomodoroScreen extends ConsumerStatefulWidget {
   const PomodoroScreen({super.key});
@@ -26,24 +27,39 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen> {
     super.initState();
     final hive = ref.read(hiveSettingsServiceProvider);
     _work = hive.getInt(
-        HiveKeys.quickTogglesBox, HiveKeys.lastPomodoroWorkMinutes,
-        defaultValue: 25);
+      HiveKeys.quickTogglesBox,
+      HiveKeys.lastPomodoroWorkMinutes,
+      defaultValue: 25,
+    );
     _break = hive.getInt(
-        HiveKeys.quickTogglesBox, HiveKeys.lastPomodoroBreakMinutes,
-        defaultValue: 5);
+      HiveKeys.quickTogglesBox,
+      HiveKeys.lastPomodoroBreakMinutes,
+      defaultValue: 5,
+    );
     _cycles = hive.getInt(
-        HiveKeys.quickTogglesBox, HiveKeys.lastPomodoroCycles,
-        defaultValue: 4);
+      HiveKeys.quickTogglesBox,
+      HiveKeys.lastPomodoroCycles,
+      defaultValue: 4,
+    );
   }
 
   Future<void> _persist() async {
     final hive = ref.read(hiveSettingsServiceProvider);
     await hive.put(
-        HiveKeys.quickTogglesBox, HiveKeys.lastPomodoroWorkMinutes, _work);
+      HiveKeys.quickTogglesBox,
+      HiveKeys.lastPomodoroWorkMinutes,
+      _work,
+    );
     await hive.put(
-        HiveKeys.quickTogglesBox, HiveKeys.lastPomodoroBreakMinutes, _break);
+      HiveKeys.quickTogglesBox,
+      HiveKeys.lastPomodoroBreakMinutes,
+      _break,
+    );
     await hive.put(
-        HiveKeys.quickTogglesBox, HiveKeys.lastPomodoroCycles, _cycles);
+      HiveKeys.quickTogglesBox,
+      HiveKeys.lastPomodoroCycles,
+      _cycles,
+    );
   }
 
   Future<void> _start() async {
@@ -77,57 +93,60 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, kBottomNavClearance),
-        children: [
-          if (isActive)
-            _ActiveCard(tick: tick!, onStop: _stop)
-          else ...[
-            const _SectionLabel('Focus'),
-            const SizedBox(height: 10),
-            _DurationStepper(
-              value: _work,
-              min: 5,
-              max: 90,
-              step: 5,
-              onChanged: (v) => setState(() => _work = v),
-            ),
-            const SizedBox(height: 18),
-            const _SectionLabel('Break'),
-            const SizedBox(height: 10),
-            _DurationStepper(
-              value: _break,
-              min: 1,
-              max: 30,
-              step: 1,
-              onChanged: (v) => setState(() => _break = v),
-            ),
-            const SizedBox(height: 18),
-            const _SectionLabel('Cycles'),
-            const SizedBox(height: 10),
-            _DurationStepper(
-              value: _cycles,
-              min: 1,
-              max: 12,
-              step: 1,
-              unit: 'cycles',
-              onChanged: (v) => setState(() => _cycles = v),
-            ),
-            const SizedBox(height: 14),
-            _SummaryCard(cycles: _cycles, totalMinutes: totalMinutes),
-            const SizedBox(height: 24),
-            const _SectionLabel('Whitelist'),
-            const SizedBox(height: 10),
-            _WhitelistCard(
-              onTap: () => context.push('/focus/pomodoro/whitelist'),
-            ),
-            const SizedBox(height: 32),
-            _StartButton(
-              label: 'Start $_cycles\u00d7 ${_work}m / ${_break}m',
-              onTap: _start,
-            ),
+      body: KoruPullToRefresh(
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, kBottomNavClearance),
+          children: [
+            if (isActive)
+              _ActiveCard(tick: tick!, onStop: _stop)
+            else ...[
+              const _SectionLabel('Focus'),
+              const SizedBox(height: 10),
+              _DurationStepper(
+                value: _work,
+                min: 5,
+                max: 90,
+                step: 5,
+                onChanged: (v) => setState(() => _work = v),
+              ),
+              const SizedBox(height: 18),
+              const _SectionLabel('Break'),
+              const SizedBox(height: 10),
+              _DurationStepper(
+                value: _break,
+                min: 1,
+                max: 30,
+                step: 1,
+                onChanged: (v) => setState(() => _break = v),
+              ),
+              const SizedBox(height: 18),
+              const _SectionLabel('Cycles'),
+              const SizedBox(height: 10),
+              _DurationStepper(
+                value: _cycles,
+                min: 1,
+                max: 12,
+                step: 1,
+                unit: 'cycles',
+                onChanged: (v) => setState(() => _cycles = v),
+              ),
+              const SizedBox(height: 14),
+              _SummaryCard(cycles: _cycles, totalMinutes: totalMinutes),
+              const SizedBox(height: 24),
+              const _SectionLabel('Whitelist'),
+              const SizedBox(height: 10),
+              _WhitelistCard(
+                onTap: () => context.push('/focus/pomodoro/whitelist'),
+              ),
+              const SizedBox(height: 32),
+              _StartButton(
+                label: 'Start $_cycles\u00d7 ${_work}m / ${_break}m',
+                onTap: _start,
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -184,8 +203,9 @@ class _ActiveCard extends StatelessWidget {
               value: progress.clamp(0, 1).toDouble(),
               minHeight: 5,
               backgroundColor: KoruColors.surfaceElevated,
-              valueColor:
-                  const AlwaysStoppedAnimation<Color>(KoruColors.primary),
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                KoruColors.primary,
+              ),
             ),
           ),
           const SizedBox(height: 24),
@@ -234,8 +254,7 @@ class _DurationStepper extends StatelessWidget {
           _StepperButton(
             icon: Icons.remove,
             enabled: value > min,
-            onTap: () =>
-                onChanged((value - step).clamp(min, max).toInt()),
+            onTap: () => onChanged((value - step).clamp(min, max).toInt()),
           ),
           Expanded(
             child: Column(
@@ -265,8 +284,7 @@ class _DurationStepper extends StatelessWidget {
           _StepperButton(
             icon: Icons.add,
             enabled: value < max,
-            onTap: () =>
-                onChanged((value + step).clamp(min, max).toInt()),
+            onTap: () => onChanged((value + step).clamp(min, max).toInt()),
           ),
         ],
       ),
@@ -334,8 +352,11 @@ class _SummaryCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.schedule_outlined,
-              size: 16, color: KoruColors.textSecondary.withAlpha(180)),
+          Icon(
+            Icons.schedule_outlined,
+            size: 16,
+            color: KoruColors.textSecondary.withAlpha(180),
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -362,8 +383,11 @@ class _WhitelistCard extends StatelessWidget {
       onTap: onTap,
       child: Row(
         children: [
-          const Icon(Icons.playlist_add_check,
-              color: KoruColors.primary, size: 22),
+          const Icon(
+            Icons.playlist_add_check,
+            color: KoruColors.primary,
+            size: 22,
+          ),
           const SizedBox(width: 14),
           const Expanded(
             child: Column(
@@ -388,8 +412,10 @@ class _WhitelistCard extends StatelessWidget {
               ],
             ),
           ),
-          Icon(Icons.chevron_right,
-              color: KoruColors.textSecondary.withAlpha(140)),
+          Icon(
+            Icons.chevron_right,
+            color: KoruColors.textSecondary.withAlpha(140),
+          ),
         ],
       ),
     );

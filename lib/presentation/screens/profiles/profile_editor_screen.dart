@@ -12,6 +12,7 @@ import '../../../data/database/app_database.dart';
 import '../../../domain/entities/blocked_section.dart';
 import '../../providers/achievements_provider.dart';
 import '../../providers/profile_providers.dart';
+import '../../widgets/koru_pull_to_refresh.dart';
 
 class ProfileEditorScreen extends ConsumerStatefulWidget {
   const ProfileEditorScreen({super.key, this.profileId});
@@ -20,13 +21,24 @@ class ProfileEditorScreen extends ConsumerStatefulWidget {
   bool get isNew => profileId == null;
 
   @override
-  ConsumerState<ProfileEditorScreen> createState() => _ProfileEditorScreenState();
+  ConsumerState<ProfileEditorScreen> createState() =>
+      _ProfileEditorScreenState();
 }
 
 /// Set minimo di emoji adatte a profili.
 const List<String> _emojiPalette = [
-  '🌿', '🌅', '🌙', '🧠', '💼', '🎯',
-  '📚', '🏃', '🧘', '🛌', '☕', '🔕',
+  '🌿',
+  '🌅',
+  '🌙',
+  '🧠',
+  '💼',
+  '🎯',
+  '📚',
+  '🏃',
+  '🧘',
+  '🛌',
+  '☕',
+  '🔕',
 ];
 
 class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
@@ -62,7 +74,9 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
     // e un successivo salvataggio sovrascriverebbe i dati freschi in DB.
     final profile = await ref.refresh(profileByIdProvider(id).future);
     if (profile == null || !mounted) return;
-    final wifis = await ref.read(profileRepositoryProvider).getWifisForProfile(id);
+    final wifis = await ref
+        .read(profileRepositoryProvider)
+        .getWifisForProfile(id);
     if (!mounted) return;
 
     // Carica le sezioni in-app dalle relations del profilo. Includiamo anche
@@ -91,9 +105,13 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
           for (final iv in profile.intervals)
             _TimeSlotData(
               from: TimeOfDay(
-                  hour: iv.fromMinutes ~/ 60, minute: iv.fromMinutes % 60),
+                hour: iv.fromMinutes ~/ 60,
+                minute: iv.fromMinutes % 60,
+              ),
               to: TimeOfDay(
-                  hour: iv.toMinutes ~/ 60, minute: iv.toMinutes % 60),
+                hour: iv.toMinutes ~/ 60,
+                minute: iv.toMinutes % 60,
+              ),
             ),
         ];
       }
@@ -109,9 +127,11 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
     if (ssid == null || ssid.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(
-            'Could not read current SSID. Ensure WiFi is on and location permission is granted.',
-          )),
+          const SnackBar(
+            content: Text(
+              'Could not read current SSID. Ensure WiFi is on and location permission is granted.',
+            ),
+          ),
         );
       }
       return;
@@ -190,14 +210,19 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
         .where((s) => s.packageName == packageName)
         .toSet();
     final json = BlockedSection.encodeSet(relevant);
-    final existing = await (db.select(db.appProfileRelations)
-          ..where((r) =>
-              r.profileId.equals(profileId) &
-              r.packageName.equals(packageName))
-          ..limit(1))
-        .getSingleOrNull();
+    final existing =
+        await (db.select(db.appProfileRelations)
+              ..where(
+                (r) =>
+                    r.profileId.equals(profileId) &
+                    r.packageName.equals(packageName),
+              )
+              ..limit(1))
+            .getSingleOrNull();
     if (existing == null) {
-      await db.into(db.appProfileRelations).insert(
+      await db
+          .into(db.appProfileRelations)
+          .insert(
             AppProfileRelationsCompanion.insert(
               profileId: profileId,
               packageName: packageName,
@@ -206,20 +231,20 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
             ),
           );
     } else {
-      await (db.update(db.appProfileRelations)
-            ..where((r) => r.id.equals(existing.id)))
-          .write(AppProfileRelationsCompanion(
-            blockedSectionsJson: d.Value(json),
-          ));
+      await (db.update(
+        db.appProfileRelations,
+      )..where((r) => r.id.equals(existing.id))).write(
+        AppProfileRelationsCompanion(blockedSectionsJson: d.Value(json)),
+      );
     }
   }
 
   Future<void> _save() async {
     final title = _titleController.text.trim();
     if (title.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Name the profile first')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Name the profile first')));
       return;
     }
     final repo = ref.read(profileRepositoryProvider);
@@ -267,17 +292,21 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
     if (widget.isNew) {
       for (final pkg in BlockedSection.supportedPackages) {
         // workaround: uso il nuovo profileId con un salvataggio manuale.
-        final relevant =
-            _blockedSections.where((s) => s.packageName == pkg).toSet();
+        final relevant = _blockedSections
+            .where((s) => s.packageName == pkg)
+            .toSet();
         if (relevant.isEmpty) continue;
         final db = ref.read(appDatabaseProvider);
-        await db.into(db.appProfileRelations).insert(
+        await db
+            .into(db.appProfileRelations)
+            .insert(
               AppProfileRelationsCompanion.insert(
                 profileId: profileId,
                 packageName: pkg,
                 isEnabled: const d.Value(false),
-                blockedSectionsJson:
-                    d.Value(BlockedSection.encodeSet(relevant)),
+                blockedSectionsJson: d.Value(
+                  BlockedSection.encodeSet(relevant),
+                ),
               ),
             );
       }
@@ -318,7 +347,10 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
       minute: suggestedStart.minute,
     );
     setState(() {
-      _slots = [..._slots, _TimeSlotData(from: suggestedStart, to: suggestedEnd)];
+      _slots = [
+        ..._slots,
+        _TimeSlotData(from: suggestedStart, to: suggestedEnd),
+      ];
     });
   }
 
@@ -339,11 +371,14 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Pick an icon',
-                  style: TextStyle(
-                      color: KoruColors.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600)),
+              const Text(
+                'Pick an icon',
+                style: TextStyle(
+                  color: KoruColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               const SizedBox(height: 16),
               Wrap(
                 spacing: 10,
@@ -411,7 +446,9 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          widget.isNew ? 'New profile' : _titleController.text.isEmpty
+          widget.isNew
+              ? 'New profile'
+              : _titleController.text.isEmpty
               ? 'Edit profile'
               : _titleController.text,
         ),
@@ -431,209 +468,132 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
           TextButton(
             onPressed: _save,
             style: TextButton.styleFrom(foregroundColor: KoruColors.primary),
-            child: const Text('Save', style: TextStyle(fontWeight: FontWeight.w600)),
+            child: const Text(
+              'Save',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, kBottomNavClearance),
-        children: [
-          // ── Identity ────────────────────────────────────────────────
-          _IdentityCard(
-            emoji: _emoji,
-            titleController: _titleController,
-            onEmojiTap: _pickEmoji,
-            onTitleChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: 24),
+      body: KoruPullToRefresh(
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, kBottomNavClearance),
+          children: [
+            // ── Identity ────────────────────────────────────────────────
+            _IdentityCard(
+              emoji: _emoji,
+              titleController: _titleController,
+              onEmojiTap: _pickEmoji,
+              onTitleChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 24),
 
-          // ── Schedule ────────────────────────────────────────────────
-          const _Label('Schedule'),
-          const SizedBox(height: 10),
-          _Card(
-            child: Column(
-              children: [
-                _DayCircles(
-                  dayFlags: _dayFlags,
-                  onToggle: (day) {
-                    setState(() =>
-                        _dayFlags = DayFlags.toggleDay(_dayFlags, day));
-                  },
-                ),
-                const SizedBox(height: 18),
-                Container(height: 1, color: KoruColors.surfaceElevated),
-                for (var i = 0; i < _slots.length; i++) ...[
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _TimeSlot(
-                          label: 'Start',
-                          time: _slots[i].from,
-                          onTap: () => _pickTime(i, true),
+            // ── Schedule ────────────────────────────────────────────────
+            const _Label('Schedule'),
+            const SizedBox(height: 10),
+            _Card(
+              child: Column(
+                children: [
+                  _DayCircles(
+                    dayFlags: _dayFlags,
+                    onToggle: (day) {
+                      setState(
+                        () => _dayFlags = DayFlags.toggleDay(_dayFlags, day),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 18),
+                  Container(height: 1, color: KoruColors.surfaceElevated),
+                  for (var i = 0; i < _slots.length; i++) ...[
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _TimeSlot(
+                            label: 'Start',
+                            time: _slots[i].from,
+                            onTap: () => _pickTime(i, true),
+                          ),
                         ),
-                      ),
+                        Container(
+                          width: 24,
+                          height: 1,
+                          color: KoruColors.surfaceElevated,
+                        ),
+                        Expanded(
+                          child: _TimeSlot(
+                            label: 'End',
+                            time: _slots[i].to,
+                            onTap: () => _pickTime(i, false),
+                            alignEnd: _slots.length == 1,
+                          ),
+                        ),
+                        if (_slots.length > 1)
+                          IconButton(
+                            icon: const Icon(
+                              Icons.close,
+                              size: 18,
+                              color: KoruColors.textSecondary,
+                            ),
+                            onPressed: () => _removeSlot(i),
+                            tooltip: 'Remove time slot',
+                            visualDensity: VisualDensity.compact,
+                          ),
+                      ],
+                    ),
+                    if (i < _slots.length - 1)
                       Container(
-                        width: 24,
+                        margin: const EdgeInsets.only(top: 14),
                         height: 1,
                         color: KoruColors.surfaceElevated,
                       ),
-                      Expanded(
-                        child: _TimeSlot(
-                          label: 'End',
-                          time: _slots[i].to,
-                          onTap: () => _pickTime(i, false),
-                          alignEnd: _slots.length == 1,
-                        ),
+                  ],
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: _addSlot,
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('Add time slot'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: KoruColors.primary,
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
                       ),
-                      if (_slots.length > 1)
-                        IconButton(
-                          icon: const Icon(Icons.close,
-                              size: 18, color: KoruColors.textSecondary),
-                          onPressed: () => _removeSlot(i),
-                          tooltip: 'Remove time slot',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                    ],
-                  ),
-                  if (i < _slots.length - 1)
-                    Container(
-                      margin: const EdgeInsets.only(top: 14),
-                      height: 1,
-                      color: KoruColors.surfaceElevated,
                     ),
+                  ),
                 ],
-                const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: _addSlot,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Add time slot'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: KoruColors.primary,
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // ── Blocked apps ───────────────────────────────────────────
-          const _Label('Blocked apps'),
-          const SizedBox(height: 10),
-          _Card(
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: KoruColors.danger.withAlpha(40),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Text(
-                    '$_appsCount',
-                    style: const TextStyle(
-                      color: KoruColors.danger,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                const Expanded(
-                  child: Text(
-                    'Apps selected',
-                    style: TextStyle(
-                      color: KoruColors.textPrimary,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                TextButton(
-                  style: TextButton.styleFrom(
-                    foregroundColor: KoruColors.primary,
-                  ),
-                  onPressed: widget.isNew
-                      ? null
-                      : () => context.push('/profiles/${widget.profileId}/apps'),
-                  child: const Text('Configure',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                ),
-              ],
-            ),
-          ),
-          if (widget.isNew)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(4, 6, 4, 0),
-              child: Text(
-                'Save the profile first to pick apps.',
-                style: TextStyle(
-                    color: KoruColors.textSecondary, fontSize: 12),
               ),
             ),
-          const SizedBox(height: 24),
+            const SizedBox(height: 24),
 
-          // ── In-app content ─────────────────────────────────────────
-          const _Label('In-app content'),
-          const SizedBox(height: 10),
-          _Card(
-            padded: false,
-            child: Column(
-              children: [
-                for (var i = 0; i < BlockedSection.values.length; i++) ...[
-                  () {
-                    final s = BlockedSection.values[i];
-                    final impliedByFullBlock =
-                        _fullyBlockedPkgs.contains(s.packageName);
-                    return _SectionSwitchRow(
-                      section: s,
-                      value: impliedByFullBlock ||
-                          _blockedSections.contains(s),
-                      impliedByFullBlock: impliedByFullBlock,
-                      onChanged: impliedByFullBlock
-                          ? null
-                          : (v) => _toggleSection(s, v),
-                    );
-                  }(),
-                  if (i < BlockedSection.values.length - 1)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 20),
-                      child: Container(
-                        height: 1,
-                        color: KoruColors.surfaceElevated,
-                      ),
-                    ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // ── Websites ───────────────────────────────────────────────
-          const _Label('Websites'),
-          const SizedBox(height: 10),
-          _Card(
-            child: InkWell(
-              onTap: widget.isNew
-                  ? null
-                  : () =>
-                      context.push('/profiles/${widget.profileId}/websites'),
+            // ── Blocked apps ───────────────────────────────────────────
+            const _Label('Blocked apps'),
+            const SizedBox(height: 10),
+            _Card(
               child: Row(
                 children: [
-                  Icon(Icons.language_outlined,
-                      color: widget.isNew
-                          ? KoruColors.textSecondary
-                          : KoruColors.primary),
+                  Container(
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: KoruColors.danger.withAlpha(40),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '$_appsCount',
+                      style: const TextStyle(
+                        color: KoruColors.danger,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
                   const SizedBox(width: 14),
                   const Expanded(
                     child: Text(
-                      'Blocked domains',
+                      'Apps selected',
                       style: TextStyle(
                         color: KoruColors.textPrimary,
                         fontSize: 15,
@@ -641,92 +601,197 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                       ),
                     ),
                   ),
-                  Icon(Icons.chevron_right,
-                      color: KoruColors.textSecondary.withAlpha(140)),
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: KoruColors.primary,
+                    ),
+                    onPressed: widget.isNew
+                        ? null
+                        : () => context.push(
+                            '/profiles/${widget.profileId}/apps',
+                          ),
+                    child: const Text(
+                      'Configure',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
                 ],
               ),
             ),
-          ),
-          const SizedBox(height: 24),
-
-          // ── WiFi ───────────────────────────────────────────────────
-          const _Label('Only on Wi-Fi'),
-          const SizedBox(height: 10),
-          _Card(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  _wifiSsids.isEmpty
-                      ? 'No filter. Profile activates regardless of network.'
-                      : 'Profile active only on:',
-                  style: const TextStyle(
+            if (widget.isNew)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(4, 6, 4, 0),
+                child: Text(
+                  'Save the profile first to pick apps.',
+                  style: TextStyle(
                     color: KoruColors.textSecondary,
-                    fontSize: 13,
-                    height: 1.3,
+                    fontSize: 12,
                   ),
                 ),
-                if (_wifiSsids.isNotEmpty) const SizedBox(height: 10),
-                for (final ssid in _wifiSsids)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.wifi,
-                            size: 18, color: KoruColors.primary),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            ssid,
-                            style: const TextStyle(
-                              color: KoruColors.textPrimary,
-                              fontSize: 14,
-                            ),
-                          ),
+              ),
+            const SizedBox(height: 24),
+
+            // ── In-app content ─────────────────────────────────────────
+            const _Label('In-app content'),
+            const SizedBox(height: 10),
+            _Card(
+              padded: false,
+              child: Column(
+                children: [
+                  for (var i = 0; i < BlockedSection.values.length; i++) ...[
+                    () {
+                      final s = BlockedSection.values[i];
+                      final impliedByFullBlock = _fullyBlockedPkgs.contains(
+                        s.packageName,
+                      );
+                      return _SectionSwitchRow(
+                        section: s,
+                        value:
+                            impliedByFullBlock || _blockedSections.contains(s),
+                        impliedByFullBlock: impliedByFullBlock,
+                        onChanged: impliedByFullBlock
+                            ? null
+                            : (v) => _toggleSection(s, v),
+                      );
+                    }(),
+                    if (i < BlockedSection.values.length - 1)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 20),
+                        child: Container(
+                          height: 1,
+                          color: KoruColors.surfaceElevated,
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.close,
-                              size: 18, color: KoruColors.textSecondary),
-                          onPressed: () => _removeWifi(ssid),
-                          constraints: const BoxConstraints(),
-                          padding: EdgeInsets.zero,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ],
-                    ),
-                  ),
-                const SizedBox(height: 12),
-                Row(
+                      ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // ── Websites ───────────────────────────────────────────────
+            const _Label('Websites'),
+            const SizedBox(height: 10),
+            _Card(
+              child: InkWell(
+                onTap: widget.isNew
+                    ? null
+                    : () => context.push(
+                        '/profiles/${widget.profileId}/websites',
+                      ),
+                child: Row(
                   children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _addCurrentWifi,
-                        icon: const Icon(Icons.my_location, size: 18),
-                        label: const Text('Add current'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: KoruColors.primary,
-                          side: const BorderSide(color: KoruColors.primary),
+                    Icon(
+                      Icons.language_outlined,
+                      color: widget.isNew
+                          ? KoruColors.textSecondary
+                          : KoruColors.primary,
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Text(
+                        'Blocked domains',
+                        style: TextStyle(
+                          color: KoruColors.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _addManualWifi,
-                        icon: const Icon(Icons.add, size: 18),
-                        label: const Text('Add by name'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: KoruColors.primary,
-                          side: const BorderSide(color: KoruColors.primary),
-                        ),
-                      ),
+                    Icon(
+                      Icons.chevron_right,
+                      color: KoruColors.textSecondary.withAlpha(140),
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 24),
+
+            // ── WiFi ───────────────────────────────────────────────────
+            const _Label('Only on Wi-Fi'),
+            const SizedBox(height: 10),
+            _Card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    _wifiSsids.isEmpty
+                        ? 'No filter. Profile activates regardless of network.'
+                        : 'Profile active only on:',
+                    style: const TextStyle(
+                      color: KoruColors.textSecondary,
+                      fontSize: 13,
+                      height: 1.3,
+                    ),
+                  ),
+                  if (_wifiSsids.isNotEmpty) const SizedBox(height: 10),
+                  for (final ssid in _wifiSsids)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.wifi,
+                            size: 18,
+                            color: KoruColors.primary,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              ssid,
+                              style: const TextStyle(
+                                color: KoruColors.textPrimary,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.close,
+                              size: 18,
+                              color: KoruColors.textSecondary,
+                            ),
+                            onPressed: () => _removeWifi(ssid),
+                            constraints: const BoxConstraints(),
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _addCurrentWifi,
+                          icon: const Icon(Icons.my_location, size: 18),
+                          label: const Text('Add current'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: KoruColors.primary,
+                            side: const BorderSide(color: KoruColors.primary),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _addManualWifi,
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('Add by name'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: KoruColors.primary,
+                            side: const BorderSide(color: KoruColors.primary),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -910,8 +975,9 @@ class _TimeSlot extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Column(
-        crossAxisAlignment:
-            alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        crossAxisAlignment: alignEnd
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
         children: [
           Text(
             label,

@@ -7,6 +7,7 @@ import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
 import '../../../../platform/strict_mode_channel.dart';
 import '../../../providers/achievements_provider.dart';
+import '../../../widgets/koru_pull_to_refresh.dart';
 
 class StrictModeScreen extends ConsumerStatefulWidget {
   const StrictModeScreen({super.key});
@@ -82,9 +83,7 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
                     autofocus: true,
                     textCapitalization: TextCapitalization.characters,
                     inputFormatters: [
-                      FilteringTextInputFormatter.allow(
-                        RegExp(r'[A-Za-z0-9]'),
-                      ),
+                      FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
                       LengthLimitingTextInputFormatter(16),
                     ],
                     decoration: InputDecoration(
@@ -97,8 +96,8 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
                   Text(
                     '$attemptsLeft tentativi rimanenti prima del lockout.',
                     style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                          color: KoruColors.textSecondary,
-                        ),
+                      color: KoruColors.textSecondary,
+                    ),
                   ),
                 ],
               ),
@@ -152,8 +151,8 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
     final text = minutes < 60
         ? '$minutes minuti'
         : minutes < 24 * 60
-            ? '${(minutes / 60).ceil()} ore'
-            : '${(minutes / (60 * 24)).ceil()} giorni';
+        ? '${(minutes / 60).ceil()} ore'
+        : '${(minutes / (60 * 24)).ceil()} giorni';
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -199,9 +198,7 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
     } else {
       // Disable master richiede backdoor code (è il path "voglio uscire"
       // più frequente — passa dalla validazione di sicurezza completa).
-      final ok = await _requireBackdoorAuth(
-        purpose: 'disattivare strict mode',
-      );
+      final ok = await _requireBackdoorAuth(purpose: 'disattivare strict mode');
       if (!ok) return;
       // Il backdoor code valid invalida già la mask via
       // performEmergencyUnblock? No: validateBackdoorCode marca solo come
@@ -263,111 +260,119 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            color: _isEnabled ? KoruColors.dangerContainer : null,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        _isEnabled ? Icons.lock : Icons.lock_open,
-                        color: _isEnabled
-                            ? KoruColors.danger
-                            : KoruColors.textSecondary,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _isEnabled
-                              ? 'Strict mode is ON'
-                              : 'Strict mode is OFF',
-                          style: Theme.of(context).textTheme.titleMedium,
+      body: KoruPullToRefresh(
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          children: [
+            Card(
+              color: _isEnabled ? KoruColors.dangerContainer : null,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          _isEnabled ? Icons.lock : Icons.lock_open,
+                          color: _isEnabled
+                              ? KoruColors.danger
+                              : KoruColors.textSecondary,
                         ),
-                      ),
-                      Switch(
-                        value: _isEnabled,
-                        onChanged: _toggleMaster,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _isEnabled
-                        ? 'Settings, Recent apps and Uninstall are locked. Use the backdoor code if you really need to disable it.'
-                        : 'Enable to lock Settings, Recent apps and Uninstall. Requires Device Admin.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: KoruColors.textSecondary,
-                          height: 1.4,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            _isEnabled
+                                ? 'Strict mode is ON'
+                                : 'Strict mode is OFF',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
                         ),
-                  ),
-                ],
+                        Switch(value: _isEnabled, onChanged: _toggleMaster),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _isEnabled
+                          ? 'Settings, Recent apps and Uninstall are locked. Use the backdoor code if you really need to disable it.'
+                          : 'Enable to lock Settings, Recent apps and Uninstall. Requires Device Admin.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: KoruColors.textSecondary,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 24),
-          _SectionTitle('What to lock'),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: _mask & StrictModeOption.blockSettings != 0,
-            onChanged: (v) => _toggleOption(StrictModeOption.blockSettings, v),
-            title: const Text('Block Settings'),
-            subtitle: const Text('Prevents opening the Android Settings app.'),
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: _mask & StrictModeOption.blockRecentApps != 0,
-            onChanged: (v) =>
-                _toggleOption(StrictModeOption.blockRecentApps, v),
-            title: const Text('Block Recent apps'),
-            subtitle: const Text('Prevents opening the Recent apps view.'),
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: _mask & StrictModeOption.blockUninstalling != 0,
-            onChanged: (v) =>
-                _toggleOption(StrictModeOption.blockUninstalling, v),
-            title: const Text('Block Uninstall'),
-            subtitle: const Text('Prevents uninstalling Koru.'),
-          ),
-          const SizedBox(height: 24),
-          _SectionTitle('Device Admin'),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(
-              _deviceAdminActive ? Icons.verified : Icons.warning_amber_outlined,
-              color: _deviceAdminActive
-                  ? KoruColors.success
-                  : KoruColors.secondary,
+            const SizedBox(height: 24),
+            _SectionTitle('What to lock'),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _mask & StrictModeOption.blockSettings != 0,
+              onChanged: (v) =>
+                  _toggleOption(StrictModeOption.blockSettings, v),
+              title: const Text('Block Settings'),
+              subtitle: const Text(
+                'Prevents opening the Android Settings app.',
+              ),
             ),
-            title: Text(
-                _deviceAdminActive ? 'Device Admin active' : 'Device Admin required'),
-            subtitle: Text(
-              _deviceAdminActive
-                  ? 'Koru has the permissions it needs.'
-                  : 'Koru needs Device Admin to enforce Strict Mode.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: KoruColors.textSecondary,
-                  ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _mask & StrictModeOption.blockRecentApps != 0,
+              onChanged: (v) =>
+                  _toggleOption(StrictModeOption.blockRecentApps, v),
+              title: const Text('Block Recent apps'),
+              subtitle: const Text('Prevents opening the Recent apps view.'),
             ),
-            trailing: _deviceAdminActive
-                ? TextButton(
-                    onPressed: _disableDeviceAdmin,
-                    child: const Text('Disable'),
-                  )
-                : FilledButton(
-                    onPressed: () async {
-                      await _channel.enableDeviceAdmin();
-                    },
-                    child: const Text('Enable'),
-                  ),
-          ),
-        ],
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _mask & StrictModeOption.blockUninstalling != 0,
+              onChanged: (v) =>
+                  _toggleOption(StrictModeOption.blockUninstalling, v),
+              title: const Text('Block Uninstall'),
+              subtitle: const Text('Prevents uninstalling Koru.'),
+            ),
+            const SizedBox(height: 24),
+            _SectionTitle('Device Admin'),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                _deviceAdminActive
+                    ? Icons.verified
+                    : Icons.warning_amber_outlined,
+                color: _deviceAdminActive
+                    ? KoruColors.success
+                    : KoruColors.secondary,
+              ),
+              title: Text(
+                _deviceAdminActive
+                    ? 'Device Admin active'
+                    : 'Device Admin required',
+              ),
+              subtitle: Text(
+                _deviceAdminActive
+                    ? 'Koru has the permissions it needs.'
+                    : 'Koru needs Device Admin to enforce Strict Mode.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: KoruColors.textSecondary,
+                ),
+              ),
+              trailing: _deviceAdminActive
+                  ? TextButton(
+                      onPressed: _disableDeviceAdmin,
+                      child: const Text('Disable'),
+                    )
+                  : FilledButton(
+                      onPressed: () async {
+                        await _channel.enableDeviceAdmin();
+                      },
+                      child: const Text('Enable'),
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -379,14 +384,14 @@ class _SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Text(
-          text.toUpperCase(),
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: KoruColors.textSecondary,
-                letterSpacing: 2,
-                fontWeight: FontWeight.w600,
-              ),
-        ),
-      );
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Text(
+      text.toUpperCase(),
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: KoruColors.textSecondary,
+        letterSpacing: 2,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+  );
 }

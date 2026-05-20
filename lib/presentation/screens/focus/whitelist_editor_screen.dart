@@ -5,6 +5,7 @@ import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
 import '../../providers/app_list_provider.dart';
 import '../../providers/focus_whitelist_provider.dart';
+import '../../widgets/koru_pull_to_refresh.dart';
 
 /// Editor della whitelist di app lasciate usabili durante Quick Block o
 /// Pomodoro. Default: Koru + launcher + phone + camera + SMS + clock +
@@ -19,8 +20,7 @@ class WhitelistEditorScreen extends ConsumerStatefulWidget {
       _WhitelistEditorScreenState();
 }
 
-class _WhitelistEditorScreenState
-    extends ConsumerState<WhitelistEditorScreen> {
+class _WhitelistEditorScreenState extends ConsumerState<WhitelistEditorScreen> {
   final _searchController = TextEditingController();
   String _query = '';
 
@@ -31,9 +31,9 @@ class _WhitelistEditorScreenState
   }
 
   String _title() => switch (widget.mode) {
-        FocusMode.quickBlock => 'Quick block whitelist',
-        FocusMode.pomodoro => 'Pomodoro whitelist',
-      };
+    FocusMode.quickBlock => 'Quick block whitelist',
+    FocusMode.pomodoro => 'Pomodoro whitelist',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -68,13 +68,17 @@ class _WhitelistEditorScreenState
               decoration: InputDecoration(
                 isDense: true,
                 hintText: 'Search apps',
-                prefixIcon: const Icon(Icons.search,
-                    color: KoruColors.textSecondary),
+                prefixIcon: const Icon(
+                  Icons.search,
+                  color: KoruColors.textSecondary,
+                ),
                 suffixIcon: _query.isEmpty
                     ? null
                     : IconButton(
-                        icon: const Icon(Icons.close,
-                            color: KoruColors.textSecondary),
+                        icon: const Icon(
+                          Icons.close,
+                          color: KoruColors.textSecondary,
+                        ),
                         onPressed: () {
                           _searchController.clear();
                           setState(() => _query = '');
@@ -91,50 +95,58 @@ class _WhitelistEditorScreenState
           ),
         ),
       ),
-      body: appsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('$e')),
-        data: (apps) {
-          final q = _query.trim().toLowerCase();
-          final filtered = q.isEmpty
-              ? apps
-              : apps
-                  .where((a) =>
-                      a.label.toLowerCase().contains(q) ||
-                      a.packageName.toLowerCase().contains(q))
-                  .toList(growable: false);
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(0, 8, 0, kBottomNavClearance),
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                child: Text(
-                  'Apps in this list stay usable during a focus session. '
-                  'Everything else is blocked until the timer ends.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: KoruColors.textSecondary,
-                        height: 1.4,
-                      ),
-                ),
-              ),
-              for (final app in filtered)
-                CheckboxListTile(
-                  value: whitelist.contains(app.packageName),
-                  title: Text(app.label,
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(
-                    app.packageName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+      body: KoruPullToRefresh(
+        child: appsAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text('$e')),
+          data: (apps) {
+            final q = _query.trim().toLowerCase();
+            final filtered = q.isEmpty
+                ? apps
+                : apps
+                      .where(
+                        (a) =>
+                            a.label.toLowerCase().contains(q) ||
+                            a.packageName.toLowerCase().contains(q),
+                      )
+                      .toList(growable: false);
+            return ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(0, 8, 0, kBottomNavClearance),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  child: Text(
+                    'Apps in this list stay usable during a focus session. '
+                    'Everything else is blocked until the timer ends.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: KoruColors.textSecondary,
-                        ),
+                      color: KoruColors.textSecondary,
+                      height: 1.4,
+                    ),
                   ),
-                  onChanged: (_) => notifier.toggle(app.packageName),
                 ),
-            ],
-          );
-        },
+                for (final app in filtered)
+                  CheckboxListTile(
+                    value: whitelist.contains(app.packageName),
+                    title: Text(
+                      app.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      app.packageName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: KoruColors.textSecondary,
+                      ),
+                    ),
+                    onChanged: (_) => notifier.toggle(app.packageName),
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

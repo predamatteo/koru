@@ -10,6 +10,7 @@ import '../../../../data/database/app_database.dart';
 import '../../../../data/models/profile_model.dart';
 import '../../../../domain/entities/blocked_section.dart';
 import '../../../providers/profile_providers.dart';
+import '../../../widgets/koru_pull_to_refresh.dart';
 
 /// Configure le sezioni in-app bloccate (Instagram Reels/Stories/Explore,
 /// YouTube Shorts) per il profilo corrente.
@@ -35,7 +36,9 @@ class _BlockInAppContentScreenState
 
   Future<void> _hydrate() async {
     if (_loaded) return;
-    final profile = await ref.read(profileByIdProvider(widget.profileId).future);
+    final profile = await ref.read(
+      profileByIdProvider(widget.profileId).future,
+    );
     if (!mounted) return;
     if (profile == null) return;
 
@@ -65,12 +68,19 @@ class _BlockInAppContentScreenState
       final json = sections.isEmpty ? null : BlockedSection.encodeSet(sections);
 
       // Upsert nella relation per questo (profileId, packageName).
-      final existing = await (db.select(db.appProfileRelations)
-            ..where((r) => r.profileId.equals(widget.profileId) & r.packageName.equals(pkg))
-            ..limit(1))
-          .getSingleOrNull();
+      final existing =
+          await (db.select(db.appProfileRelations)
+                ..where(
+                  (r) =>
+                      r.profileId.equals(widget.profileId) &
+                      r.packageName.equals(pkg),
+                )
+                ..limit(1))
+              .getSingleOrNull();
       if (existing == null) {
-        await db.into(db.appProfileRelations).insert(
+        await db
+            .into(db.appProfileRelations)
+            .insert(
               AppProfileRelationsCompanion.insert(
                 profileId: widget.profileId,
                 packageName: pkg,
@@ -79,16 +89,19 @@ class _BlockInAppContentScreenState
               ),
             );
       } else {
-        await (db.update(db.appProfileRelations)
-              ..where((r) => r.id.equals(existing.id)))
-            .write(AppProfileRelationsCompanion(blockedSectionsJson: Value(json)));
+        await (db.update(
+          db.appProfileRelations,
+        )..where((r) => r.id.equals(existing.id))).write(
+          AppProfileRelationsCompanion(blockedSectionsJson: Value(json)),
+        );
       }
     }
-    await ref.read(profileRepositoryProvider).setAppsForProfile(
+    await ref
+        .read(profileRepositoryProvider)
+        .setAppsForProfile(
           widget.profileId,
           // preserve current blocklist by re-writing it intact
-          (await ref.read(profileByIdProvider(widget.profileId).future))
-                  ?.apps
+          (await ref.read(profileByIdProvider(widget.profileId).future))?.apps
                   .where((r) => r.isEnabled)
                   .map((r) => r.packageName)
                   .toList() ??
@@ -107,36 +120,41 @@ class _BlockInAppContentScreenState
         title: const Text('In-app content'),
         actions: [TextButton(onPressed: _save, child: const Text('Save'))],
       ),
-      body: profileAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('$e')),
-        data: (profile) {
-          if (profile == null) return const SizedBox.shrink();
-          return ListView(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            children: [
-              _Hint(),
-              for (final pkg in BlockedSection.supportedPackages)
-                _AppGroup(
-                  packageName: pkg,
-                  sections: BlockedSection.forPackage(pkg),
-                  isFullyBlocked: _isFullyBlocked(pkg, profile),
-                  selected: _perApp[pkg] ?? const {},
-                  onToggle: (section, enabled) {
-                    setState(() {
-                      final current = {..._perApp[pkg] ?? const {}};
-                      if (enabled) {
-                        current.add(section);
-                      } else {
-                        current.remove(section);
-                      }
-                      _perApp[pkg] = current;
-                    });
-                  },
-                ),
-            ],
-          );
-        },
+      body: KoruPullToRefresh(
+        child: profileAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text('$e')),
+          data: (profile) {
+            if (profile == null) {
+              return const KoruRefreshableViewport(child: SizedBox.shrink());
+            }
+            return ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              children: [
+                _Hint(),
+                for (final pkg in BlockedSection.supportedPackages)
+                  _AppGroup(
+                    packageName: pkg,
+                    sections: BlockedSection.forPackage(pkg),
+                    isFullyBlocked: _isFullyBlocked(pkg, profile),
+                    selected: _perApp[pkg] ?? const {},
+                    onToggle: (section, enabled) {
+                      setState(() {
+                        final current = {..._perApp[pkg] ?? const {}};
+                        if (enabled) {
+                          current.add(section);
+                        } else {
+                          current.remove(section);
+                        }
+                        _perApp[pkg] = current;
+                      });
+                    },
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -152,9 +170,9 @@ class _Hint extends StatelessWidget {
         'already on this profile\'s blocklist, sections are redundant and '
         'disabled.',
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: KoruColors.textSecondary,
-              height: 1.4,
-            ),
+          color: KoruColors.textSecondary,
+          height: 1.4,
+        ),
       ),
     );
   }
@@ -197,10 +215,7 @@ class _AppGroup extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                Text(
-                  _appLabel,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+                Text(_appLabel, style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(width: 8),
                 if (isFullyBlocked)
                   Chip(
@@ -225,8 +240,8 @@ class _AppGroup extends StatelessWidget {
                   ? Text(
                       'Section blocking disabled: app is fully blocked in this profile.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: KoruColors.textSecondary,
-                          ),
+                        color: KoruColors.textSecondary,
+                      ),
                     )
                   : null,
             );
