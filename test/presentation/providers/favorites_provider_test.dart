@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:koru/domain/entities/launcher_item.dart';
 import 'package:koru/presentation/providers/app_list_provider.dart';
 import 'package:koru/presentation/providers/favorites_provider.dart';
 
@@ -186,6 +187,157 @@ void main() {
 
       final favs = await h.db.getFavorites();
       expect(favs.map((f) => f.packageName), ['com.c', 'com.a', 'com.b']);
+    });
+  });
+
+  group('launcher folders (db)', () {
+    test('addFavorite places new favorites in the shared top-level space',
+        () async {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      await h.db.addFavorite('com.a', label: 'A'); // loose, idx 0
+      await h.db.createFolder('Work'); // folder, idx 1
+      await h.db.addFavorite('com.c', label: 'C'); // loose, idx 2
+
+      final favA =
+          (await h.db.getFavorites()).firstWhere((f) => f.packageName == 'com.a');
+      final favC =
+          (await h.db.getFavorites()).firstWhere((f) => f.packageName == 'com.c');
+      final folder = (await h.db.getFolders()).single;
+
+      expect(favA.orderIndex, 0);
+      expect(folder.orderIndex, 1);
+      expect(favC.orderIndex, 2);
+    });
+
+    test('addFavorite with folderId stores the app inside the folder',
+        () async {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      final fid = await h.db.createFolder('Work');
+      await h.db.addFavorite('com.b', label: 'B', folderId: fid);
+
+      final fav = (await h.db.getFavorites()).single;
+      expect(fav.folderId, fid);
+      expect(fav.orderIndex, 0); // primo nello spazio interno alla cartella
+    });
+
+    test('setFavoriteFolder moves a favorite in and back out of a folder',
+        () async {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      await h.db.addFavorite('com.a', label: 'A');
+      final fid = await h.db.createFolder('Work');
+
+      await h.db.setFavoriteFolder('com.a', fid);
+      expect(
+        (await h.db.getFavorites()).single.folderId,
+        fid,
+      );
+
+      await h.db.setFavoriteFolder('com.a', null);
+      expect(
+        (await h.db.getFavorites()).single.folderId,
+        isNull,
+      );
+    });
+
+    test('deleteFolder returns its apps to the home and removes the folder',
+        () async {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      final fid = await h.db.createFolder('Work');
+      await h.db.addFavorite('com.b', label: 'B', folderId: fid);
+      await h.db.addFavorite('com.a', label: 'A'); // loose
+
+      await h.db.deleteFolder(fid);
+
+      final favs = await h.db.getFavorites();
+      expect(favs.map((f) => f.packageName).toSet(), {'com.a', 'com.b'});
+      expect(favs.every((f) => f.folderId == null), isTrue,
+          reason: 'le app della cartella eliminata tornano sciolte');
+      expect(await h.db.getFolders(), isEmpty);
+    });
+
+    test('reorderTopLevel rewrites order across both apps and folders',
+        () async {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      await h.db.addFavorite('com.a', label: 'A'); // idx 0
+      final fid = await h.db.createFolder('Work'); // idx 1
+
+      // Inverti: prima la cartella, poi l'app.
+      await h.db.reorderTopLevel([
+        (packageName: null, folderId: fid),
+        (packageName: 'com.a', folderId: null),
+      ]);
+
+      expect((await h.db.getFolders()).single.orderIndex, 0);
+      expect(
+        (await h.db.getFavorites()).single.orderIndex,
+        1,
+      );
+    });
+  });
+
+  group('launcherItemsProvider', () {
+    test('interleaves loose apps and folders, grouping apps under their folder',
+        () async {
+      final h = buildTestContainer(extra: [
+        installedPackageNamesProvider
+            .overrideWith((ref) async => {'com.a', 'com.b', 'com.c'}),
+      ]);
+      addTearDown(h.dispose);
+
+      await h.db.addFavorite('com.a', label: 'A'); // loose, idx 0
+      final fid = await h.db.createFolder('Work'); // folder, idx 1
+      await h.db.addFavorite('com.b', label: 'B', folderId: fid); // in folder
+      await h.db.addFavorite('com.c', label: 'C'); // loose, idx 2
+
+      await h.container.read(favoriteEntriesProvider.stream).first;
+      await h.container.read(foldersProvider.stream).first;
+      await h.container.read(installedPackageNamesProvider.future);
+      keepProviderAlive(h.container, launcherItemsProvider);
+
+      final items = h.container.read(launcherItemsProvider);
+      expect(items.length, 3);
+
+      expect(items[0], isA<LauncherLooseApp>());
+      expect((items[0] as LauncherLooseApp).app.packageName, 'com.a');
+
+      expect(items[1], isA<LauncherFolderItem>());
+      final folder = items[1] as LauncherFolderItem;
+      expect(folder.name, 'Work');
+      expect(folder.apps.map((a) => a.packageName), ['com.b']);
+
+      expect(items[2], isA<LauncherLooseApp>());
+      expect((items[2] as LauncherLooseApp).app.packageName, 'com.c');
+    });
+
+    test('filters out uninstalled apps but keeps the folder', () async {
+      final h = buildTestContainer(extra: [
+        // com.b (dentro la cartella) non è installata → filtrata.
+        installedPackageNamesProvider.overrideWith((ref) async => {'com.x'}),
+      ]);
+      addTearDown(h.dispose);
+
+      final fid = await h.db.createFolder('Work');
+      await h.db.addFavorite('com.b', label: 'B', folderId: fid);
+      await h.db.addFavorite('com.x', label: 'X', folderId: fid);
+
+      await h.container.read(favoriteEntriesProvider.stream).first;
+      await h.container.read(foldersProvider.stream).first;
+      await h.container.read(installedPackageNamesProvider.future);
+      keepProviderAlive(h.container, launcherItemsProvider);
+
+      final items = h.container.read(launcherItemsProvider);
+      final folder = items.single as LauncherFolderItem;
+      expect(folder.apps.map((a) => a.packageName), ['com.x']);
     });
   });
 }

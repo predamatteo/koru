@@ -8352,6 +8352,257 @@ class FocusUsageEventsCompanion extends UpdateCompanion<FocusUsageEvent> {
   }
 }
 
+class $LauncherFoldersTable extends LauncherFolders
+    with TableInfo<$LauncherFoldersTable, LauncherFolder> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LauncherFoldersTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _orderIndexMeta = const VerificationMeta(
+    'orderIndex',
+  );
+  @override
+  late final GeneratedColumn<int> orderIndex = GeneratedColumn<int>(
+    'order_index',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, name, orderIndex];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'launcher_folders';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LauncherFolder> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('order_index')) {
+      context.handle(
+        _orderIndexMeta,
+        orderIndex.isAcceptableOrUnknown(data['order_index']!, _orderIndexMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_orderIndexMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  LauncherFolder map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LauncherFolder(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      orderIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}order_index'],
+      )!,
+    );
+  }
+
+  @override
+  $LauncherFoldersTable createAlias(String alias) {
+    return $LauncherFoldersTable(attachedDatabase, alias);
+  }
+}
+
+class LauncherFolder extends DataClass implements Insertable<LauncherFolder> {
+  final int id;
+  final String name;
+  final int orderIndex;
+  const LauncherFolder({
+    required this.id,
+    required this.name,
+    required this.orderIndex,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['name'] = Variable<String>(name);
+    map['order_index'] = Variable<int>(orderIndex);
+    return map;
+  }
+
+  LauncherFoldersCompanion toCompanion(bool nullToAbsent) {
+    return LauncherFoldersCompanion(
+      id: Value(id),
+      name: Value(name),
+      orderIndex: Value(orderIndex),
+    );
+  }
+
+  factory LauncherFolder.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LauncherFolder(
+      id: serializer.fromJson<int>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      orderIndex: serializer.fromJson<int>(json['orderIndex']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'name': serializer.toJson<String>(name),
+      'orderIndex': serializer.toJson<int>(orderIndex),
+    };
+  }
+
+  LauncherFolder copyWith({int? id, String? name, int? orderIndex}) =>
+      LauncherFolder(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        orderIndex: orderIndex ?? this.orderIndex,
+      );
+  LauncherFolder copyWithCompanion(LauncherFoldersCompanion data) {
+    return LauncherFolder(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      orderIndex: data.orderIndex.present
+          ? data.orderIndex.value
+          : this.orderIndex,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LauncherFolder(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('orderIndex: $orderIndex')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, name, orderIndex);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LauncherFolder &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.orderIndex == this.orderIndex);
+}
+
+class LauncherFoldersCompanion extends UpdateCompanion<LauncherFolder> {
+  final Value<int> id;
+  final Value<String> name;
+  final Value<int> orderIndex;
+  const LauncherFoldersCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.orderIndex = const Value.absent(),
+  });
+  LauncherFoldersCompanion.insert({
+    this.id = const Value.absent(),
+    required String name,
+    required int orderIndex,
+  }) : name = Value(name),
+       orderIndex = Value(orderIndex);
+  static Insertable<LauncherFolder> custom({
+    Expression<int>? id,
+    Expression<String>? name,
+    Expression<int>? orderIndex,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (orderIndex != null) 'order_index': orderIndex,
+    });
+  }
+
+  LauncherFoldersCompanion copyWith({
+    Value<int>? id,
+    Value<String>? name,
+    Value<int>? orderIndex,
+  }) {
+    return LauncherFoldersCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      orderIndex: orderIndex ?? this.orderIndex,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (orderIndex.present) {
+      map['order_index'] = Variable<int>(orderIndex.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LauncherFoldersCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('orderIndex: $orderIndex')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $FavoritesTable extends Favorites
     with TableInfo<$FavoritesTable, Favorite> {
   @override
@@ -8396,8 +8647,22 @@ class $FavoritesTable extends Favorites
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _folderIdMeta = const VerificationMeta(
+    'folderId',
+  );
   @override
-  List<GeneratedColumn> get $columns => [id, packageName, orderIndex];
+  late final GeneratedColumn<int> folderId = GeneratedColumn<int>(
+    'folder_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES launcher_folders (id) ON DELETE SET NULL',
+    ),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, packageName, orderIndex, folderId];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -8432,6 +8697,12 @@ class $FavoritesTable extends Favorites
     } else if (isInserting) {
       context.missing(_orderIndexMeta);
     }
+    if (data.containsKey('folder_id')) {
+      context.handle(
+        _folderIdMeta,
+        folderId.isAcceptableOrUnknown(data['folder_id']!, _folderIdMeta),
+      );
+    }
     return context;
   }
 
@@ -8457,6 +8728,10 @@ class $FavoritesTable extends Favorites
         DriftSqlType.int,
         data['${effectivePrefix}order_index'],
       )!,
+      folderId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}folder_id'],
+      ),
     );
   }
 
@@ -8470,10 +8745,23 @@ class Favorite extends DataClass implements Insertable<Favorite> {
   final int id;
   final String packageName;
   final int orderIndex;
+
+  /// Cartella di appartenenza nella home del launcher.
+  ///
+  /// - `null` → preferito "sciolto": `orderIndex` vive nello spazio top-level
+  ///   (condiviso con le [LauncherFolders]).
+  /// - valorizzato → preferito dentro la cartella: `orderIndex` è relativo agli
+  ///   altri preferiti della stessa cartella.
+  ///
+  /// `onDelete: setNull` → eliminando una cartella i suoi preferiti tornano
+  /// sciolti nella home invece di sparire (la rimozione cartella non deve mai
+  /// cancellare app preferite).
+  final int? folderId;
   const Favorite({
     required this.id,
     required this.packageName,
     required this.orderIndex,
+    this.folderId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -8481,6 +8769,9 @@ class Favorite extends DataClass implements Insertable<Favorite> {
     map['id'] = Variable<int>(id);
     map['package_name'] = Variable<String>(packageName);
     map['order_index'] = Variable<int>(orderIndex);
+    if (!nullToAbsent || folderId != null) {
+      map['folder_id'] = Variable<int>(folderId);
+    }
     return map;
   }
 
@@ -8489,6 +8780,9 @@ class Favorite extends DataClass implements Insertable<Favorite> {
       id: Value(id),
       packageName: Value(packageName),
       orderIndex: Value(orderIndex),
+      folderId: folderId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(folderId),
     );
   }
 
@@ -8501,6 +8795,7 @@ class Favorite extends DataClass implements Insertable<Favorite> {
       id: serializer.fromJson<int>(json['id']),
       packageName: serializer.fromJson<String>(json['packageName']),
       orderIndex: serializer.fromJson<int>(json['orderIndex']),
+      folderId: serializer.fromJson<int?>(json['folderId']),
     );
   }
   @override
@@ -8510,15 +8805,21 @@ class Favorite extends DataClass implements Insertable<Favorite> {
       'id': serializer.toJson<int>(id),
       'packageName': serializer.toJson<String>(packageName),
       'orderIndex': serializer.toJson<int>(orderIndex),
+      'folderId': serializer.toJson<int?>(folderId),
     };
   }
 
-  Favorite copyWith({int? id, String? packageName, int? orderIndex}) =>
-      Favorite(
-        id: id ?? this.id,
-        packageName: packageName ?? this.packageName,
-        orderIndex: orderIndex ?? this.orderIndex,
-      );
+  Favorite copyWith({
+    int? id,
+    String? packageName,
+    int? orderIndex,
+    Value<int?> folderId = const Value.absent(),
+  }) => Favorite(
+    id: id ?? this.id,
+    packageName: packageName ?? this.packageName,
+    orderIndex: orderIndex ?? this.orderIndex,
+    folderId: folderId.present ? folderId.value : this.folderId,
+  );
   Favorite copyWithCompanion(FavoritesCompanion data) {
     return Favorite(
       id: data.id.present ? data.id.value : this.id,
@@ -8528,6 +8829,7 @@ class Favorite extends DataClass implements Insertable<Favorite> {
       orderIndex: data.orderIndex.present
           ? data.orderIndex.value
           : this.orderIndex,
+      folderId: data.folderId.present ? data.folderId.value : this.folderId,
     );
   }
 
@@ -8536,46 +8838,53 @@ class Favorite extends DataClass implements Insertable<Favorite> {
     return (StringBuffer('Favorite(')
           ..write('id: $id, ')
           ..write('packageName: $packageName, ')
-          ..write('orderIndex: $orderIndex')
+          ..write('orderIndex: $orderIndex, ')
+          ..write('folderId: $folderId')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, packageName, orderIndex);
+  int get hashCode => Object.hash(id, packageName, orderIndex, folderId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is Favorite &&
           other.id == this.id &&
           other.packageName == this.packageName &&
-          other.orderIndex == this.orderIndex);
+          other.orderIndex == this.orderIndex &&
+          other.folderId == this.folderId);
 }
 
 class FavoritesCompanion extends UpdateCompanion<Favorite> {
   final Value<int> id;
   final Value<String> packageName;
   final Value<int> orderIndex;
+  final Value<int?> folderId;
   const FavoritesCompanion({
     this.id = const Value.absent(),
     this.packageName = const Value.absent(),
     this.orderIndex = const Value.absent(),
+    this.folderId = const Value.absent(),
   });
   FavoritesCompanion.insert({
     this.id = const Value.absent(),
     required String packageName,
     required int orderIndex,
+    this.folderId = const Value.absent(),
   }) : packageName = Value(packageName),
        orderIndex = Value(orderIndex);
   static Insertable<Favorite> custom({
     Expression<int>? id,
     Expression<String>? packageName,
     Expression<int>? orderIndex,
+    Expression<int>? folderId,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (packageName != null) 'package_name': packageName,
       if (orderIndex != null) 'order_index': orderIndex,
+      if (folderId != null) 'folder_id': folderId,
     });
   }
 
@@ -8583,11 +8892,13 @@ class FavoritesCompanion extends UpdateCompanion<Favorite> {
     Value<int>? id,
     Value<String>? packageName,
     Value<int>? orderIndex,
+    Value<int?>? folderId,
   }) {
     return FavoritesCompanion(
       id: id ?? this.id,
       packageName: packageName ?? this.packageName,
       orderIndex: orderIndex ?? this.orderIndex,
+      folderId: folderId ?? this.folderId,
     );
   }
 
@@ -8603,6 +8914,9 @@ class FavoritesCompanion extends UpdateCompanion<Favorite> {
     if (orderIndex.present) {
       map['order_index'] = Variable<int>(orderIndex.value);
     }
+    if (folderId.present) {
+      map['folder_id'] = Variable<int>(folderId.value);
+    }
     return map;
   }
 
@@ -8611,7 +8925,8 @@ class FavoritesCompanion extends UpdateCompanion<Favorite> {
     return (StringBuffer('FavoritesCompanion(')
           ..write('id: $id, ')
           ..write('packageName: $packageName, ')
-          ..write('orderIndex: $orderIndex')
+          ..write('orderIndex: $orderIndex, ')
+          ..write('folderId: $folderId')
           ..write(')'))
         .toString();
   }
@@ -9525,6 +9840,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $FocusUsageEventsTable focusUsageEvents = $FocusUsageEventsTable(
     this,
   );
+  late final $LauncherFoldersTable launcherFolders = $LauncherFoldersTable(
+    this,
+  );
   late final $FavoritesTable favorites = $FavoritesTable(this);
   late final $AchievementsUnlockedTable achievementsUnlocked =
       $AchievementsUnlockedTable(this);
@@ -9567,6 +9885,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     restrictedAccessEvents,
     intentionUsageEvents,
     focusUsageEvents,
+    launcherFolders,
     favorites,
     achievementsUnlocked,
     streakState,
@@ -9580,6 +9899,13 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('favorites', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'launcher_folders',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('favorites', kind: UpdateKind.update)],
     ),
   ]);
 }
@@ -15494,17 +15820,288 @@ typedef $$FocusUsageEventsTableProcessedTableManager =
       FocusUsageEvent,
       PrefetchHooks Function()
     >;
+typedef $$LauncherFoldersTableCreateCompanionBuilder =
+    LauncherFoldersCompanion Function({
+      Value<int> id,
+      required String name,
+      required int orderIndex,
+    });
+typedef $$LauncherFoldersTableUpdateCompanionBuilder =
+    LauncherFoldersCompanion Function({
+      Value<int> id,
+      Value<String> name,
+      Value<int> orderIndex,
+    });
+
+final class $$LauncherFoldersTableReferences
+    extends
+        BaseReferences<_$AppDatabase, $LauncherFoldersTable, LauncherFolder> {
+  $$LauncherFoldersTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static MultiTypedResultKey<$FavoritesTable, List<Favorite>>
+  _favoritesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.favorites,
+    aliasName: $_aliasNameGenerator(
+      db.launcherFolders.id,
+      db.favorites.folderId,
+    ),
+  );
+
+  $$FavoritesTableProcessedTableManager get favoritesRefs {
+    final manager = $$FavoritesTableTableManager(
+      $_db,
+      $_db.favorites,
+    ).filter((f) => f.folderId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_favoritesRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
+
+class $$LauncherFoldersTableFilterComposer
+    extends Composer<_$AppDatabase, $LauncherFoldersTable> {
+  $$LauncherFoldersTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  Expression<bool> favoritesRefs(
+    Expression<bool> Function($$FavoritesTableFilterComposer f) f,
+  ) {
+    final $$FavoritesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.favorites,
+      getReferencedColumn: (t) => t.folderId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$FavoritesTableFilterComposer(
+            $db: $db,
+            $table: $db.favorites,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$LauncherFoldersTableOrderingComposer
+    extends Composer<_$AppDatabase, $LauncherFoldersTable> {
+  $$LauncherFoldersTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LauncherFoldersTableAnnotationComposer
+    extends Composer<_$AppDatabase, $LauncherFoldersTable> {
+  $$LauncherFoldersTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => column,
+  );
+
+  Expression<T> favoritesRefs<T extends Object>(
+    Expression<T> Function($$FavoritesTableAnnotationComposer a) f,
+  ) {
+    final $$FavoritesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.favorites,
+      getReferencedColumn: (t) => t.folderId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$FavoritesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.favorites,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$LauncherFoldersTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $LauncherFoldersTable,
+          LauncherFolder,
+          $$LauncherFoldersTableFilterComposer,
+          $$LauncherFoldersTableOrderingComposer,
+          $$LauncherFoldersTableAnnotationComposer,
+          $$LauncherFoldersTableCreateCompanionBuilder,
+          $$LauncherFoldersTableUpdateCompanionBuilder,
+          (LauncherFolder, $$LauncherFoldersTableReferences),
+          LauncherFolder,
+          PrefetchHooks Function({bool favoritesRefs})
+        > {
+  $$LauncherFoldersTableTableManager(
+    _$AppDatabase db,
+    $LauncherFoldersTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LauncherFoldersTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LauncherFoldersTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LauncherFoldersTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<int> orderIndex = const Value.absent(),
+              }) => LauncherFoldersCompanion(
+                id: id,
+                name: name,
+                orderIndex: orderIndex,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String name,
+                required int orderIndex,
+              }) => LauncherFoldersCompanion.insert(
+                id: id,
+                name: name,
+                orderIndex: orderIndex,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$LauncherFoldersTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({favoritesRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [if (favoritesRefs) db.favorites],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (favoritesRefs)
+                    await $_getPrefetchedData<
+                      LauncherFolder,
+                      $LauncherFoldersTable,
+                      Favorite
+                    >(
+                      currentTable: table,
+                      referencedTable: $$LauncherFoldersTableReferences
+                          ._favoritesRefsTable(db),
+                      managerFromTypedResult: (p0) =>
+                          $$LauncherFoldersTableReferences(
+                            db,
+                            table,
+                            p0,
+                          ).favoritesRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where((e) => e.folderId == item.id),
+                      typedResults: items,
+                    ),
+                ];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$LauncherFoldersTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $LauncherFoldersTable,
+      LauncherFolder,
+      $$LauncherFoldersTableFilterComposer,
+      $$LauncherFoldersTableOrderingComposer,
+      $$LauncherFoldersTableAnnotationComposer,
+      $$LauncherFoldersTableCreateCompanionBuilder,
+      $$LauncherFoldersTableUpdateCompanionBuilder,
+      (LauncherFolder, $$LauncherFoldersTableReferences),
+      LauncherFolder,
+      PrefetchHooks Function({bool favoritesRefs})
+    >;
 typedef $$FavoritesTableCreateCompanionBuilder =
     FavoritesCompanion Function({
       Value<int> id,
       required String packageName,
       required int orderIndex,
+      Value<int?> folderId,
     });
 typedef $$FavoritesTableUpdateCompanionBuilder =
     FavoritesCompanion Function({
       Value<int> id,
       Value<String> packageName,
       Value<int> orderIndex,
+      Value<int?> folderId,
     });
 
 final class $$FavoritesTableReferences
@@ -15527,6 +16124,25 @@ final class $$FavoritesTableReferences
       $_db.applications,
     ).filter((f) => f.packageName.sqlEquals($_column));
     final item = $_typedResult.readTableOrNull(_packageNameTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $LauncherFoldersTable _folderIdTable(_$AppDatabase db) =>
+      db.launcherFolders.createAlias(
+        $_aliasNameGenerator(db.favorites.folderId, db.launcherFolders.id),
+      );
+
+  $$LauncherFoldersTableProcessedTableManager? get folderId {
+    final $_column = $_itemColumn<int>('folder_id');
+    if ($_column == null) return null;
+    final manager = $$LauncherFoldersTableTableManager(
+      $_db,
+      $_db.launcherFolders,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_folderIdTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: [item]),
@@ -15567,6 +16183,29 @@ class $$FavoritesTableFilterComposer
           }) => $$ApplicationsTableFilterComposer(
             $db: $db,
             $table: $db.applications,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$LauncherFoldersTableFilterComposer get folderId {
+    final $$LauncherFoldersTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.folderId,
+      referencedTable: $db.launcherFolders,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$LauncherFoldersTableFilterComposer(
+            $db: $db,
+            $table: $db.launcherFolders,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -15618,6 +16257,29 @@ class $$FavoritesTableOrderingComposer
     );
     return composer;
   }
+
+  $$LauncherFoldersTableOrderingComposer get folderId {
+    final $$LauncherFoldersTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.folderId,
+      referencedTable: $db.launcherFolders,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$LauncherFoldersTableOrderingComposer(
+            $db: $db,
+            $table: $db.launcherFolders,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$FavoritesTableAnnotationComposer
@@ -15659,6 +16321,29 @@ class $$FavoritesTableAnnotationComposer
     );
     return composer;
   }
+
+  $$LauncherFoldersTableAnnotationComposer get folderId {
+    final $$LauncherFoldersTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.folderId,
+      referencedTable: $db.launcherFolders,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$LauncherFoldersTableAnnotationComposer(
+            $db: $db,
+            $table: $db.launcherFolders,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$FavoritesTableTableManager
@@ -15674,7 +16359,7 @@ class $$FavoritesTableTableManager
           $$FavoritesTableUpdateCompanionBuilder,
           (Favorite, $$FavoritesTableReferences),
           Favorite,
-          PrefetchHooks Function({bool packageName})
+          PrefetchHooks Function({bool packageName, bool folderId})
         > {
   $$FavoritesTableTableManager(_$AppDatabase db, $FavoritesTable table)
     : super(
@@ -15692,20 +16377,24 @@ class $$FavoritesTableTableManager
                 Value<int> id = const Value.absent(),
                 Value<String> packageName = const Value.absent(),
                 Value<int> orderIndex = const Value.absent(),
+                Value<int?> folderId = const Value.absent(),
               }) => FavoritesCompanion(
                 id: id,
                 packageName: packageName,
                 orderIndex: orderIndex,
+                folderId: folderId,
               ),
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
                 required String packageName,
                 required int orderIndex,
+                Value<int?> folderId = const Value.absent(),
               }) => FavoritesCompanion.insert(
                 id: id,
                 packageName: packageName,
                 orderIndex: orderIndex,
+                folderId: folderId,
               ),
           withReferenceMapper: (p0) => p0
               .map(
@@ -15715,7 +16404,7 @@ class $$FavoritesTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({packageName = false}) {
+          prefetchHooksCallback: ({packageName = false, folderId = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [],
@@ -15748,6 +16437,19 @@ class $$FavoritesTableTableManager
                               )
                               as T;
                     }
+                    if (folderId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.folderId,
+                                referencedTable: $$FavoritesTableReferences
+                                    ._folderIdTable(db),
+                                referencedColumn: $$FavoritesTableReferences
+                                    ._folderIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
 
                     return state;
                   },
@@ -15772,7 +16474,7 @@ typedef $$FavoritesTableProcessedTableManager =
       $$FavoritesTableUpdateCompanionBuilder,
       (Favorite, $$FavoritesTableReferences),
       Favorite,
-      PrefetchHooks Function({bool packageName})
+      PrefetchHooks Function({bool packageName, bool folderId})
     >;
 typedef $$AchievementsUnlockedTableCreateCompanionBuilder =
     AchievementsUnlockedCompanion Function({
@@ -16352,6 +17054,8 @@ class $AppDatabaseManager {
       $$IntentionUsageEventsTableTableManager(_db, _db.intentionUsageEvents);
   $$FocusUsageEventsTableTableManager get focusUsageEvents =>
       $$FocusUsageEventsTableTableManager(_db, _db.focusUsageEvents);
+  $$LauncherFoldersTableTableManager get launcherFolders =>
+      $$LauncherFoldersTableTableManager(_db, _db.launcherFolders);
   $$FavoritesTableTableManager get favorites =>
       $$FavoritesTableTableManager(_db, _db.favorites);
   $$AchievementsUnlockedTableTableManager get achievementsUnlocked =>

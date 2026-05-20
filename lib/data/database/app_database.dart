@@ -25,6 +25,7 @@ import 'tables/focus_usage_events.dart';
 import 'tables/geo_addresses_table.dart';
 import 'tables/intention_usage_events.dart';
 import 'tables/intervals_table.dart';
+import 'tables/launcher_folders_table.dart';
 import 'tables/mood_check_ins_table.dart';
 import 'tables/pomodoro_sessions_table.dart';
 import 'tables/profiles_table.dart';
@@ -66,6 +67,7 @@ part 'app_database.g.dart';
     IntentionUsageEvents,
     FocusUsageEvents,
     Favorites,
+    LauncherFolders,
     AchievementsUnlocked,
     StreakState,
     JournalEntries,
@@ -85,7 +87,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -129,6 +131,14 @@ class AppDatabase extends _$AppDatabase {
           if (from < 3) {
             // v3: journaling (Phase 2).
             await m.createTable(journalEntries);
+          }
+          if (from < 4) {
+            // v4: cartelle per le app preferite del launcher. Additiva: la
+            // colonna folderId nasce NULL su tutti i favoriti esistenti, che
+            // restano quindi "sciolti" nella home col loro orderIndex attuale.
+            // Ordine obbligato: prima la tabella referenziata, poi la FK.
+            await m.createTable(launcherFolders);
+            await m.addColumn(favorites, favorites.folderId);
           }
         },
       );
@@ -317,7 +327,8 @@ class AppDatabase extends _$AppDatabase {
   /// un reload/dispose di installedAppsProvider (flicker ricorrente). Left
   /// join + fallback al packageName: anche se per qualche motivo manca la riga
   /// in `applications`, il favorito resta visibile (col package come label).
-  Stream<List<({String packageName, String label})>> watchFavoritesWithLabels() {
+  Stream<List<({String packageName, String label, int? folderId, int orderIndex})>>
+      watchFavoritesWithLabels() {
     final query = select(favorites).join([
       leftOuterJoin(
         applications,
@@ -331,6 +342,8 @@ class AppDatabase extends _$AppDatabase {
           return (
             packageName: fav.packageName,
             label: app?.label ?? fav.packageName,
+            folderId: fav.folderId,
+            orderIndex: fav.orderIndex,
           );
         }).toList(growable: false));
   }
@@ -338,7 +351,11 @@ class AppDatabase extends _$AppDatabase {
   Future<List<Favorite>> getFavorites() => (select(favorites)
         ..orderBy([(f) => OrderingTerm.asc(f.orderIndex)]))
       .get();
-  Future<void> addFavorite(String packageName, {String? label}) async {
+  Future<void> addFavorite(
+    String packageName, {
+    String? label,
+    int? folderId,
+  }) async {
     // Garantisce che la riga in `applications` esista: la FK del favorito
     // punta lì e Drift 2.x ha foreign_keys=ON di default, quindi senza
     // questa upsert l'insert fallirebbe silenziosamente con FK violation
@@ -352,19 +369,17 @@ class AppDatabase extends _$AppDatabase {
       ),
       mode: InsertMode.insertOrIgnore,
     );
-    final existing = await (select(favorites)..limit(1)).get();
-    final nextIndex = existing.isEmpty
-        ? 0
-        : (await (select(favorites)
-                  ..orderBy([(f) => OrderingTerm.desc(f.orderIndex)])
-                  ..limit(1))
-                .getSingle())
-                .orderIndex +
-            1;
+    // Nuovo favorito: in coda allo spazio di ordinamento giusto. Se sciolto
+    // (folderId == null) → spazio top-level (condiviso con le cartelle); se in
+    // cartella → spazio interno alla cartella.
+    final nextIndex = folderId == null
+        ? await _nextTopLevelOrderIndex()
+        : await _nextFolderOrderIndex(folderId);
     await into(favorites).insert(
       FavoritesCompanion.insert(
         packageName: packageName,
         orderIndex: nextIndex,
+        folderId: Value(folderId),
       ),
       mode: InsertMode.insertOrIgnore,
     );
@@ -380,6 +395,120 @@ class AppDatabase extends _$AppDatabase {
         await (update(favorites)
               ..where((f) => f.packageName.equals(orderedPackageNames[i])))
             .write(FavoritesCompanion(orderIndex: Value(i)));
+      }
+    });
+  }
+
+  // --- Launcher folders (cartelle dei preferiti) ---
+
+  /// Prossimo orderIndex nello spazio "top-level": gli item visibili in home
+  /// sono i favoriti sciolti (folderId == null) PIÙ tutte le cartelle, che
+  /// condividono lo stesso intervallo di indici.
+  Future<int> _nextTopLevelOrderIndex() async {
+    final loose =
+        await (select(favorites)..where((f) => f.folderId.isNull())).get();
+    final folders = await select(launcherFolders).get();
+    var max = -1;
+    for (final f in loose) {
+      if (f.orderIndex > max) max = f.orderIndex;
+    }
+    for (final d in folders) {
+      if (d.orderIndex > max) max = d.orderIndex;
+    }
+    return max + 1;
+  }
+
+  /// Prossimo orderIndex DENTRO una cartella (spazio interno separato).
+  Future<int> _nextFolderOrderIndex(int folderId) async {
+    final inFolder = await (select(favorites)
+          ..where((f) => f.folderId.equals(folderId)))
+        .get();
+    var max = -1;
+    for (final f in inFolder) {
+      if (f.orderIndex > max) max = f.orderIndex;
+    }
+    return max + 1;
+  }
+
+  Stream<List<LauncherFolder>> watchFolders() => (select(launcherFolders)
+        ..orderBy([(t) => OrderingTerm.asc(t.orderIndex)]))
+      .watch();
+
+  Future<List<LauncherFolder>> getFolders() => (select(launcherFolders)
+        ..orderBy([(t) => OrderingTerm.asc(t.orderIndex)]))
+      .get();
+
+  /// Crea una cartella in coda al top-level e ne ritorna l'id.
+  Future<int> createFolder(String name) async {
+    final idx = await _nextTopLevelOrderIndex();
+    return into(launcherFolders)
+        .insert(LauncherFoldersCompanion.insert(name: name, orderIndex: idx));
+  }
+
+  Future<void> renameFolder(int id, String name) =>
+      (update(launcherFolders)..where((t) => t.id.equals(id)))
+          .write(LauncherFoldersCompanion(name: Value(name)));
+
+  /// Elimina una cartella SENZA perdere i suoi preferiti: prima li riporta nel
+  /// top-level (folderId = null) con indici freschi in coda — i loro orderIndex
+  /// erano relativi alla cartella e collidereberro col top-level — poi cancella
+  /// la cartella. (Lo facciamo a mano invece di affidarci a onDelete:setNull
+  /// proprio per riassegnare gli indici e non lasciare ordini incoerenti.)
+  Future<void> deleteFolder(int id) async {
+    await transaction(() async {
+      final inFolder = await (select(favorites)
+            ..where((f) => f.folderId.equals(id))
+            ..orderBy([(f) => OrderingTerm.asc(f.orderIndex)]))
+          .get();
+      var next = await _nextTopLevelOrderIndex();
+      for (final fav in inFolder) {
+        await (update(favorites)..where((f) => f.id.equals(fav.id))).write(
+          FavoritesCompanion(
+            folderId: const Value(null),
+            orderIndex: Value(next),
+          ),
+        );
+        next++;
+      }
+      await (delete(launcherFolders)..where((t) => t.id.equals(id))).go();
+    });
+  }
+
+  /// Sposta un preferito in una cartella (`folderId` valorizzato) o lo riporta
+  /// sciolto nella home (`folderId == null`), in coda allo spazio di destino.
+  Future<void> setFavoriteFolder(String packageName, int? folderId) async {
+    await transaction(() async {
+      final nextIndex = folderId == null
+          ? await _nextTopLevelOrderIndex()
+          : await _nextFolderOrderIndex(folderId);
+      await (update(favorites)..where((f) => f.packageName.equals(packageName)))
+          .write(
+        FavoritesCompanion(
+          folderId: Value(folderId),
+          orderIndex: Value(nextIndex),
+        ),
+      );
+    });
+  }
+
+  /// Riordina gli item top-level della home (mix di app sciolte e cartelle).
+  /// Ogni elemento ha ESATTAMENTE uno tra `packageName` (app sciolta) e
+  /// `folderId` (cartella) valorizzato; l'indice di posizione diventa il nuovo
+  /// orderIndex nello spazio condiviso.
+  Future<void> reorderTopLevel(
+    List<({String? packageName, int? folderId})> items,
+  ) async {
+    await transaction(() async {
+      for (var i = 0; i < items.length; i++) {
+        final it = items[i];
+        if (it.packageName != null) {
+          await (update(favorites)
+                ..where((f) => f.packageName.equals(it.packageName!)))
+              .write(FavoritesCompanion(orderIndex: Value(i)));
+        } else if (it.folderId != null) {
+          await (update(launcherFolders)..where((t) => t.id.equals(it.folderId!)))
+              .write(LauncherFoldersCompanion(orderIndex: Value(i)));
+        }
       }
     });
   }

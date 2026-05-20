@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/di/providers.dart';
 import '../../data/database/app_database.dart';
+import '../../domain/entities/launcher_item.dart';
 import '../../platform/blocking_channel.dart';
 import 'app_list_provider.dart';
 
@@ -27,11 +28,21 @@ final favoritesProvider = StreamProvider<List<String>>((ref) {
 /// applications). keepAlive come [favoritesProvider]: unico subscriber a
 /// regime e' la home del launcher, che durante navigazioni rapide puo'
 /// smontarsi per un frame.
-final favoriteEntriesProvider =
-    StreamProvider<List<({String packageName, String label})>>((ref) {
+final favoriteEntriesProvider = StreamProvider<
+    List<({String packageName, String label, int? folderId, int orderIndex})>>(
+  (ref) {
+    ref.keepAlive();
+    final db = ref.watch(appDatabaseProvider);
+    return db.watchFavoritesWithLabels();
+  },
+);
+
+/// Stream delle cartelle del launcher (ordine `orderIndex`). `keepAlive` come
+/// [favoriteEntriesProvider]: stesso ciclo di vita della home del launcher.
+final foldersProvider = StreamProvider<List<LauncherFolder>>((ref) {
   ref.keepAlive();
   final db = ref.watch(appDatabaseProvider);
-  return db.watchFavoritesWithLabels();
+  return db.watchFolders();
 });
 
 /// Risolve i favoriti in [InstalledAppInfo] per la home del launcher.
@@ -60,7 +71,7 @@ final favoriteEntriesProvider =
 /// caso di fallimento esatto che causava il flicker. `iconBytes` resta null.
 final favoriteAppsProvider = Provider<List<InstalledAppInfo>>((ref) {
   final entries = ref.watch(favoriteEntriesProvider).valueOrNull ??
-      const <({String packageName, String label})>[];
+      const <({String packageName, String label, int? folderId, int orderIndex})>[];
   final installedNames =
       ref.watch(installedPackageNamesProvider).valueOrNull;
   final canFilter = installedNames != null && installedNames.isNotEmpty;
@@ -70,16 +81,83 @@ final favoriteAppsProvider = Provider<List<InstalledAppInfo>>((ref) {
       .toList(growable: false);
 });
 
+/// Lista top-level della home launcher: app preferite **sciolte** + **cartelle**,
+/// interlacciate per `orderIndex`, con le app di ogni cartella già ordinate.
+///
+/// Stessa disciplina anti-flicker di [favoriteAppsProvider]: i dati arrivano dal
+/// DB locale (mai dal volatile `installedAppsProvider`) e le app disinstallate
+/// si filtrano SOLO quando [installedPackageNamesProvider] è caricato e non
+/// vuoto — durante un loading la lista non deve mai collassare a vuoto.
+final launcherItemsProvider = Provider<List<LauncherItem>>((ref) {
+  final entries = ref.watch(favoriteEntriesProvider).valueOrNull ??
+      const <({String packageName, String label, int? folderId, int orderIndex})>[];
+  final folders =
+      ref.watch(foldersProvider).valueOrNull ?? const <LauncherFolder>[];
+  final installedNames = ref.watch(installedPackageNamesProvider).valueOrNull;
+  final canFilter = installedNames != null && installedNames.isNotEmpty;
+  bool installed(String pkg) => !canFilter || installedNames.contains(pkg);
+
+  // Partiziona i favoriti: sciolti (top-level) vs dentro una cartella.
+  final loose = <({int orderIndex, LauncherApp app})>[];
+  final byFolder = <int, List<({int orderIndex, LauncherApp app})>>{};
+  for (final e in entries) {
+    if (!installed(e.packageName)) continue;
+    final app = LauncherApp(packageName: e.packageName, label: e.label);
+    if (e.folderId == null) {
+      loose.add((orderIndex: e.orderIndex, app: app));
+    } else {
+      (byFolder[e.folderId!] ??= []).add((orderIndex: e.orderIndex, app: app));
+    }
+  }
+
+  // Fonde app sciolte e cartelle in un unico ordinamento top-level.
+  final top = <({int orderIndex, LauncherItem item})>[];
+  for (final l in loose) {
+    top.add((orderIndex: l.orderIndex, item: LauncherLooseApp(l.app)));
+  }
+  for (final f in folders) {
+    final apps = (byFolder[f.id] ?? <({int orderIndex, LauncherApp app})>[])
+      ..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
+    top.add((
+      orderIndex: f.orderIndex,
+      item: LauncherFolderItem(
+        id: f.id,
+        name: f.name,
+        apps: apps.map((e) => e.app).toList(growable: false),
+      ),
+    ));
+  }
+  top.sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
+  return top.map((e) => e.item).toList(growable: false);
+});
+
 class FavoritesController {
   FavoritesController(this._db);
 
   final AppDatabase _db;
 
-  Future<void> add(String packageName, {String? label}) =>
-      _db.addFavorite(packageName, label: label);
+  Future<void> add(String packageName, {String? label, int? folderId}) =>
+      _db.addFavorite(packageName, label: label, folderId: folderId);
   Future<void> remove(String packageName) => _db.removeFavorite(packageName);
   Future<void> reorder(List<String> orderedPackageNames) =>
       _db.reorderFavorites(orderedPackageNames);
+
+  // --- Cartelle ---
+  Future<int> createFolder(String name) => _db.createFolder(name);
+  Future<void> renameFolder(int id, String name) =>
+      _db.renameFolder(id, name);
+  Future<void> deleteFolder(int id) => _db.deleteFolder(id);
+
+  /// Sposta un preferito in una cartella (`folderId`) o lo riporta sciolto
+  /// (`folderId == null`).
+  Future<void> moveToFolder(String packageName, int? folderId) =>
+      _db.setFavoriteFolder(packageName, folderId);
+
+  /// Riordina gli item top-level (mix di app sciolte e cartelle).
+  Future<void> reorderTopLevel(
+    List<({String? packageName, int? folderId})> items,
+  ) =>
+      _db.reorderTopLevel(items);
 }
 
 final favoritesControllerProvider = Provider<FavoritesController>(
