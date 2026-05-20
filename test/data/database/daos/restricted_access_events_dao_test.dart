@@ -22,16 +22,15 @@ void main() {
       required String pkg,
       required int eventType,
       required int restrictionType,
-    }) =>
-        db.restrictedAccessEventsDao.insertEvent(
-          RestrictedAccessEventsCompanion.insert(
-            occurredAt: DateTime.now().millisecondsSinceEpoch,
-            dayStartDate: day,
-            packageName: pkg,
-            eventType: eventType,
-            restrictionType: restrictionType,
-          ),
-        );
+    }) => db.restrictedAccessEventsDao.insertEvent(
+      RestrictedAccessEventsCompanion.insert(
+        occurredAt: DateTime.now().millisecondsSinceEpoch,
+        dayStartDate: day,
+        packageName: pkg,
+        eventType: eventType,
+        restrictionType: restrictionType,
+      ),
+    );
 
     group('insertEvent', () {
       test('persists a row that can be re-selected', () async {
@@ -151,38 +150,40 @@ void main() {
         );
       });
 
-      test('only counts eventType=0 (BLOCK_TRIGGERED) across all days',
-          () async {
-        await insert(
-          day: '2026-04-17',
-          pkg: 'com.x',
-          eventType: 0,
-          restrictionType: 0,
-        );
-        await insert(
-          day: '2026-04-17',
-          pkg: 'com.x',
-          eventType: 1, // skipped, must NOT be counted
-          restrictionType: 0,
-        );
-        await insert(
-          day: '2026-04-18',
-          pkg: 'com.x',
-          eventType: 0,
-          restrictionType: 0,
-        );
-        await insert(
-          day: '2026-04-19',
-          pkg: 'com.x',
-          eventType: 0,
-          restrictionType: 0,
-        );
+      test(
+        'only counts eventType=0 (BLOCK_TRIGGERED) across all days',
+        () async {
+          await insert(
+            day: '2026-04-17',
+            pkg: 'com.x',
+            eventType: 0,
+            restrictionType: 0,
+          );
+          await insert(
+            day: '2026-04-17',
+            pkg: 'com.x',
+            eventType: 1, // skipped, must NOT be counted
+            restrictionType: 0,
+          );
+          await insert(
+            day: '2026-04-18',
+            pkg: 'com.x',
+            eventType: 0,
+            restrictionType: 0,
+          );
+          await insert(
+            day: '2026-04-19',
+            pkg: 'com.x',
+            eventType: 0,
+            restrictionType: 0,
+          );
 
-        expect(
-          await db.restrictedAccessEventsDao.getLifetimeHonestBlockCount(),
-          3,
-        );
-      });
+          expect(
+            await db.restrictedAccessEventsDao.getLifetimeHonestBlockCount(),
+            3,
+          );
+        },
+      );
     });
 
     group('watchCountEventsByTypeInRange', () {
@@ -191,6 +192,10 @@ void main() {
             .watchCountEventsByTypeInRange(0, '2026-04-17', '2026-04-17');
         final emissions = <int>[];
         final sub = stream.listen(emissions.add);
+        // Let the initial (0) emission land before mutating, otherwise the
+        // insert can race ahead of Drift's first query result and we never
+        // observe the empty initial state.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
 
         await insert(
           day: '2026-04-17',
@@ -268,11 +273,7 @@ void main() {
         );
 
         final count = await db.restrictedAccessEventsDao
-            .watchCountByRestrictionTypeInRange(
-              0,
-              '2026-04-17',
-              '2026-04-17',
-            )
+            .watchCountByRestrictionTypeInRange(0, '2026-04-17', '2026-04-17')
             .first;
         expect(count, 1);
       });
@@ -280,53 +281,57 @@ void main() {
 
     group('watchPerAppBreakdown', () {
       test('emits empty list when no events match', () async {
-        final stream = db.restrictedAccessEventsDao
-            .watchPerAppBreakdown('2026-04-17', '2026-04-17');
+        final stream = db.restrictedAccessEventsDao.watchPerAppBreakdown(
+          '2026-04-17',
+          '2026-04-17',
+        );
         await expectLater(stream, emits(isEmpty));
       });
 
-      test('groups by (package_name, event_type) and orders by count DESC',
-          () async {
-        // 4 BLOCK_TRIGGERED on instagram
-        for (var i = 0; i < 4; i++) {
+      test(
+        'groups by (package_name, event_type) and orders by count DESC',
+        () async {
+          // 4 BLOCK_TRIGGERED on instagram
+          for (var i = 0; i < 4; i++) {
+            await insert(
+              day: '2026-04-17',
+              pkg: 'com.instagram.android',
+              eventType: 0,
+              restrictionType: 0,
+            );
+          }
+          // 2 BLOCK_SKIPPED on instagram → separate group
+          for (var i = 0; i < 2; i++) {
+            await insert(
+              day: '2026-04-17',
+              pkg: 'com.instagram.android',
+              eventType: 1,
+              restrictionType: 0,
+            );
+          }
+          // 1 BLOCK_TRIGGERED on tiktok
           await insert(
             day: '2026-04-17',
-            pkg: 'com.instagram.android',
+            pkg: 'com.tiktok.android',
             eventType: 0,
             restrictionType: 0,
           );
-        }
-        // 2 BLOCK_SKIPPED on instagram → separate group
-        for (var i = 0; i < 2; i++) {
-          await insert(
-            day: '2026-04-17',
-            pkg: 'com.instagram.android',
-            eventType: 1,
-            restrictionType: 0,
-          );
-        }
-        // 1 BLOCK_TRIGGERED on tiktok
-        await insert(
-          day: '2026-04-17',
-          pkg: 'com.tiktok.android',
-          eventType: 0,
-          restrictionType: 0,
-        );
 
-        final stats = await db.restrictedAccessEventsDao
-            .watchPerAppBreakdown('2026-04-17', '2026-04-17')
-            .first;
+          final stats = await db.restrictedAccessEventsDao
+              .watchPerAppBreakdown('2026-04-17', '2026-04-17')
+              .first;
 
-        expect(stats, hasLength(3));
-        // First row is the largest group.
-        expect(stats.first.packageName, 'com.instagram.android');
-        expect(stats.first.eventType, 0);
-        expect(stats.first.count, 4);
-        // counts strictly non-increasing
-        for (var i = 1; i < stats.length; i++) {
-          expect(stats[i].count, lessThanOrEqualTo(stats[i - 1].count));
-        }
-      });
+          expect(stats, hasLength(3));
+          // First row is the largest group.
+          expect(stats.first.packageName, 'com.instagram.android');
+          expect(stats.first.eventType, 0);
+          expect(stats.first.count, 4);
+          // counts strictly non-increasing
+          for (var i = 1; i < stats.length; i++) {
+            expect(stats[i].count, lessThanOrEqualTo(stats[i - 1].count));
+          }
+        },
+      );
 
       test('filters by the day range', () async {
         await insert(
@@ -351,11 +356,7 @@ void main() {
     });
 
     test('PerAppStatResult is a plain data holder', () {
-      final r = PerAppStatResult(
-        packageName: 'com.x',
-        count: 5,
-        eventType: 0,
-      );
+      final r = PerAppStatResult(packageName: 'com.x', count: 5, eventType: 0);
       expect(r.packageName, 'com.x');
       expect(r.count, 5);
       expect(r.eventType, 0);

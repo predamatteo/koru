@@ -15,7 +15,22 @@ class _AppSearchBarState extends ConsumerState<AppSearchBar> {
   final _controller = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    // Rebuild quando cambia il testo così il pulsante "clear" (X) compare e
+    // scompare: il suffixIcon è valutato in build() e senza questo listener
+    // non si aggiornerebbe alla digitazione (AppSearchBar è `const` nel
+    // parent, che quindi non ricostruisce questo State a ogni keystroke).
+    _controller.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    _controller.removeListener(_onTextChanged);
     _controller.dispose();
     super.dispose();
   }
@@ -38,7 +53,10 @@ class _AppSearchBarState extends ConsumerState<AppSearchBar> {
           suffixIcon: _controller.text.isEmpty
               ? null
               : IconButton(
-                  icon: const Icon(Icons.close, color: KoruColors.textSecondary),
+                  icon: const Icon(
+                    Icons.close,
+                    color: KoruColors.textSecondary,
+                  ),
                   onPressed: () {
                     _controller.clear();
                     ref.read(appSearchQueryProvider.notifier).state = '';

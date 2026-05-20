@@ -19,13 +19,17 @@ void main() {
       expect(FastScroller.alphabet.length, 27);
       // Each letter is in its own Text — find by text per-letter.
       for (final l in FastScroller.alphabet) {
-        expect(find.text(l), findsOneWidget,
-            reason: 'letter "$l" should be rendered');
+        expect(
+          find.text(l),
+          findsOneWidget,
+          reason: 'letter "$l" should be rendered',
+        );
       }
     });
 
-    testWidgets('tap on a letter invokes onLetterSelected with that letter',
-        (tester) async {
+    testWidgets('tap on a letter invokes onLetterSelected with that letter', (
+      tester,
+    ) async {
       String? selected;
       await pumpKoruWidget(
         tester,
@@ -42,6 +46,10 @@ void main() {
       // ridurre l'hitbox del singolo Text, ma il GestureDetector padre cattura.
       await tester.tap(find.text('M'), warnIfMissed: false);
       await tester.pump();
+      // onTapUp programma un Future.delayed(300ms) per resettare l'highlight:
+      // lascialo scadere, altrimenti resta un timer pending che fa fallire il
+      // teardown ("A Timer is still pending even after the widget tree...").
+      await tester.pump(const Duration(milliseconds: 350));
 
       // Il callback è invocato dal GestureDetector globale che mappa
       // localY → indice alfabeto. Quindi `selected` può non essere
@@ -51,29 +59,28 @@ void main() {
       expect(FastScroller.alphabet, contains(selected));
     });
 
-    testWidgets('available letters and unavailable letters have different alpha',
-        (tester) async {
-      await pumpKoruWidget(
-        tester,
-        FastScroller(
-          onLetterSelected: (_) {},
-          availableLetters: const {'A'},
-        ),
-      );
+    testWidgets(
+      'available letters and unavailable letters have different alpha',
+      (tester) async {
+        await pumpKoruWidget(
+          tester,
+          FastScroller(onLetterSelected: (_) {}, availableLetters: const {'A'}),
+        );
 
-      // Trova due Text widget e confronta gli style: "A" available, "Z" no.
-      final textA = tester.widget<Text>(find.text('A'));
-      final textZ = tester.widget<Text>(find.text('Z'));
+        // Trova due Text widget e confronta gli style: "A" available, "Z" no.
+        final textA = tester.widget<Text>(find.text('A'));
+        final textZ = tester.widget<Text>(find.text('Z'));
 
-      final colorA = textA.style?.color;
-      final colorZ = textZ.style?.color;
+        final colorA = textA.style?.color;
+        final colorZ = textZ.style?.color;
 
-      expect(colorA, isNotNull);
-      expect(colorZ, isNotNull);
-      // Available has higher alpha (180) than unavailable (60), so they
-      // must differ.
-      expect(colorA, isNot(equals(colorZ)));
-    });
+        expect(colorA, isNotNull);
+        expect(colorZ, isNotNull);
+        // Available has higher alpha (180) than unavailable (60), so they
+        // must differ.
+        expect(colorA, isNot(equals(colorZ)));
+      },
+    );
 
     testWidgets('drag start triggers onLetterSelected', (tester) async {
       final selected = <String>[];
@@ -89,8 +96,9 @@ void main() {
       );
 
       // Drag verticale dal centro per generare hover-letter events.
-      final gesture =
-          await tester.startGesture(tester.getCenter(find.byType(FastScroller)));
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byType(FastScroller)),
+      );
       await gesture.moveBy(const Offset(0, 40));
       await tester.pump();
       await gesture.up();

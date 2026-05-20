@@ -18,14 +18,13 @@ void main() {
       required String day,
       required int durationMs,
       int? occurredAt,
-    }) =>
-        db.focusUsageEventsDao.insertEvent(
-          FocusUsageEventsCompanion.insert(
-            occurredAt: occurredAt ?? DateTime.now().millisecondsSinceEpoch,
-            dayStartDate: day,
-            durationInMs: durationMs,
-          ),
-        );
+    }) => db.focusUsageEventsDao.insertEvent(
+      FocusUsageEventsCompanion.insert(
+        occurredAt: occurredAt ?? DateTime.now().millisecondsSinceEpoch,
+        dayStartDate: day,
+        durationInMs: durationMs,
+      ),
+    );
 
     group('insertEvent', () {
       test('inserts a row that survives a re-select', () async {
@@ -42,8 +41,9 @@ void main() {
         await insert(day: '2026-04-17', durationMs: 200);
         await insert(day: '2026-04-17', durationMs: 300);
 
-        final ids =
-            (await db.select(db.focusUsageEvents).get()).map((e) => e.id).toSet();
+        final ids = (await db.select(db.focusUsageEvents).get())
+            .map((e) => e.id)
+            .toSet();
         expect(ids.length, 3);
       });
     });
@@ -64,23 +64,27 @@ void main() {
 
     group('watchFocusTimeUsage (range filter)', () {
       test('emits 0 when no events fall in range', () async {
-        final stream = db.focusUsageEventsDao
-            .watchFocusTimeUsage('2026-04-17', '2026-04-17');
+        final stream = db.focusUsageEventsDao.watchFocusTimeUsage(
+          '2026-04-17',
+          '2026-04-17',
+        );
         await expectLater(stream, emits(0));
       });
 
-      test('sums only events whose dayStartDate is within [from, to]',
-          () async {
-        await insert(day: '2026-04-15', durationMs: 100);
-        await insert(day: '2026-04-16', durationMs: 200);
-        await insert(day: '2026-04-17', durationMs: 400);
-        await insert(day: '2026-04-18', durationMs: 800);
+      test(
+        'sums only events whose dayStartDate is within [from, to]',
+        () async {
+          await insert(day: '2026-04-15', durationMs: 100);
+          await insert(day: '2026-04-16', durationMs: 200);
+          await insert(day: '2026-04-17', durationMs: 400);
+          await insert(day: '2026-04-18', durationMs: 800);
 
-        final sum = await db.focusUsageEventsDao
-            .watchFocusTimeUsage('2026-04-16', '2026-04-17')
-            .first;
-        expect(sum, 600);
-      });
+          final sum = await db.focusUsageEventsDao
+              .watchFocusTimeUsage('2026-04-16', '2026-04-17')
+              .first;
+          expect(sum, 600);
+        },
+      );
 
       test('BETWEEN bounds are inclusive', () async {
         await insert(day: '2026-04-17', durationMs: 1000);
@@ -105,10 +109,16 @@ void main() {
       });
 
       test('stream re-emits after a new event is inserted', () async {
-        final stream = db.focusUsageEventsDao
-            .watchFocusTimeUsage('2026-04-17', '2026-04-17');
+        final stream = db.focusUsageEventsDao.watchFocusTimeUsage(
+          '2026-04-17',
+          '2026-04-17',
+        );
         final emissions = <int>[];
         final sub = stream.listen(emissions.add);
+        // Let the initial (0) emission land before mutating, otherwise the
+        // insert can race ahead of Drift's first query result and we never
+        // observe the empty initial state.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
 
         await insert(day: '2026-04-17', durationMs: 1500);
         await Future<void>.delayed(const Duration(milliseconds: 50));

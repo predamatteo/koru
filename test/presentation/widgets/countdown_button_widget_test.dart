@@ -6,8 +6,9 @@ import '../../_helpers/widget_test_utils.dart';
 
 void main() {
   group('CountdownButtonWidget', () {
-    testWidgets('smoke: renders without errors with durationMs=5000',
-        (tester) async {
+    testWidgets('smoke: renders without errors with durationMs=5000', (
+      tester,
+    ) async {
       await pumpKoruWidgetNoSettle(
         tester,
         const CountdownButtonWidget(durationMs: 5000),
@@ -17,8 +18,9 @@ void main() {
       expect(find.byType(GestureDetector), findsOneWidget);
     });
 
-    testWidgets('shows the initial countdown number on first frame',
-        (tester) async {
+    testWidgets('shows the initial countdown number on first frame', (
+      tester,
+    ) async {
       await pumpKoruWidgetNoSettle(
         tester,
         const CountdownButtonWidget(durationMs: 5000),
@@ -29,8 +31,9 @@ void main() {
       expect(find.text('5'), findsOneWidget);
     });
 
-    testWidgets('transitions to "finished" after durationMs elapses',
-        (tester) async {
+    testWidgets('transitions to "finished" after durationMs elapses', (
+      tester,
+    ) async {
       var finishedCalls = 0;
       await pumpKoruWidgetNoSettle(
         tester,
@@ -75,8 +78,9 @@ void main() {
       expect(tapped, 1);
     });
 
-    testWidgets('tap while animating switches text to "Paused"',
-        (tester) async {
+    testWidgets('tap while animating switches text to "Paused"', (
+      tester,
+    ) async {
       await pumpKoruWidgetNoSettle(
         tester,
         const CountdownButtonWidget(durationMs: 10000),
@@ -111,7 +115,12 @@ void main() {
 
       // Resume.
       await tester.tap(find.byType(GestureDetector));
-      await tester.pump(const Duration(milliseconds: 200));
+      // Primo pump: il tap → setState(animating) cambia la key del testo e
+      // l'AnimatedSwitcher AVVIA la transizione di uscita di "Paused".
+      await tester.pump();
+      // Secondo pump: lascia completare il fade-out (AnimatedSwitcher 150ms)
+      // così il vecchio "Paused" esce davvero dal tree.
+      await tester.pump(const Duration(milliseconds: 300));
       // Dopo resume, il testo NON è più "Paused".
       expect(find.text('Paused'), findsNothing);
     });

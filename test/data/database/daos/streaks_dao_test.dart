@@ -84,30 +84,32 @@ void main() {
         expect(state.lastIncrementedDay, '2026-04-17');
       });
 
-      test('updates currentCount on existing row (insertOnConflictUpdate)',
-          () async {
-        await db.streaksDao.upsert(
-          StreakStateCompanion(
-            id: const Value('focus'),
-            currentCount: const Value(2),
-            longest: const Value(2),
-            lastIncrementedDay: const Value('2026-04-16'),
-          ),
-        );
-        await db.streaksDao.upsert(
-          StreakStateCompanion(
-            id: const Value('focus'),
-            currentCount: const Value(3),
-            longest: const Value(3),
-            lastIncrementedDay: const Value('2026-04-17'),
-          ),
-        );
+      test(
+        'updates currentCount on existing row (insertOnConflictUpdate)',
+        () async {
+          await db.streaksDao.upsert(
+            StreakStateCompanion(
+              id: const Value('focus'),
+              currentCount: const Value(2),
+              longest: const Value(2),
+              lastIncrementedDay: const Value('2026-04-16'),
+            ),
+          );
+          await db.streaksDao.upsert(
+            StreakStateCompanion(
+              id: const Value('focus'),
+              currentCount: const Value(3),
+              longest: const Value(3),
+              lastIncrementedDay: const Value('2026-04-17'),
+            ),
+          );
 
-        final state = await db.streaksDao.getState('focus');
-        expect(state!.currentCount, 3);
-        expect(state.longest, 3);
-        expect(state.lastIncrementedDay, '2026-04-17');
-      });
+          final state = await db.streaksDao.getState('focus');
+          expect(state!.currentCount, 3);
+          expect(state.longest, 3);
+          expect(state.lastIncrementedDay, '2026-04-17');
+        },
+      );
 
       test('updates longest independently of currentCount', () async {
         await db.streaksDao.upsert(
@@ -181,6 +183,10 @@ void main() {
         final stream = db.streaksDao.watchState('focus');
         final emissions = <StreakStateData?>[];
         final sub = stream.listen(emissions.add);
+        // Let the initial (null) emission land before mutating, otherwise the
+        // upsert can race ahead of Drift's first query result and we never
+        // observe the empty initial state.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
 
         await db.streaksDao.upsert(
           StreakStateCompanion(

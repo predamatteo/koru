@@ -5,7 +5,7 @@ void main() {
   group('OverlayConfig', () {
     test('defaults', () {
       const config = OverlayConfig.defaults;
-      expect(config.backgroundColorHex, '#A85449');
+      expect(config.backgroundColorHex, '#5C8262');
       expect(config.countdownSeconds, 8);
       expect(config.allowBypassAfterCountdown, isTrue);
     });
@@ -30,8 +30,10 @@ void main() {
 
     test('fromJsonString falls back to defaults on malformed input', () {
       final restored = OverlayConfig.fromJsonString('{not json');
-      expect(restored.backgroundColorHex,
-          OverlayConfig.defaults.backgroundColorHex);
+      expect(
+        restored.backgroundColorHex,
+        OverlayConfig.defaults.backgroundColorHex,
+      );
     });
 
     test('backgroundColor parses hex to Color with full alpha', () {

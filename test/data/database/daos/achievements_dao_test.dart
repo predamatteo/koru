@@ -34,32 +34,36 @@ void main() {
         expect(await db.achievementsDao.isUnlocked(''), isFalse);
       });
 
-      test('unlock is idempotent — calling twice does not duplicate the row',
-          () async {
-        await db.achievementsDao.unlock('focus_first');
-        await db.achievementsDao.unlock('focus_first');
-        await db.achievementsDao.unlock('focus_first');
+      test(
+        'unlock is idempotent — calling twice does not duplicate the row',
+        () async {
+          await db.achievementsDao.unlock('focus_first');
+          await db.achievementsDao.unlock('focus_first');
+          await db.achievementsDao.unlock('focus_first');
 
-        final all = await db.achievementsDao.getAllUnlocked();
-        expect(all, hasLength(1));
-        expect(all.single.id, 'focus_first');
-      });
+          final all = await db.achievementsDao.getAllUnlocked();
+          expect(all, hasLength(1));
+          expect(all.single.id, 'focus_first');
+        },
+      );
 
-      test('unlock preserves the original unlockedAt on re-unlock (InsertMode.insertOrIgnore)',
-          () async {
-        await db.achievementsDao.unlock('focus_first');
-        final original = await db.achievementsDao.getAllUnlocked();
-        final originalTs = original.single.unlockedAt;
+      test(
+        'unlock preserves the original unlockedAt on re-unlock (InsertMode.insertOrIgnore)',
+        () async {
+          await db.achievementsDao.unlock('focus_first');
+          final original = await db.achievementsDao.getAllUnlocked();
+          final originalTs = original.single.unlockedAt;
 
-        // A noticeable wall-clock gap so the second insert WOULD have a
-        // different value if it were applied.
-        await Future<void>.delayed(const Duration(milliseconds: 30));
-        await db.achievementsDao.unlock('focus_first');
+          // A noticeable wall-clock gap so the second insert WOULD have a
+          // different value if it were applied.
+          await Future<void>.delayed(const Duration(milliseconds: 30));
+          await db.achievementsDao.unlock('focus_first');
 
-        final after = await db.achievementsDao.getAllUnlocked();
-        expect(after, hasLength(1));
-        expect(after.single.unlockedAt, originalTs);
-      });
+          final after = await db.achievementsDao.getAllUnlocked();
+          expect(after, hasLength(1));
+          expect(after.single.unlockedAt, originalTs);
+        },
+      );
     });
 
     group('getAllUnlocked', () {
@@ -99,6 +103,10 @@ void main() {
         final stream = db.achievementsDao.watchAllUnlocked();
         final emissions = <List<AchievementsUnlockedData>>[];
         final sub = stream.listen(emissions.add);
+        // Let the initial (empty) emission land before mutating, otherwise the
+        // unlock can race ahead of Drift's first query result and we never
+        // observe the empty initial state.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
 
         await db.achievementsDao.unlock('focus_first');
         await Future<void>.delayed(const Duration(milliseconds: 50));
