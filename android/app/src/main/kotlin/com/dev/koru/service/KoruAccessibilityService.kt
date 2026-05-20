@@ -1048,6 +1048,21 @@ class KoruAccessibilityService : AccessibilityService() {
         rootNode: AccessibilityNodeInfo,
         snapshot: ProfilesSnapshot = profilesSnapshot.get(),
     ) {
+        // Bypass timed attivo sul browser: l'utente ha scelto "Open anyway" +
+        // durata su un blocco website. Finché il TTL non scade non ri-mostriamo
+        // l'overlay — stesso early-return di checkAppBlocking (~riga 770). Senza
+        // questo guard il blocco dei domini tornava SUBITO dopo il bypass
+        // (funzionava per le app ma non per i siti, perche' solo checkApp-
+        // Blocking onorava isBypassed). Tracciamo il pkg come bypassato-in-
+        // foreground per l'auto-revoke quando l'utente esce dal browser (vedi
+        // onAccessibilityEvent / lastBypassedActiveForeground). NB: il bypass e'
+        // per-package, quindi sblocca l'intero browser per la durata scelta,
+        // coerente con la granularita' del bypass delle app.
+        if (OverlayManager.isBypassed(packageName)) {
+            lastBypassedActiveForeground = packageName
+            return
+        }
+
         val configs = BrowserConfigLoader.getConfigsForPackage(applicationContext, packageName)
         if (configs.isEmpty()) {
             Log.w(TAG, "  → no browser configs for $packageName")
