@@ -107,7 +107,15 @@ class LockForegroundService : Service() {
         // markBypassed, ma lo rimarchiamo qui per esplicitezza in caso
         // il flusso cambi in futuro). Lanciamo l'app target.
         overlayManager?.onBypassOpen = { pkg, durationMs, domain ->
-            OverlayManager.markBypassed(pkg, durationMs, domain)
+            // Propaga il MOTIVO del blocco corrente nel bypass (coerente col
+            // mark interno di OverlayManager.show): serve a isLimitBypassActive
+            // per non far sì che un bypass di profilo sospenda il cap giornaliero.
+            OverlayManager.markBypassed(
+                pkg,
+                durationMs,
+                domain,
+                overlayManager?.currentReason() ?: BlockReason.APP_BLOCKED,
+            )
             try {
                 val launch = packageManager.getLaunchIntentForPackage(pkg)
                 launch?.flags = Intent.FLAG_ACTIVITY_NEW_TASK or

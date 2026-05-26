@@ -92,6 +92,20 @@ val defaultBypassDurations: List<Pair<String, Long>> = listOf(
     "30 min" to 30L * 60_000L,
 )
 
+/**
+ * Stato di un bypass attivo: scadenza + il MOTIVO per cui è stato concesso.
+ *
+ * Il `reason` è la chiave per non far collassare restrizioni indipendenti.
+ * Un'app può essere bloccata contemporaneamente da un profilo (schedule) e
+ * da un cap giornaliero; il bypass però era una sola mappa `pkg → scadenza`
+ * senza memoria del perché, quindi un "Open anyway" su un blocco di profilo
+ * sopprimeva anche il daily limit (bug "+5 min all'infinito sul cap passando
+ * dal blocco di profilo"). Memorizzando il reason possiamo far sì che solo
+ * un bypass NATO DAL limite sospenda il limite — vedi
+ * [OverlayManager.isLimitBypassActive].
+ */
+data class BypassEntry(val until: Long, val reason: BlockReason)
+
 /// Palette Koru (mirror di lib/core/constants/koru_colors.dart)
 private val KoruBgBase = Color(0xFF0E100F)
 private val KoruSurface = Color(0xFF1A1D1B)
@@ -129,7 +143,7 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
         /// AccessibilityService (binder), LockRunnable (polling thread),
         /// main thread (UI callback onBypassOpen). MutableMap non sync
         /// causava ConcurrentModificationException sporadiche.
-        private val bypassedPackages = ConcurrentHashMap<String, Long>()
+        private val bypassedPackages = ConcurrentHashMap<String, BypassEntry>()
 
         /// Cleanup interno: rimuove entries scadute. Chiamato pigramente
         /// da isBypassed / markBypassed per evitare leak senza un timer
@@ -140,7 +154,7 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
             val iterator = bypassedPackages.entries.iterator()
             while (iterator.hasNext()) {
                 val entry = iterator.next()
-                if (entry.value < now) iterator.remove()
+                if (entry.value.until < now) iterator.remove()
             }
         }
 
@@ -155,13 +169,41 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
 
         fun isBypassed(packageName: String, domain: String? = null): Boolean {
             pruneExpired()
-            val until = bypassedPackages[bypassKey(packageName, domain)] ?: return false
-            return System.currentTimeMillis() < until
+            val entry = bypassedPackages[bypassKey(packageName, domain)] ?: return false
+            return System.currentTimeMillis() < entry.until
         }
 
-        fun markBypassed(packageName: String, durationMs: Long, domain: String? = null) {
+        /// Il motivo per cui [packageName] (eventualmente scoped a [domain]) è
+        /// attualmente bypassato, o null se non c'è alcun bypass attivo.
+        fun bypassReason(packageName: String, domain: String? = null): BlockReason? {
             pruneExpired()
-            bypassedPackages[bypassKey(packageName, domain)] = System.currentTimeMillis() + durationMs
+            val entry = bypassedPackages[bypassKey(packageName, domain)] ?: return null
+            return if (System.currentTimeMillis() < entry.until) entry.reason else null
+        }
+
+        /// True solo se è attivo un bypass NATO DAL daily limit (overlay
+        /// USAGE_LIMIT di "entry" o estensione BYPASS_EXPIRED). Soltanto questo
+        /// tipo di bypass deve sospendere il re-block del cap giornaliero per
+        /// la durata scelta: è il flusso legittimo "+5/+10 min sul limite" con
+        /// frizione progressiva. Un bypass di profilo/sezione (APP_BLOCKED,
+        /// SECTION_BLOCKED, WEBSITE_BLOCKED) NON ricarica il budget del cap →
+        /// ritorna false, così il limite resta esigibile anche dopo che
+        /// l'utente ha forzato il blocco di profilo.
+        fun isLimitBypassActive(packageName: String, domain: String? = null): Boolean =
+            when (bypassReason(packageName, domain)) {
+                BlockReason.USAGE_LIMIT, BlockReason.BYPASS_EXPIRED -> true
+                else -> false
+            }
+
+        fun markBypassed(
+            packageName: String,
+            durationMs: Long,
+            domain: String? = null,
+            reason: BlockReason = BlockReason.APP_BLOCKED,
+        ) {
+            pruneExpired()
+            bypassedPackages[bypassKey(packageName, domain)] =
+                BypassEntry(System.currentTimeMillis() + durationMs, reason)
         }
 
         /// Rimuove il bypass per questo pacchetto: sia quello per-app (chiave
@@ -338,7 +380,15 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
                             },
                             onGoHome = { forceHome -> onReturnHome?.invoke(forceHome) },
                             onBypass = { durationMs ->
-                                markBypassed(_currentPackageName.value, durationMs, _blockedDomain.value)
+                                // Salva il MOTIVO del blocco insieme al bypass: serve a
+                                // [isLimitBypassActive] per non far sì che un bypass di
+                                // profilo sospenda il cap giornaliero (e viceversa).
+                                markBypassed(
+                                    _currentPackageName.value,
+                                    durationMs,
+                                    _blockedDomain.value,
+                                    _reason.value,
+                                )
                                 onBypassOpen?.invoke(_currentPackageName.value, durationMs, _blockedDomain.value)
                             },
                         )

@@ -692,8 +692,12 @@ class KoruAccessibilityService : AccessibilityService() {
                     Log.d(TAG, "Limit re-check for $pkg: user not there anymore (foreground=$lastForegroundPackage)")
                     return
                 }
-                if (OverlayManager.isBypassed(pkg)) {
-                    Log.d(TAG, "Limit re-check for $pkg: bypass active, skipping")
+                // Skip solo se c'è un bypass NATO DAL limite (l'utente ha già
+                // pagato la frizione del cap e ha tempo concesso). Un bypass di
+                // profilo NON deve far saltare questo re-check, altrimenti il
+                // cap non scatterebbe mai mentre il profilo è bypassato.
+                if (OverlayManager.isLimitBypassActive(pkg)) {
+                    Log.d(TAG, "Limit re-check for $pkg: limit bypass active, skipping")
                     return
                 }
                 Log.i(TAG, "Limit timer fired for $pkg, re-evaluating")
@@ -780,16 +784,12 @@ class KoruAccessibilityService : AccessibilityService() {
         packageName: String,
         snapshot: ProfilesSnapshot = profilesSnapshot.get(),
     ): Boolean {
-        // Bypass timed: l'utente ha scelto una durata esplicita dal duration
-        // picker. Finché quella durata non scade, non mostriamo l'overlay.
-        // Tracciamo il pkg come "bypassato e in foreground" per abilitare
-        // l'auto-revoke al prossimo cambio di foreground (vedi
-        // [onAccessibilityEvent]).
-        if (OverlayManager.isBypassed(packageName)) {
-            Log.i(TAG, "BYPASS-ACTIVE: $packageName in foreground, tracking for auto-revoke")
-            lastBypassedActiveForeground = packageName
-            return false
-        }
+        // NB ordine dei guard (vedi anche [LockRunnable.checkAndBlock], che
+        // DEVE restare allineato): ghost-guard → focus → daily limit →
+        // bypass di profilo → profile loop. Il daily limit è valutato PRIMA
+        // del bypass di profilo di proposito: il cap è un budget cumulativo e
+        // un "Open anyway" su un blocco di profilo non deve ricaricarlo (era
+        // il bug "+5 min all'infinito sul limite passando dal profilo").
 
         // GHOST-EVENT GUARD. TYPE_WINDOW_STATE_CHANGED / TYPE_WINDOWS_CHANGED
         // possono essere emessi anche per un'app che sta PERDENDO il
@@ -881,13 +881,22 @@ class KoruAccessibilityService : AccessibilityService() {
         // che il USAGE_LIMIT overlay prevalga e il messaging rifletta la
         // realtà. La schedulazione del re-check (caso cap non ancora
         // raggiunto) resta DOPO il profile loop.
+        //
+        // Inoltre il cap è valutato PRIMA del bypass di profilo (più sotto):
+        // un budget cumulativo non si ricarica forzando un blocco di profilo.
+        // Unica eccezione: [isLimitBypassActive] — un bypass NATO dal limite
+        // stesso (USAGE_LIMIT / BYPASS_EXPIRED, solo app non-strict) lo
+        // sospende per la durata scelta. In strict non esiste bypass del
+        // limite, quindi qui blocca sempre, anche se il profilo è bypassato.
         val limitEntry = AppUsageLimitsStore.entryFor(applicationContext, packageName)
         val limitMinutes = limitEntry?.minutes ?: 0
         val limitTodayMs = if (limitMinutes > 0) {
             UsageCounter.todayForegroundMs(applicationContext, packageName)
         } else 0L
         val limitMs = limitMinutes * 60_000L
-        if (limitMinutes > 0 && limitTodayMs >= limitMs) {
+        if (limitMinutes > 0 && limitTodayMs >= limitMs &&
+            !OverlayManager.isLimitBypassActive(packageName)
+        ) {
             val isStrict = limitEntry?.strict ?: true
             Log.w(TAG, ">>> BLOCKING APP (daily limit, strict=$isStrict): $packageName " +
                 "${limitTodayMs / 60_000}min used, cap=${limitMinutes}min")
@@ -927,6 +936,26 @@ class KoruAccessibilityService : AccessibilityService() {
                 )
             } catch (_: Exception) {}
             return true
+        }
+
+        // Bypass del profilo/sezione attivo: l'utente ha forzato un blocco
+        // NON di limite ("Open anyway" + durata). Il cap giornaliero è già
+        // stato valutato sopra e NON viene scavalcato da questo bypass; qui
+        // sopprimiamo solo il re-block del profilo per la durata scelta e
+        // tracciamo il pkg per l'auto-revoke all'uscita (vedi
+        // [onAccessibilityEvent]).
+        if (OverlayManager.isBypassed(packageName)) {
+            Log.i(TAG, "BYPASS-ACTIVE: $packageName in foreground, tracking for auto-revoke")
+            lastBypassedActiveForeground = packageName
+            // Se l'app ha un cap non ancora raggiunto, pianifica comunque il
+            // re-check: senza, restando dentro col bypass di profilo attivo si
+            // supererebbero i 30' senza che nulla scatti fino alla scadenza del
+            // bypass. Al firing checkAppBlocking rivaluta il cap e — non essendo
+            // un bypass di limite — blocca con l'overlay USAGE_LIMIT.
+            if (limitMinutes > 0 && limitTodayMs < limitMs) {
+                scheduleLimitCheck(packageName, limitMs - limitTodayMs)
+            }
+            return false
         }
 
         for (profile in snapshot.profiles) {

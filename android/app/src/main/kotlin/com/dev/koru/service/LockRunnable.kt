@@ -184,28 +184,18 @@ class LockRunnable(
 
         if (iterationCount % 33 == 0) Log.d(TAG, "[BACKUP] Foreground: $pkg")
 
-        // Bypass attivo (utente ha scelto "Open anyway" con TTL): rispetta
-        // il bypass come fa l'AccessibilityService, senza rifare HOME.
-        // Tracciamo il pkg come "bypassato e in foreground" così che il
-        // prossimo cambio di foreground possa innescare l'auto-revoke.
-        if (OverlayManager.isBypassed(pkg)) {
-            lastBypassedForegroundPkg = pkg
-            if (currentlyBlockingPackage != null) {
-                currentlyBlockingPackage = null
-                onUnblock()
-            }
-            return
-        }
-
         // 1) Daily usage limit FIRST: deve vincere sul profile block quando
-        //    il cap e' superato. Coerente con KoruAccessibilityService
-        //    (path primario). Bug pre-fix: profile loop girava prima quindi
-        //    un'app bloccata SIA da profilo SIA da limit (con cap gia' superato)
-        //    finiva nel ramo onBlock (APP_BLOCKED, bypass dopo ~9s) invece
-        //    che in onLimitBlock (USAGE_LIMIT, strict/progressive). L'utente
-        //    poteva aprire l'app col countdown nonostante il cap fosse finito.
+        //    il cap e' superato, ed è valutato PRIMA del bypass perché un
+        //    "Open anyway" su un blocco di profilo non ricarica il budget
+        //    cumulativo del cap (era il bug "+5 min all'infinito sul limite
+        //    passando dal blocco di profilo"). Coerente con
+        //    KoruAccessibilityService (path primario). Unica eccezione,
+        //    [OverlayManager.isLimitBypassActive]: un bypass nato DAL limite
+        //    (USAGE_LIMIT / BYPASS_EXPIRED, app non-strict) lo sospende per la
+        //    durata scelta. In strict non esiste bypass del limite → blocca
+        //    sempre, anche se il profilo è stato bypassato.
         val limitMinutes = AppUsageLimitsStore.limitMinutesFor(context, pkg)
-        if (limitMinutes > 0) {
+        if (limitMinutes > 0 && !OverlayManager.isLimitBypassActive(pkg)) {
             val todayMs = UsageCounter.todayForegroundMs(context, pkg)
             if (todayMs >= limitMinutes * 60_000L) {
                 if (currentlyBlockingPackage != pkg) {
@@ -227,7 +217,22 @@ class LockRunnable(
             }
         }
 
-        // 2) Profile-based blocking (logica originale).
+        // 2) Bypass attivo (utente ha scelto "Open anyway" con TTL): rispetta
+        //    il bypass come fa l'AccessibilityService, senza rifare HOME.
+        //    Tracciamo il pkg come "bypassato e in foreground" così che il
+        //    prossimo cambio di foreground possa innescare l'auto-revoke. Il
+        //    cap è già stato controllato sopra (un bypass di profilo non lo
+        //    nasconde più).
+        if (OverlayManager.isBypassed(pkg)) {
+            lastBypassedForegroundPkg = pkg
+            if (currentlyBlockingPackage != null) {
+                currentlyBlockingPackage = null
+                onUnblock()
+            }
+            return
+        }
+
+        // 3) Profile-based blocking (logica originale).
         // O13: snapshot tramite toList() — loadProfiles() può sostituire
         // l'intera lista da un altro callback (reloadProfiles via Flutter
         // bridge). Iterando direttamente su `profiles` si rischiava
