@@ -47,10 +47,20 @@ class LockForegroundService : Service() {
 
         fun triggerProfileReload() {
             Log.d(TAG, "triggerProfileReload called")
-            currentLockRunnable?.let {
-                com.dev.koru.db.NativeDatabase.close()
-                it.needsReload = true
-            }
+            // CR-05: NON chiudere il DB qui. Questa funzione gira sul MAIN
+            // thread (broadcast RELOAD_PROFILES / chiamata da channel), mentre
+            // LockRunnable itera i cursori sul "BlockingThread". Una close()
+            // dal main thread mentre il worker sta scorrendo un cursore
+            // causava IllegalStateException/SQLiteException a metà iterazione,
+            // abortendo loadProfiles e lasciando l'enforcement su dati vuoti o
+            // parziali. Ci limitiamo a settare il flag: il worker riapre/ricarica
+            // alla sua prossima tick (controlla needsReload a OGNI giro del loop,
+            // PRIMA dello sleep ⇒ reload pronto, nessun enforcement gap). La
+            // connection resta aperta ed è fine tenerla così: Drift usa un handle
+            // separato e l'open nativo è idempotente. Identico al pattern di
+            // KoruAccessibilityService.loadProfiles, che per lo STESSO motivo non
+            // chiama mai close() (close solo in onDestroy).
+            currentLockRunnable?.needsReload = true
         }
     }
 
