@@ -1119,6 +1119,15 @@ class KoruAccessibilityService : AccessibilityService() {
                 reason = BlockReason.SECTION_BLOCKED,
                 config = config,
                 profileEmoji = block.profileEmoji,
+                // CR-07: scope del bypass = `section:<wireId>` (era null). Senza
+                // questo, "Open anyway" su una sezione marcava il bypass keyed
+                // all'INTERO package, ma il guard dell'evaluator legge la chiave
+                // `section:<wireId>` → il bypass non aveva alcun effetto e
+                // l'overlay si ripresentava subito. Ora la chiave del mark
+                // (OverlayManager.show → markBypassed con _blockedDomain) e il
+                // guard (BlockPolicyEvaluator: bypassReasonFor("section:<id>"))
+                // combaciano.
+                blockedDomain = block.bypassScopeDomain,
             )
         }
         // SECTION_BLOCKED: forceHome=true. Bloccare una "sezione"

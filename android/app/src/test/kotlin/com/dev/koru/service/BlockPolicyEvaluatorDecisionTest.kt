@@ -300,6 +300,40 @@ class BlockPolicyEvaluatorDecisionTest {
     }
 
     @Test
+    fun section_bypassScopeRoundTrips_blockScopeIsTheGuardKey() {
+        // CR-07 contract end-to-end: lo scope che il Block produce
+        // (bypassScopeDomain → passato come blockedDomain all'overlay, quindi
+        // usato come chiave di markBypassed) DEVE essere ESATTAMENTE la chiave
+        // che il guard rilegge. Catturiamo lo scope dal primo Block e lo
+        // ri-iniettiamo come bypass: la seconda valutazione deve dare Allow.
+        // Se un domani lo scope del mark e quello del guard divergono (il bug
+        // CR-07), questo test fallisce.
+        val first = BlockPolicyEvaluator.evaluate(
+            query(
+                profiles = listOf(profile()),
+                profileApps = mapOf(
+                    1 to listOf(relation(isEnabled = false, blockedSectionsJson = "[\"shorts\"]")),
+                ),
+                sectionWireId = "shorts",
+            ),
+        )
+        val scope = (first as BlockDecision.Block).bypassScopeDomain
+        assertThat(scope).isEqualTo("section:shorts")
+
+        val second = BlockPolicyEvaluator.evaluate(
+            query(
+                profiles = listOf(profile()),
+                profileApps = mapOf(
+                    1 to listOf(relation(isEnabled = false, blockedSectionsJson = "[\"shorts\"]")),
+                ),
+                bypassReasonFor = bypassStub(scope, BlockReason.SECTION_BLOCKED),
+                sectionWireId = "shorts",
+            ),
+        )
+        assertThat(second).isEqualTo(BlockDecision.Allow)
+    }
+
+    @Test
     fun section_appFullyBlocked_skippedHere() {
         // relation.isEnabled=true ⇒ app bloccata interamente, gestita dal path
         // APP, non dal path SECTION ⇒ qui Allow.
