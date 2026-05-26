@@ -160,20 +160,78 @@ void main() {
 
     test('filters out time-typed profiles when no interval matches now',
         () async {
-      // Interval (0,0): isNowInRange ritorna false sempre.
+      // Finestra deterministica che ESCLUDE l'istante corrente:
+      // [now+30min, now+60min). `now` (= now+0) non vi cade mai, anche se la
+      // finestra wrappa oltre la mezzanotte (in quel caso resta comunque dopo
+      // now). NB: non si può usare più (0,0) come "mai" — da CR-06 from==to
+      // significa 24h (vedi test dedicato sotto).
+      final nowMin = DateTime.now().hour * 60 + DateTime.now().minute;
+      final from = (nowMin + 30) % 1440;
+      final to = (nowMin + 60) % 1440;
       final p = ProfileModel(
         data: _profile(
           id: 6,
           title: 'Time',
           typeCombinations: ProfileType.time,
         ),
-        intervals: [_interval(id: 1, profileId: 6, from: 0, to: 0)],
+        intervals: [_interval(id: 1, profileId: 6, from: from, to: to)],
       );
       final h = _harnessWith([p]);
       addTearDown(h.dispose);
 
       final list = await _readActive(h);
       expect(list, isEmpty);
+    });
+
+    test('keeps time-typed profiles with a from==to (24h) interval', () async {
+      // CR-06: from==to ⇒ intervallo a giornata intera. Prima questo profilo
+      // veniva filtrato (il vecchio isNowInRange tornava "mai" su from==to),
+      // divergendo dall'enforcement nativo. Ora è attivo a qualunque ora.
+      final p = ProfileModel(
+        data: _profile(
+          id: 60,
+          title: 'TwentyFour',
+          typeCombinations: ProfileType.time,
+        ),
+        intervals: [_interval(id: 1, profileId: 60, from: 600, to: 600)],
+      );
+      final h = _harnessWith([p]);
+      addTearDown(h.dispose);
+
+      final list = await _readActive(h);
+      expect(list.map((p) => p.title), ['TwentyFour']);
+    });
+
+    test('filters out time-typed profiles whose only matching interval is disabled',
+        () async {
+      // refinement #2 (CR-06): un intervallo disabilitato non conta — come la
+      // query nativa `AND is_enabled = 1`. Qui l'unico intervallo è 24h
+      // (matcherebbe) ma DISABILITATO → resta solo l'insieme vuoto di
+      // intervalli abilitati ⇒ nessun gating ⇒ profilo KEPT. Verifichiamo che
+      // l'intervallo disabilitato sia stato ignorato (non blocca, ma neanche
+      // "matcha"): il profilo passa per assenza di intervalli abilitati.
+      final disabled = Interval(
+        id: 1,
+        profileId: 61,
+        fromMinutes: 600,
+        toMinutes: 600,
+        parentId: null,
+        isAllDayAuto: false,
+        isEnabled: false,
+      );
+      final p = ProfileModel(
+        data: _profile(
+          id: 61,
+          title: 'DisabledIv',
+          typeCombinations: ProfileType.time,
+        ),
+        intervals: [disabled],
+      );
+      final h = _harnessWith([p]);
+      addTearDown(h.dispose);
+
+      final list = await _readActive(h);
+      expect(list.map((p) => p.title), ['DisabledIv']);
     });
 
     test('keeps time-typed profiles with full-day interval (0..1440)',

@@ -23,13 +23,20 @@ final activeProfilesProvider = StreamProvider<List<ProfileModel>>((ref) async* {
       }
       if (!ScheduleUtils.isTodayActive(p.dayFlags, now: now)) continue;
 
-      if (ProfileType.hasType(p.typeCombinations, ProfileType.time) && p.intervals.isNotEmpty) {
-        final inRange = p.intervals.any((iv) => ScheduleUtils.isNowInRange(
-              fromMinutes: iv.fromMinutes,
-              toMinutes: iv.toMinutes,
-              now: now,
-            ));
-        if (!inRange) continue;
+      if (ProfileType.hasType(p.typeCombinations, ProfileType.time)) {
+        // Filtra gli intervals abilitati per matchare la query nativa
+        // (getIntervalsForProfile: `AND is_enabled = 1`). Senza questo filtro,
+        // un intervallo DISABILITATO contava comunque lato UI ma non lato
+        // motore → "attivo ora" divergente (refinement #2 della review CR-06).
+        final enabledIntervals = p.intervals.where((iv) => iv.isEnabled);
+        if (enabledIntervals.isNotEmpty) {
+          final inRange = enabledIntervals.any((iv) => ScheduleUtils.isNowInRange(
+                fromMinutes: iv.fromMinutes,
+                toMinutes: iv.toMinutes,
+                now: now,
+              ));
+          if (!inRange) continue;
+        }
       }
 
       if (p.data.onUntil > 0 && now.millisecondsSinceEpoch > p.data.onUntil) continue;
