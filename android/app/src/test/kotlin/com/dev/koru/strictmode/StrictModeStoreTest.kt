@@ -191,6 +191,65 @@ class StrictModeStoreTest {
         assertThat(StrictModeStore.readMask(ctx)).isEqualTo(StrictModeStore.ALL_OPTIONS_ENABLED)
     }
 
+    // -------- SEC-08: HMAC vero keyed da Keystore (non più SHA-256(const‖val)) --------
+
+    /// Lo pseudo-HMAC pre-SEC-08: `SHA-256("koru_strict_mask_hmac_v1:<mask>")`,
+    /// con la "key" hardcoded e quindi nota a chiunque legga il sorgente. Lo
+    /// ricalcoliamo qui per dimostrare che lo store NON lo produce più (sarebbe
+    /// forgeable). Se il tag salvato eguagliasse questo valore, l'HMAC sarebbe
+    /// ancora falsificabile offline.
+    private fun legacyForgeableTag(mask: Int): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        val data = "koru_strict_mask_hmac_v1:$mask".toByteArray()
+        return md.digest(data).joinToString("") { "%02x".format(it) }
+    }
+
+    @Test
+    fun saveMask_storedTagIsNotTheOldForgeableSha256() {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        StrictModeStore.saveMask(ctx, 14)
+        val prefs = encryptedPrefs(ctx)
+        // Path Keystore-dipendente (come gli altri test cifrati): se il Keystore
+        // non è raggiungibile sotto Robolectric, salta invece di fallire.
+        assumeTrue(
+            "EncryptedSharedPreferences non disponibile (Keystore assente sotto Robolectric)",
+            prefs != null,
+        )
+        val storedTag = prefs!!.getString(keyMaskHmac, "") ?: ""
+        // Il tag deve esistere (HMAC vero calcolato) e NON coincidere con lo
+        // pseudo-HMAC forgeable del vecchio schema → SEC-08 chiusa.
+        assertThat(storedTag).isNotEmpty()
+        assertThat(storedTag).isNotEqualTo(legacyForgeableTag(14))
+    }
+
+    @Test
+    fun saveMask_keyedHmac_validRoundTrip() {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        // Round-trip esplicito sul path HMAC vero: salva → rilegge il valore
+        // esatto (il tag keyed combacia, nessun fail-secure spurio).
+        StrictModeStore.saveMask(ctx, StrictModeStore.BLOCK_SETTINGS or StrictModeStore.BLOCK_UNINSTALLING)
+        assertThat(StrictModeStore.readMask(ctx)).isEqualTo(6)
+    }
+
+    @Test
+    fun readMask_forgedWithOldScheme_failsSecure() {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        StrictModeStore.saveMask(ctx, 14)
+        val prefs = encryptedPrefs(ctx)
+        assumeTrue(
+            "EncryptedSharedPreferences non disponibile (Keystore assente sotto Robolectric)",
+            prefs != null,
+        )
+        // L'attaccante (che conosce il vecchio schema dal repo open-source)
+        // riscrive mask=0 e forgia il tag con lo pseudo-HMAC pubblico. Con
+        // l'HMAC keyed da Keystore questo tag NON è valido → fail-secure.
+        prefs!!.edit()
+            .putInt(keyMask, 0)
+            .putString(keyMaskHmac, legacyForgeableTag(0))
+            .apply()
+        assertThat(StrictModeStore.readMask(ctx)).isEqualTo(StrictModeStore.ALL_OPTIONS_ENABLED)
+    }
+
     // -------- SEC-02: isEncryptedStoreFresh (discriminante fail-safe) --------
 
     @Test
