@@ -23,11 +23,12 @@ import org.json.JSONObject
  * l'utente; e gli auto-revoke non si coordinavano. Questo store mette la
  * fonte di verità su disco, condivisa.
  *
- * File: `filesDir/koru_bypasses.json`. Schema:
+ * File: `filesDir/koru_bypasses.json`. Schema (scadenza su due orologi — vedi
+ * [BypassEntry.isActive]):
  * ```
  * {
- *   "com.pkg":            {"until": 1716700000000, "reason": "USAGE_LIMIT"},
- *   "com.pkg|reddit.com": {"until": 1716700000000, "reason": "WEBSITE_BLOCKED"}
+ *   "com.pkg":            {"untilWall": 1716700000000, "untilElapsed": 987654, "reason": "USAGE_LIMIT"},
+ *   "com.pkg|reddit.com": {"untilWall": 1716700000000, "untilElapsed": 987654, "reason": "WEBSITE_BLOCKED"}
  * }
  * ```
  * La chiave è `package` (bypass app-wide) o `package|dominio` (bypass del
@@ -78,7 +79,8 @@ object BypassStore {
 
     /// Stato corrente (cache-based, NON prende il file lock — il write atomico
     /// garantisce che non si legga mai un file parziale). Include eventuali
-    /// entry già scadute: i chiamanti in [OverlayManager] filtrano per `until`.
+    /// entry già scadute: i chiamanti in [OverlayManager] filtrano via
+    /// [BypassEntry.isActive].
     fun read(context: Context): Map<String, BypassEntry> {
         val file = File(context.filesDir, FILE_NAME)
         val lastModified = file.lastModified() // 0L se il file non esiste

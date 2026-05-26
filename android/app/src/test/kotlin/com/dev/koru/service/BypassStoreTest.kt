@@ -47,13 +47,18 @@ class BypassStoreTest {
     fun put_isReadableByOtherProcess() {
         val durationMs = 5 * 60_000L
         val expectedWall = System.currentTimeMillis() + durationMs
+        val expectedElapsed = SystemClock.elapsedRealtime() + durationMs
         BypassStore.put(ctx, pkg, activeEntry(BlockReason.USAGE_LIMIT, durationMs))
         simulateOtherProcess()
         val entry = BypassStore.read(ctx)[pkg]
         assertThat(entry).isNotNull()
         assertThat(entry!!.reason).isEqualTo(BlockReason.USAGE_LIMIT)
-        // until persistito (tolleranza per il tempo trascorso nel test).
+        // Entrambi gli orologi devono sopravvivere alla serializzazione
+        // (tolleranza per il tempo trascorso nel test). Asserire untilElapsed
+        // è un regression guard: un typo nella chiave sfuggirebbe se
+        // controllassimo solo isActive().
         assertThat(entry.untilWall).isAtLeast(expectedWall - 5_000L)
+        assertThat(entry.untilElapsed).isAtLeast(expectedElapsed - 5_000L)
         assertThat(entry.isActive()).isTrue()
     }
 
@@ -149,6 +154,18 @@ class BypassStoreTest {
         // trascorso oltre untilWall → l'AND lo rende NON attivo (fail-closed).
         val e = BypassEntry(untilWall = 10_500, untilElapsed = 900_000, reason = BlockReason.USAGE_LIMIT)
         assertThat(e.isActive(nowWall = 11_000, nowElapsed = 50)).isFalse()
+    }
+
+    @Test
+    fun isActive_rebootPlusClockBack_noNetExtensionBeyondWallWindow() {
+        // Caso limite reboot+clock-indietro insieme: dentro la finestra wall
+        // ORIGINALE isActive() resta true (documentato in BypassEntry.isActive:
+        // nessuna estensione utile, il reboot ha già terminato i processi e il
+        // cap giornaliero resta esigibile)...
+        val e = BypassEntry(untilWall = 10_500, untilElapsed = 900_000, reason = BlockReason.USAGE_LIMIT)
+        assertThat(e.isActive(nowWall = 5_000, nowElapsed = 50)).isTrue()
+        // ...ma oltre untilWall scade comunque (mai più della finestra originale).
+        assertThat(e.isActive(nowWall = 10_500, nowElapsed = 50)).isFalse()
     }
 
     // -------- helpers --------

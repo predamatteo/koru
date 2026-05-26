@@ -115,11 +115,18 @@ data class BypassEntry(
 ) {
     /// Attivo solo se NÉ il wall-clock NÉ il clock monotonico sono scaduti.
     /// L'AND è anti-manipolazione: spostando l'orologio INDIETRO per estendere
-    /// un bypass, `untilElapsed` (monotonico) scatta comunque a fine durata
-    /// reale → niente estensione. E resta fail-closed dopo un REBOOT
-    /// (elapsedRealtime riparte da 0, ma `untilWall` fa scadere il bypass alla
-    /// sua ora naturale). Spostare l'orologio in avanti può solo anticipare la
-    /// scadenza (non è un attacco). Parametri iniettabili per i test.
+    /// un bypass, `untilElapsed` (monotonico, non riavvolgibile senza root)
+    /// scatta comunque a fine durata reale → niente estensione. Dopo un REBOOT
+    /// `elapsedRealtime` riparte da 0, ma `untilWall` fa scadere il bypass alla
+    /// sua ora naturale. Spostare l'orologio in avanti può solo anticipare la
+    /// scadenza (non è un attacco).
+    ///
+    /// Caso limite reboot+clock-indietro insieme: isActive() può tornare true,
+    /// ma NON c'è estensione utile — il reboot termina i processi di
+    /// enforcement e toglie l'app dal foreground, e il cap giornaliero
+    /// (wall-based, monotòno crescente, indipendente da isActive) resta
+    /// esigibile. Al massimo si conserva la finestra wall originale, mai di
+    /// più. Parametri iniettabili per i test.
     fun isActive(
         nowWall: Long = System.currentTimeMillis(),
         nowElapsed: Long = SystemClock.elapsedRealtime(),
