@@ -52,10 +52,12 @@ void main() {
   });
 
   group('BackdoorOutcome', () {
-    test('BackdoorValid is const-constructible', () {
-      const a = BackdoorValid();
-      const b = BackdoorValid();
+    test('BackdoorValid is const-constructible and carries token', () {
+      const a = BackdoorValid(null);
+      const b = BackdoorValid(null);
       expect(identical(a, b), isTrue);
+      const withToken = BackdoorValid('deadbeef');
+      expect(withToken.unblockToken, 'deadbeef');
     });
 
     test('BackdoorInvalid is const-constructible', () {
@@ -112,11 +114,20 @@ void main() {
   });
 
   group('StrictModeChannel - options bitmask', () {
-    test('setStrictModeOptions sends mask argument', () async {
+    test('setStrictModeOptions sends mask argument (no token when raising)',
+        () async {
       setMockHandler((_) async => null);
       await StrictModeChannel().setStrictModeOptions(15);
       expect(calls.first.method, 'setStrictModeOptions');
+      // Senza token la chiave non viene inviata (alzare la mask è libero).
       expect(calls.first.arguments, {'mask': 15});
+    });
+
+    test('setStrictModeOptions forwards unblockToken when downgrading',
+        () async {
+      setMockHandler((_) async => null);
+      await StrictModeChannel().setStrictModeOptions(0, unblockToken: 'tok123');
+      expect(calls.first.arguments, {'mask': 0, 'unblockToken': 'tok123'});
     });
 
     test('getStrictModeOptions returns int', () async {
@@ -145,17 +156,20 @@ void main() {
   });
 
   group('StrictModeChannel - validateBackdoorCode', () {
-    test('native true → BackdoorValid', () async {
-      setMockHandler((_) async => true);
+    test('native token string → BackdoorValid carrying token (SEC-01)',
+        () async {
+      // SEC-01: il native ora ritorna il token monouso (string) su successo.
+      setMockHandler((_) async => 'unblock-tok-abc');
       final result =
           await StrictModeChannel().validateBackdoorCode('ABCD1234');
       expect(result, isA<BackdoorValid>());
+      expect((result as BackdoorValid).unblockToken, 'unblock-tok-abc');
       expect(calls.first.method, 'validateBackdoorCode');
       expect(calls.first.arguments, {'code': 'ABCD1234'});
     });
 
-    test('native false → BackdoorInvalid', () async {
-      setMockHandler((_) async => false);
+    test('native empty string → BackdoorInvalid', () async {
+      setMockHandler((_) async => '');
       final result =
           await StrictModeChannel().validateBackdoorCode('ABCD1234');
       expect(result, isA<BackdoorInvalid>());

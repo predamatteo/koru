@@ -15,6 +15,7 @@ import com.dev.koru.strictmode.BackdoorCodeGenerator
 import com.dev.koru.strictmode.KoruDeviceAdminReceiver
 import com.dev.koru.strictmode.StrictModeEnforcer
 import com.dev.koru.strictmode.StrictModeStore
+import com.dev.koru.strictmode.UnblockTokenStore
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
@@ -98,9 +99,29 @@ object StrictModeMethodChannel {
                         result.success(dpm.isAdminActive(component))
                     }
                     "setStrictModeOptions" -> {
-                        val mask = call.argument<Int>("mask") ?: 0
-                        Log.i(TAG, "setStrictModeOptions: $mask")
-                        StrictModeStore.saveMask(activity, mask)
+                        // SEC-01: il gate di autorizzazione vive QUI (native), non
+                        // solo nell'UI Dart. ALZARE la mask (aggiungere restrizioni)
+                        // resta libero — è la direzione fail-secure. SPEGNERE un bit
+                        // attivo (downgrade) richiede un token monouso emesso solo
+                        // dopo una validazione riuscita del backdoor code
+                        // (UnblockTokenStore), consumato atomicamente (no replay).
+                        // Mirror del guard di `disableDeviceAdmin` sopra.
+                        val newMask = call.argument<Int>("mask") ?: 0
+                        val oldMask = StrictModeStore.readMask(activity)
+                        val token = call.argument<String>("unblockToken")
+                        if (clearsActiveBit(oldMask, newMask) &&
+                            !UnblockTokenStore.consume(token)
+                        ) {
+                            Log.w(TAG, "setStrictModeOptions DENIED: downgrade $oldMask→$newMask without valid token")
+                            result.error(
+                                "UNAUTHORIZED",
+                                "Disabling strict-mode restrictions requires a valid backdoor unblock token.",
+                                null,
+                            )
+                            return@setMethodCallHandler
+                        }
+                        Log.i(TAG, "setStrictModeOptions: $oldMask→$newMask")
+                        StrictModeStore.saveMask(activity, newMask)
                         StrictModeEnforcer.invalidateCache()
                         result.success(null)
                     }
@@ -134,8 +155,14 @@ object StrictModeMethodChannel {
                                 "This code has already been used. Wait for the next weekly rotation.",
                                 null,
                             )
-                            BackdoorOutcome.Valid -> result.success(true)
-                            BackdoorOutcome.Invalid -> result.success(false)
+                            BackdoorOutcome.Valid -> {
+                                // SEC-01: emetti un token monouso che autorizza un
+                                // successivo `setStrictModeOptions` a SPEGNERE bit
+                                // attivi. Ritorniamo il token (string) invece di un
+                                // bool: il Dart lo cattura e lo ripassa.
+                                result.success(UnblockTokenStore.issue())
+                            }
+                            BackdoorOutcome.Invalid -> result.success(null)
                         }
                     }
                     "performEmergencyUnblock" -> {
@@ -200,6 +227,15 @@ object StrictModeMethodChannel {
         object Valid : BackdoorOutcome()
         object Invalid : BackdoorOutcome()
     }
+
+    /// SEC-01: true se passare da [oldMask] a [newMask] SPEGNE almeno un bit
+    /// che era attivo (downgrade della protezione). Condizione equivalente a
+    /// `newMask & oldMask != oldMask`: se `newMask` è un superset di `oldMask`
+    /// (solo bit aggiunti) l'AND riproduce `oldMask` e non c'è downgrade.
+    /// Solo i downgrade richiedono il token monouso; alzare la mask è libero.
+    /// `internal` per essere unit-testabile senza riflessione.
+    internal fun clearsActiveBit(oldMask: Int, newMask: Int): Boolean =
+        (newMask and oldMask) != oldMask
 
     /// Validazione atomica del code: check lockout → check replay → check match.
     /// In caso di match marca il code come usato e azzera il counter dei fail.

@@ -23,7 +23,14 @@ sealed class BackdoorOutcome {
 }
 
 class BackdoorValid extends BackdoorOutcome {
-  const BackdoorValid();
+  const BackdoorValid(this.unblockToken);
+
+  /// SEC-01: token monouso emesso dal native dopo la validazione riuscita.
+  /// Va ripassato a [StrictModeChannel.setStrictModeOptions] per autorizzare
+  /// lo spegnimento di bit attivi (downgrade della mask). Può essere `null`
+  /// se il native non lo ha emesso (es. versione vecchia) — in quel caso il
+  /// downgrade verrà rifiutato lato native, fail-secure.
+  final String? unblockToken;
 }
 
 class BackdoorInvalid extends BackdoorOutcome {
@@ -73,8 +80,21 @@ class StrictModeChannel {
   Future<bool> isDeviceAdminActive() async =>
       (await _channel.invokeMethod<bool>('isDeviceAdminActive')) ?? false;
 
-  Future<void> setStrictModeOptions(int mask) =>
-      _channel.invokeMethod<void>('setStrictModeOptions', {'mask': mask});
+  /// Imposta la mask delle opzioni strict mode.
+  ///
+  /// SEC-01: ALZARE la mask (aggiungere restrizioni) è libero. SPEGNERE un bit
+  /// attivo (downgrade) richiede [unblockToken] — il token monouso restituito
+  /// da [validateBackdoorCode] dopo una validazione riuscita del backdoor code.
+  /// Senza token valido il native rifiuta il downgrade con
+  /// `PlatformException(UNAUTHORIZED)` e la mask resta invariata.
+  Future<void> setStrictModeOptions(int mask, {String? unblockToken}) =>
+      _channel.invokeMethod<void>('setStrictModeOptions', <String, Object?>{
+        'mask': mask,
+        // Includi la chiave solo se il token è non-null (downgrade); con token
+        // null l'entry è omessa e il native tratta il cambio come "raising".
+        // ignore: use_null_aware_elements
+        if (unblockToken != null) 'unblockToken': unblockToken,
+      });
 
   Future<int> getStrictModeOptions() async =>
       (await _channel.invokeMethod<int>('getStrictModeOptions')) ?? 0;
@@ -85,14 +105,18 @@ class StrictModeChannel {
   /// Validazione del code. Lato Kotlin gestisce rate limit + replay; questo
   /// metodo wrappa l'outcome in [BackdoorOutcome] così la UI non deve
   /// destrutturare PlatformException.
+  ///
+  /// SEC-01: su successo il native ritorna un token monouso (string) invece di
+  /// `true`; lo propaghiamo in [BackdoorValid.unblockToken] perché il chiamante
+  /// lo passi a [setStrictModeOptions] per autorizzare il downgrade della mask.
   Future<BackdoorOutcome> validateBackdoorCode(String code) async {
     try {
-      final ok =
-          (await _channel.invokeMethod<bool>('validateBackdoorCode', {
+      final token = await _channel.invokeMethod<String>('validateBackdoorCode', {
         'code': code,
-      })) ??
-              false;
-      return ok ? const BackdoorValid() : const BackdoorInvalid();
+      });
+      return (token != null && token.isNotEmpty)
+          ? BackdoorValid(token)
+          : const BackdoorInvalid();
     } on PlatformException catch (e) {
       switch (e.code) {
         case 'LOCKED_OUT':
@@ -118,7 +142,9 @@ class StrictModeChannel {
             'code': code,
           })) ??
           false;
-      return ok ? const BackdoorValid() : const BackdoorInvalid();
+      // performEmergencyUnblock azzera la mask lato native (path già
+      // autenticato dal code) → nessun token da propagare.
+      return ok ? const BackdoorValid(null) : const BackdoorInvalid();
     } on PlatformException catch (e) {
       switch (e.code) {
         case 'LOCKED_OUT':

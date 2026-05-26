@@ -39,27 +39,29 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
   bool get _isEnabled => _mask != 0;
 
   /// Richiede backdoor code prima di applicare un cambio che ALLENTA la
-  /// protezione (disable master, disable di un singolo bit). Restituisce
-  /// `true` se l'utente ha autenticato correttamente.
+  /// protezione (disable master, disable di un singolo bit). Restituisce il
+  /// token monouso (SEC-01) se l'utente ha autenticato correttamente, oppure
+  /// `null` se ha annullato / fallito / è in lockout.
   ///
   /// Strategia: chiediamo conferma di intent + backdoor code in un dialog
   /// unico. La chiamata al channel performa la validazione atomica (S4):
-  /// rate limit, replay check, match. Se passa, ritorniamo true e il caller
-  /// applica la modifica.
-  Future<bool> _requireBackdoorAuth({required String purpose}) async {
+  /// rate limit, replay check, match. Se passa, il native emette un token
+  /// monouso che ritorniamo qui e il caller passa a setStrictModeOptions per
+  /// autorizzare il downgrade della mask.
+  Future<String?> _requireBackdoorAuth({required String purpose}) async {
     final controller = TextEditingController();
     var attemptsLeft = await _channel.getRemainingAttempts();
     final lockoutMs = await _channel.getLockoutRemainingMs();
-    if (!mounted) return false;
+    if (!mounted) return null;
 
     if (lockoutMs > 0) {
       // Lockout attivo: nemmeno mostriamo il dialog, comunichiamo il tempo
       // di attesa.
       await _showLockoutDialog(lockoutMs);
-      return false;
+      return null;
     }
 
-    final granted = await showDialog<bool>(
+    final granted = await showDialog<String>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
@@ -116,8 +118,8 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
                     final outcome = await _channel.validateBackdoorCode(input);
                     if (!ctx.mounted) return;
                     switch (outcome) {
-                      case BackdoorValid():
-                        Navigator.of(ctx).pop(true);
+                      case BackdoorValid(:final unblockToken):
+                        Navigator.of(ctx).pop(unblockToken ?? '');
                       case BackdoorInvalid():
                         attemptsLeft = await _channel.getRemainingAttempts();
                         if (!ctx.mounted) return;
@@ -142,7 +144,10 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
     );
 
     controller.dispose();
-    return granted ?? false;
+    // `granted` è: null = annullato/dismissed; '' = validato ma il native non
+    // ha emesso token (fallback); altrimenti il token monouso. Distinguere
+    // null da '' permette ai caller di sapere se procedere col downgrade.
+    return granted;
   }
 
   Future<void> _showLockoutDialog(int remainingMs) async {
@@ -172,15 +177,18 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
   }
 
   Future<void> _toggleOption(int bit, bool enabled) async {
+    String? token;
     if (!enabled && (_mask & bit) != 0) {
-      // Disabilito un bit attivo → richiedi auth.
-      final ok = await _requireBackdoorAuth(
+      // Disabilito un bit attivo (downgrade) → richiedi auth + token (SEC-01).
+      token = await _requireBackdoorAuth(
         purpose: 'disattivare questa protezione',
       );
-      if (!ok) return;
+      if (token == null) return; // annullato / lockout / fallito
     }
     final next = enabled ? (_mask | bit) : (_mask & ~bit);
-    await _channel.setStrictModeOptions(next);
+    // ALZARE un bit non richiede token; abbassarlo lo passa (il native lo
+    // esige solo per i downgrade).
+    await _channel.setStrictModeOptions(next, unblockToken: token);
     if (!mounted) return;
     setState(() => _mask = next);
   }
@@ -198,14 +206,14 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
     } else {
       // Disable master richiede backdoor code (è il path "voglio uscire"
       // più frequente — passa dalla validazione di sicurezza completa).
-      final ok = await _requireBackdoorAuth(purpose: 'disattivare strict mode');
-      if (!ok) return;
-      // Il backdoor code valid invalida già la mask via
-      // performEmergencyUnblock? No: validateBackdoorCode marca solo come
-      // usato + reset counter. Per coerenza chiamiamo setStrictModeOptions(0)
-      // qui — la mask è già azzerata se l'utente ha usato il "vero" emergency
-      // unblock dalla backdoor screen.
-      await _channel.setStrictModeOptions(0);
+      final token = await _requireBackdoorAuth(
+        purpose: 'disattivare strict mode',
+      );
+      if (token == null) return; // annullato / lockout / fallito
+      // Azzerare la mask è un downgrade: SEC-01 esige il token monouso che
+      // _requireBackdoorAuth ha appena ottenuto dal native dopo la validazione
+      // del code. Il native lo consuma atomicamente.
+      await _channel.setStrictModeOptions(0, unblockToken: token);
       if (!mounted) return;
       setState(() => _mask = 0);
     }
