@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.dev.koru.overlay.BlockReason
 import com.google.common.truth.Truth.assertThat
+import java.io.File
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -33,12 +35,25 @@ class OverlayManagerBypassTest {
         // OverlayManager) così i metodi companion raggiungono BypassStore,
         // poi parti da uno stato pulito.
         OverlayManager.attachContext(ApplicationProvider.getApplicationContext<Context>())
-        OverlayManager.revokeAllBypasses()
+        clearStoreState()
     }
 
     @After
     fun tearDown() {
-        OverlayManager.revokeAllBypasses()
+        clearStoreState()
+    }
+
+    /// Reset esplicito tra i test: cancella il file E azzera la cache statica
+    /// di BypassStore (singleton che sopravvive nel JVM di test). Stesso
+    /// pattern di OverlayPoliciesTest.clearBypassState — più robusto che
+    /// affidarsi al solo revokeAllBypasses().
+    private fun clearStoreState() {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        File(ctx.filesDir, "koru_bypasses.json").delete()
+        val field = BypassStore::class.java.getDeclaredField("cache")
+        field.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        (field.get(BypassStore) as AtomicReference<Any?>).set(null)
     }
 
     @Test
