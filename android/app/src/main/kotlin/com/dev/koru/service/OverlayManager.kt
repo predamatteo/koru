@@ -58,7 +58,6 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.dev.koru.overlay.BlockReason
 import com.dev.koru.overlay.OverlayConfig
 import kotlinx.coroutines.delay
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Politica di bypass per un singolo invocazione di overlay. Calcolata dal
@@ -127,35 +126,19 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
     companion object {
         private const val TAG = "OverlayManager"
 
-        /// Package name → timestamp ms fino a cui il blocco è bypassato.
-        /// Dopo che l'utente tocca "Open anyway" sull'overlay, sceglie
-        /// esplicitamente una durata (1/5/15/30 min) dal duration picker;
-        /// il bypass resta valido per quella durata MENTRE l'app è in
-        /// foreground. Non appena l'utente esce dall'app (verso un'altra
-        /// app o verso il launcher), il bypass viene revocato dal caller
-        /// — KoruAccessibilityService.onAccessibilityEvent (path primario)
-        /// o LockRunnable.checkAndBlock (backup polling) — via
-        /// [clearBypass]. Al prossimo rientro nell'app, l'overlay con
-        /// countdown ricompare: ogni sessione richiede una scelta esplicita,
-        /// allineato al pattern Opal/ScreenZen.
-        ///
-        /// ConcurrentHashMap perché letto/scritto da thread misti:
-        /// AccessibilityService (binder), LockRunnable (polling thread),
-        /// main thread (UI callback onBypassOpen). MutableMap non sync
-        /// causava ConcurrentModificationException sporadiche.
-        private val bypassedPackages = ConcurrentHashMap<String, BypassEntry>()
+        /// Context applicativo per la persistenza cross-process dei bypass
+        /// (vedi [BypassStore]). Inizializzato dal costruttore di OverlayManager
+        /// in ENTRAMBI i processi (`:accessibility` e main), così i metodi
+        /// companion — chiamati SENZA Context da KoruAccessibilityService,
+        /// LockRunnable, ecc. — possono raggiungere lo store condiviso su disco
+        /// senza dover propagare un Context in ogni call site.
+        /// @Volatile: scritto in onCreate/onServiceConnected, letto da altri thread.
+        @Volatile
+        private var appContext: Context? = null
 
-        /// Cleanup interno: rimuove entries scadute. Chiamato pigramente
-        /// da isBypassed / markBypassed per evitare leak senza un timer
-        /// dedicato. La mappa resta piccola (1 entry per app bloccata)
-        /// ma "best effort" garbage collection ci sta.
-        private fun pruneExpired() {
-            val now = System.currentTimeMillis()
-            val iterator = bypassedPackages.entries.iterator()
-            while (iterator.hasNext()) {
-                val entry = iterator.next()
-                if (entry.value.until < now) iterator.remove()
-            }
+        /// Da chiamare appena un OverlayManager esiste nel processo (idempotente).
+        fun attachContext(context: Context) {
+            appContext = context.applicationContext
         }
 
         /// Chiave del bypass. Per le APP e' il solo package (sblocca l'intera
@@ -167,17 +150,24 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
         private fun bypassKey(packageName: String, domain: String?): String =
             if (domain.isNullOrEmpty()) packageName else "$packageName|$domain"
 
+        /// Stato persistito su [BypassStore] (file in filesDir), CONDIVISO tra i
+        /// processi. Dopo "Open anyway" il bypass vale per la durata scelta
+        /// MENTRE l'app è in foreground; all'uscita il caller
+        /// (KoruAccessibilityService.onAccessibilityEvent o
+        /// LockRunnable.checkAndBlock) lo revoca via [clearBypass]. Se
+        /// [appContext] non è ancora agganciato, le query falliscono SAFE
+        /// (nessun bypass → il blocco resta attivo).
         fun isBypassed(packageName: String, domain: String? = null): Boolean {
-            pruneExpired()
-            val entry = bypassedPackages[bypassKey(packageName, domain)] ?: return false
+            val ctx = appContext ?: return false
+            val entry = BypassStore.read(ctx)[bypassKey(packageName, domain)] ?: return false
             return System.currentTimeMillis() < entry.until
         }
 
         /// Il motivo per cui [packageName] (eventualmente scoped a [domain]) è
         /// attualmente bypassato, o null se non c'è alcun bypass attivo.
         fun bypassReason(packageName: String, domain: String? = null): BlockReason? {
-            pruneExpired()
-            val entry = bypassedPackages[bypassKey(packageName, domain)] ?: return null
+            val ctx = appContext ?: return null
+            val entry = BypassStore.read(ctx)[bypassKey(packageName, domain)] ?: return null
             return if (System.currentTimeMillis() < entry.until) entry.reason else null
         }
 
@@ -201,9 +191,12 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
             domain: String? = null,
             reason: BlockReason = BlockReason.APP_BLOCKED,
         ) {
-            pruneExpired()
-            bypassedPackages[bypassKey(packageName, domain)] =
-                BypassEntry(System.currentTimeMillis() + durationMs, reason)
+            val ctx = appContext ?: return
+            BypassStore.put(
+                ctx,
+                bypassKey(packageName, domain),
+                BypassEntry(System.currentTimeMillis() + durationMs, reason),
+            )
         }
 
         /// Rimuove il bypass per questo pacchetto: sia quello per-app (chiave
@@ -211,19 +204,16 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
         /// Chiamato dall'auto-revoke quando l'utente esce dall'app/browser,
         /// quindi deve azzerare ogni variante per quel package.
         fun clearBypass(packageName: String) {
-            bypassedPackages.remove(packageName)
-            val prefix = "$packageName|"
-            val it = bypassedPackages.keys.iterator()
-            while (it.hasNext()) {
-                if (it.next().startsWith(prefix)) it.remove()
-            }
+            val ctx = appContext ?: return
+            BypassStore.removePackage(ctx, packageName)
         }
 
         /// Revoca tutti i bypass attivi. Esposto per strict mode toggle:
         /// quando l'utente attiva strict, eventuali bypass timed pendenti
         /// non hanno più senso e vanno azzerati.
         fun revokeAllBypasses() {
-            bypassedPackages.clear()
+            val ctx = appContext ?: return
+            BypassStore.clearAll(ctx)
         }
     }
 
@@ -273,6 +263,11 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
     init {
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
+        // Aggancia il context allo store dei bypass: da qui in poi i metodi
+        // companion (isBypassed/markBypassed/...) raggiungono BypassStore in
+        // questo processo. Lo fa OGNI OverlayManager → sia quello di
+        // `:accessibility` sia quello del main puntano allo stesso filesDir.
+        attachContext(context)
     }
 
     private var _profileEmoji = mutableStateOf<String?>(null)

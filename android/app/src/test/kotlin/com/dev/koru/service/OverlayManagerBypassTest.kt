@@ -1,5 +1,7 @@
 package com.dev.koru.service
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import com.dev.koru.overlay.BlockReason
 import com.google.common.truth.Truth.assertThat
 import org.junit.After
@@ -27,6 +29,10 @@ class OverlayManagerBypassTest {
 
     @Before
     fun setUp() {
+        // Aggancia il context (in produzione lo fa il costruttore di
+        // OverlayManager) così i metodi companion raggiungono BypassStore,
+        // poi parti da uno stato pulito.
+        OverlayManager.attachContext(ApplicationProvider.getApplicationContext<Context>())
         OverlayManager.revokeAllBypasses()
     }
 
