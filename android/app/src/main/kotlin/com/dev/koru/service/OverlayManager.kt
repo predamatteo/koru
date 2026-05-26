@@ -3,6 +3,7 @@ package com.dev.koru.service
 import android.content.Context
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
 import android.view.WindowInsets
@@ -102,8 +103,28 @@ val defaultBypassDurations: List<Pair<String, Long>> = listOf(
  * dal blocco di profilo"). Memorizzando il reason possiamo far sì che solo
  * un bypass NATO DAL limite sospenda il limite — vedi
  * [OverlayManager.isLimitBypassActive].
+ *
+ * La scadenza è registrata su DUE orologi: [untilWall] (wall-clock) e
+ * [untilElapsed] (clock monotonico [SystemClock.elapsedRealtime], che non
+ * torna indietro). Vedi [isActive].
  */
-data class BypassEntry(val until: Long, val reason: BlockReason)
+data class BypassEntry(
+    val untilWall: Long,
+    val untilElapsed: Long,
+    val reason: BlockReason,
+) {
+    /// Attivo solo se NÉ il wall-clock NÉ il clock monotonico sono scaduti.
+    /// L'AND è anti-manipolazione: spostando l'orologio INDIETRO per estendere
+    /// un bypass, `untilElapsed` (monotonico) scatta comunque a fine durata
+    /// reale → niente estensione. E resta fail-closed dopo un REBOOT
+    /// (elapsedRealtime riparte da 0, ma `untilWall` fa scadere il bypass alla
+    /// sua ora naturale). Spostare l'orologio in avanti può solo anticipare la
+    /// scadenza (non è un attacco). Parametri iniettabili per i test.
+    fun isActive(
+        nowWall: Long = System.currentTimeMillis(),
+        nowElapsed: Long = SystemClock.elapsedRealtime(),
+    ): Boolean = nowElapsed < untilElapsed && nowWall < untilWall
+}
 
 /// Palette Koru (mirror di lib/core/constants/koru_colors.dart)
 private val KoruBgBase = Color(0xFF0E100F)
@@ -159,8 +180,7 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
         /// (nessun bypass → il blocco resta attivo).
         fun isBypassed(packageName: String, domain: String? = null): Boolean {
             val ctx = appContext ?: return false
-            val entry = BypassStore.read(ctx)[bypassKey(packageName, domain)] ?: return false
-            return System.currentTimeMillis() < entry.until
+            return BypassStore.read(ctx)[bypassKey(packageName, domain)]?.isActive() ?: false
         }
 
         /// Il motivo per cui [packageName] (eventualmente scoped a [domain]) è
@@ -168,7 +188,7 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
         fun bypassReason(packageName: String, domain: String? = null): BlockReason? {
             val ctx = appContext ?: return null
             val entry = BypassStore.read(ctx)[bypassKey(packageName, domain)] ?: return null
-            return if (System.currentTimeMillis() < entry.until) entry.reason else null
+            return if (entry.isActive()) entry.reason else null
         }
 
         /// True solo se è attivo un bypass NATO DAL daily limit (overlay
@@ -195,7 +215,11 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
             BypassStore.put(
                 ctx,
                 bypassKey(packageName, domain),
-                BypassEntry(System.currentTimeMillis() + durationMs, reason),
+                BypassEntry(
+                    untilWall = System.currentTimeMillis() + durationMs,
+                    untilElapsed = SystemClock.elapsedRealtime() + durationMs,
+                    reason = reason,
+                ),
             )
         }
 

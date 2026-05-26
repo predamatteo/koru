@@ -1,6 +1,7 @@
 package com.dev.koru.service
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.test.core.app.ApplicationProvider
 import com.dev.koru.overlay.BlockReason
 import com.google.common.truth.Truth.assertThat
@@ -14,13 +15,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * Tests per [BypassStore] — la persistenza cross-process introdotta dal fix M2.
+ * Tests per [BypassStore] — la persistenza cross-process introdotta dal fix M2
+ * e l'hardening anti-clock-manipulation di [BypassEntry.isActive].
  *
- * Coprono round-trip della serializzazione, il fail-safe di parsing del
- * `reason`, lo skip delle entry con `until<=0`, e soprattutto la proprietà
- * CENTRALE di M2: un bypass scritto da un processo è rileggibile da un altro.
- * "L'altro processo" è simulato azzerando la cache statica, così la `read`
- * successiva ricarica da disco come farebbe un processo con cache vuota.
+ * Coprono round-trip della serializzazione (a due orologi), il fail-safe di
+ * parsing del `reason`, lo skip di `untilWall<=0`, la proprietà CENTRALE di M2
+ * ("scritto da un processo, letto da un altro" — simulato azzerando la cache
+ * statica), e la logica di scadenza a doppio clock (wall + monotonico).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -40,22 +41,26 @@ class BypassStoreTest {
         resetState()
     }
 
+    // -------- persistenza / serializzazione --------
+
     @Test
     fun put_isReadableByOtherProcess() {
-        val until = System.currentTimeMillis() + 5 * 60_000L
-        BypassStore.put(ctx, pkg, BypassEntry(until, BlockReason.USAGE_LIMIT))
+        val durationMs = 5 * 60_000L
+        val expectedWall = System.currentTimeMillis() + durationMs
+        BypassStore.put(ctx, pkg, activeEntry(BlockReason.USAGE_LIMIT, durationMs))
         simulateOtherProcess()
         val entry = BypassStore.read(ctx)[pkg]
         assertThat(entry).isNotNull()
-        assertThat(entry!!.until).isEqualTo(until)
-        assertThat(entry.reason).isEqualTo(BlockReason.USAGE_LIMIT)
+        assertThat(entry!!.reason).isEqualTo(BlockReason.USAGE_LIMIT)
+        // until persistito (tolleranza per il tempo trascorso nel test).
+        assertThat(entry.untilWall).isAtLeast(expectedWall - 5_000L)
+        assertThat(entry.isActive()).isTrue()
     }
 
     @Test
     fun reason_roundTripsForEveryValue() {
-        val until = System.currentTimeMillis() + 60_000L
         for (reason in BlockReason.values()) {
-            BypassStore.put(ctx, pkg, BypassEntry(until, reason))
+            BypassStore.put(ctx, pkg, activeEntry(reason))
             simulateOtherProcess()
             assertThat(BypassStore.read(ctx)[pkg]?.reason).isEqualTo(reason)
         }
@@ -65,62 +70,95 @@ class BypassStoreTest {
     fun unknownReason_parsesToAppBlocked_failSafe() {
         // File forgiato/corrotto con reason sconosciuto ⇒ APP_BLOCKED (NON
         // USAGE_LIMIT), così non sospende il cap giornaliero.
-        val until = System.currentTimeMillis() + 60_000L
-        writeRawFile("""{"$pkg":{"until":$until,"reason":"GARBAGE_REASON"}}""")
+        val wall = System.currentTimeMillis() + 60_000L
+        val elapsed = SystemClock.elapsedRealtime() + 60_000L
+        writeRawFile("""{"$pkg":{"untilWall":$wall,"untilElapsed":$elapsed,"reason":"GARBAGE_REASON"}}""")
         assertThat(BypassStore.read(ctx)[pkg]?.reason).isEqualTo(BlockReason.APP_BLOCKED)
     }
 
     @Test
     fun missingReason_parsesToAppBlocked_failSafe() {
-        val until = System.currentTimeMillis() + 60_000L
-        writeRawFile("""{"$pkg":{"until":$until}}""")
+        val wall = System.currentTimeMillis() + 60_000L
+        val elapsed = SystemClock.elapsedRealtime() + 60_000L
+        writeRawFile("""{"$pkg":{"untilWall":$wall,"untilElapsed":$elapsed}}""")
         assertThat(BypassStore.read(ctx)[pkg]?.reason).isEqualTo(BlockReason.APP_BLOCKED)
     }
 
     @Test
-    fun nonPositiveUntil_isSkippedOnRead() {
+    fun nonPositiveUntilWall_isSkippedOnRead() {
         writeRawFile(
-            """{"$pkg":{"until":0,"reason":"USAGE_LIMIT"},""" +
-                """"other.pkg":{"until":-5,"reason":"USAGE_LIMIT"}}""",
+            """{"$pkg":{"untilWall":0,"untilElapsed":1,"reason":"USAGE_LIMIT"},""" +
+                """"other.pkg":{"untilWall":-5,"untilElapsed":1,"reason":"USAGE_LIMIT"}}""",
         )
         assertThat(BypassStore.read(ctx)).isEmpty()
     }
 
     @Test
     fun removePackage_clearsAppWideAndPerDomain_visibleCrossProcess() {
-        val until = System.currentTimeMillis() + 60_000L
-        BypassStore.put(ctx, pkg, BypassEntry(until, BlockReason.APP_BLOCKED))
-        BypassStore.put(ctx, "$pkg|reddit.com", BypassEntry(until, BlockReason.WEBSITE_BLOCKED))
-        BypassStore.put(ctx, "other.pkg", BypassEntry(until, BlockReason.APP_BLOCKED))
+        BypassStore.put(ctx, pkg, activeEntry(BlockReason.APP_BLOCKED))
+        BypassStore.put(ctx, "$pkg|reddit.com", activeEntry(BlockReason.WEBSITE_BLOCKED))
+        BypassStore.put(ctx, "other.pkg", activeEntry(BlockReason.APP_BLOCKED))
         BypassStore.removePackage(ctx, pkg)
         simulateOtherProcess()
-        val map = BypassStore.read(ctx)
         // Rimosse la app-wide e la per-dominio di pkg; l'altra app resta.
-        assertThat(map.keys).containsExactly("other.pkg")
+        assertThat(BypassStore.read(ctx).keys).containsExactly("other.pkg")
     }
 
     @Test
-    fun put_prunesOtherExpiredEntries() {
-        // Una entry passata (until>0 ma < now) resta su disco finché un put non
-        // la pota: verifichiamo che il prossimo put la elimini.
-        val expired = System.currentTimeMillis() - 1_000L
-        writeRawFile("""{"stale.pkg":{"until":$expired,"reason":"USAGE_LIMIT"}}""")
-        val valid = System.currentTimeMillis() + 60_000L
-        BypassStore.put(ctx, pkg, BypassEntry(valid, BlockReason.USAGE_LIMIT))
+    fun put_prunesOtherInactiveEntries() {
+        // Una entry scaduta (wall passato) resta su disco finché un put non la
+        // pota: verifichiamo che il prossimo put la elimini.
+        val pastWall = System.currentTimeMillis() - 1_000L
+        val pastElapsed = SystemClock.elapsedRealtime() - 1_000L
+        writeRawFile("""{"stale.pkg":{"untilWall":$pastWall,"untilElapsed":$pastElapsed,"reason":"USAGE_LIMIT"}}""")
+        BypassStore.put(ctx, pkg, activeEntry(BlockReason.USAGE_LIMIT))
         simulateOtherProcess()
         assertThat(BypassStore.read(ctx).keys).containsExactly(pkg)
     }
 
     @Test
     fun clearAll_emptiesStore_visibleCrossProcess() {
-        val until = System.currentTimeMillis() + 60_000L
-        BypassStore.put(ctx, pkg, BypassEntry(until, BlockReason.USAGE_LIMIT))
+        BypassStore.put(ctx, pkg, activeEntry(BlockReason.USAGE_LIMIT))
         BypassStore.clearAll(ctx)
         simulateOtherProcess()
         assertThat(BypassStore.read(ctx)).isEmpty()
     }
 
+    // -------- doppio clock (anti clock-manipulation) --------
+
+    @Test
+    fun isActive_normalWindow_true() {
+        val e = BypassEntry(untilWall = 10_500, untilElapsed = 5_500, reason = BlockReason.USAGE_LIMIT)
+        // 1s dentro la finestra su entrambi gli orologi.
+        assertThat(e.isActive(nowWall = 9_600, nowElapsed = 4_600)).isTrue()
+    }
+
+    @Test
+    fun isActive_clockMovedBack_doesNotExtend() {
+        // untilWall=10_500, untilElapsed=5_500. L'utente sposta il wall MOLTO
+        // indietro (nowWall=1_000, ben dentro), ma il tempo REALE è trascorso
+        // oltre la durata (nowElapsed=6_000 > untilElapsed) → NON attivo.
+        val e = BypassEntry(untilWall = 10_500, untilElapsed = 5_500, reason = BlockReason.USAGE_LIMIT)
+        assertThat(e.isActive(nowWall = 1_000, nowElapsed = 6_000)).isFalse()
+    }
+
+    @Test
+    fun isActive_rebootElapsedReset_failsClosed() {
+        // Dopo un reboot elapsedRealtime riparte da ~0 (nowElapsed piccolo <
+        // untilElapsed grande → "attivo" sul monotonico), MA il wall è
+        // trascorso oltre untilWall → l'AND lo rende NON attivo (fail-closed).
+        val e = BypassEntry(untilWall = 10_500, untilElapsed = 900_000, reason = BlockReason.USAGE_LIMIT)
+        assertThat(e.isActive(nowWall = 11_000, nowElapsed = 50)).isFalse()
+    }
+
     // -------- helpers --------
+
+    private fun activeEntry(reason: BlockReason, durationMs: Long = 60_000L) =
+        BypassEntry(
+            untilWall = System.currentTimeMillis() + durationMs,
+            untilElapsed = SystemClock.elapsedRealtime() + durationMs,
+            reason = reason,
+        )
 
     private fun resetState() {
         File(ctx.filesDir, fileName).delete()

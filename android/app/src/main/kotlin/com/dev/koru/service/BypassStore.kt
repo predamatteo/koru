@@ -106,9 +106,10 @@ object BypassStore {
             while (keys.hasNext()) {
                 val k = keys.next()
                 val obj = json.optJSONObject(k) ?: continue
-                val until = obj.optLong("until", 0L)
-                if (until <= 0L) continue
-                out[k] = BypassEntry(until, parseReason(obj.optString("reason")))
+                val untilWall = obj.optLong("untilWall", 0L)
+                if (untilWall <= 0L) continue
+                val untilElapsed = obj.optLong("untilElapsed", 0L)
+                out[k] = BypassEntry(untilWall, untilElapsed, parseReason(obj.optString("reason")))
             }
             val frozen = out.toMap()
             cache.set(CachedSnapshot(frozen, lastModified, length))
@@ -122,8 +123,9 @@ object BypassStore {
     /// Inserisce/aggiorna il bypass per [key], eliminando al volo le entry già
     /// scadute così il file non cresce indefinitamente.
     fun put(context: Context, key: String, entry: BypassEntry) = mutate(context) { current ->
-        val now = System.currentTimeMillis()
-        current.filterValues { it.until > now }.toMutableMap().apply { this[key] = entry }
+        // Pota le entry non più attive (scadute su wall O su clock monotonico)
+        // così il file non cresce.
+        current.filterValues { it.isActive() }.toMutableMap().apply { this[key] = entry }
     }
 
     /// Rimuove il bypass app-wide (`packageName`) e TUTTE le varianti
@@ -169,7 +171,8 @@ object BypassStore {
                 json.put(
                     k,
                     JSONObject().apply {
-                        put("until", v.until)
+                        put("untilWall", v.untilWall)
+                        put("untilElapsed", v.untilElapsed)
                         put("reason", v.reason.name)
                     },
                 )
