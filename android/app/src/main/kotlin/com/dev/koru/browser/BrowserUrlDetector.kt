@@ -3,6 +3,7 @@ package com.dev.koru.browser
 import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
+import com.dev.koru.BuildConfig
 import java.lang.ref.WeakReference
 import java.util.concurrent.ConcurrentHashMap
 
@@ -45,7 +46,8 @@ object BrowserUrlDetector {
                     if (!url.startsWith("search or") && url.isNotEmpty()) {
                         val domain = extractDomain(url)
                         if (domain != null && domain.contains('.')) {
-                            Log.d(TAG, "Detected via cached node: $domain")
+                            // SEC-07: il dominio navigato è PII → solo in debug.
+                            if (BuildConfig.DEBUG) Log.d(TAG, "Detected via cached node: $domain")
                             return DetectedUrl(url, domain)
                         }
                     }
@@ -72,7 +74,7 @@ object BrowserUrlDetector {
             if (url.isEmpty() || url.startsWith("search or")) continue
             val domain = extractDomain(url) ?: continue
             if (domain.isEmpty() || !domain.contains('.')) continue
-            Log.d(TAG, "Detected via view-id ${config.viewId}: $domain")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Detected via view-id ${config.viewId}: $domain")
             return DetectedUrl(url, domain)
         }
 
@@ -82,10 +84,12 @@ object BrowserUrlDetector {
         val foundIds = mutableSetOf<String>()
         val fallback = scanFallbackIterative(rootNode, foundIds)
         if (fallback != null) {
-            Log.i(TAG, "Detected via fallback: ${fallback.domain}")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Detected via fallback: ${fallback.domain}")
             return fallback
         }
-        Log.d(TAG, "No URL. Sample view-ids (${foundIds.size}): ${foundIds.take(40).joinToString(", ")}")
+        if (BuildConfig.DEBUG) {
+            Log.d(TAG, "No URL. Sample view-ids (${foundIds.size}): ${foundIds.take(40).joinToString(", ")}")
+        }
         return null
     }
 

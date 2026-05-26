@@ -13,6 +13,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.dev.koru.BuildConfig
 import com.dev.koru.browser.BrowserConfigLoader
 import com.dev.koru.browser.BrowserUrlDetector
 import com.dev.koru.browser.WebsiteMatcher
@@ -1123,10 +1124,13 @@ class KoruAccessibilityService : AccessibilityService() {
 
         val detected = BrowserUrlDetector.detect(rootNode, configs)
         if (detected == null) {
-            Log.d(TAG, "  → URL bar not detected (configs=${configs.size})")
+            if (BuildConfig.DEBUG) Log.d(TAG, "  → URL bar not detected (configs=${configs.size})")
             return
         }
-        Log.i(TAG, "  URL detected: domain=${detected.domain} full=${detected.fullUrl}")
+        // SEC-07: la URL completa (path + query) è cronologia di navigazione =
+        // PII per una app di benessere digitale. NON loggarla mai in release;
+        // anche in debug logghiamo solo il dominio matchato, mai full URL/query.
+        if (BuildConfig.DEBUG) Log.d(TAG, "  URL detected: domain=${detected.domain}")
 
         if (snapshot.websiteRulesCache.isEmpty()) {
             Log.w(TAG, "  → websiteRulesCache is EMPTY")
@@ -1141,7 +1145,11 @@ class KoruAccessibilityService : AccessibilityService() {
             // blocking (~996), che invece lo applicano correttamente.
             val matchedProfile = snapshot.profiles.firstOrNull { it.id == profileId }
             if (matchedProfile == null || !isProfileActiveNow(matchedProfile, snapshot)) continue
-            Log.d(TAG, "  profile $profileId has ${rules.size} rules: ${rules.map { "${it.name}(type=${it.blockingType},any=${it.isAnywhereInUrl})" }}")
+            // SEC-07: i nomi delle regole sono pattern di blocco scelti dall'utente
+            // (config sensibile) → solo in debug.
+            if (BuildConfig.DEBUG) {
+                Log.d(TAG, "  profile $profileId has ${rules.size} rules: ${rules.map { "${it.name}(type=${it.blockingType},any=${it.isAnywhereInUrl})" }}")
+            }
             val matchedRule = WebsiteMatcher.firstMatch(rules, detected.fullUrl, detected.domain) ?: continue
 
             // Bypass PER-DOMINIO: l'utente ha scelto "Open anyway" + durata su
