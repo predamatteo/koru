@@ -44,7 +44,18 @@ object StrictModeMethodChannel {
     private const val KEY_FAIL_COUNT = "fail_count"
     private const val KEY_LAST_FAIL_ELAPSED = "last_fail_elapsed_ms"
     private const val KEY_LAST_FAIL_WALL = "last_fail_wall_ms"
+    // SEC-04: ancora del boot al momento del fail = (wall - elapsed). Cambia
+    // SOLO al reboot (elapsedRealtime riparte da 0), quindi confrontarla con
+    // l'ancora "ora" rileva i reboot in modo esplicito, senza affidarsi a
+    // confronti fragili tra elapsed passato e presente.
+    private const val KEY_LAST_FAIL_BOOT_WALL = "last_fail_boot_wall_ms"
     private const val KEY_USED_CODES = "used_codes_set"
+
+    /// Tolleranza sull'ancora di boot per dichiarare "reboot". `wall - elapsed`
+    /// oscilla di qualche secondo per via di NTP slew e arrotondamenti; oltre
+    /// questa soglia assumiamo un riavvio (o una manipolazione del wall, che
+    /// trattiamo comunque fail-secure più sotto).
+    private const val BOOT_WALL_TOLERANCE_MS = 5_000L
 
     // Soglie di rate limit. Sequenza: dopo 3 tentativi falliti lockout
     // di 5 min; dopo 5 tentativi 24h; dopo 7+ tentativi 72h. Granularità
@@ -315,10 +326,14 @@ object StrictModeMethodChannel {
     private fun recordFailedAttempt(context: Context) {
         val prefs = prefs(context) ?: return
         val current = prefs.getInt(KEY_FAIL_COUNT, 0) + 1
+        val nowElapsed = SystemClock.elapsedRealtime()
+        val nowWall = System.currentTimeMillis()
         prefs.edit()
             .putInt(KEY_FAIL_COUNT, current)
-            .putLong(KEY_LAST_FAIL_ELAPSED, SystemClock.elapsedRealtime())
-            .putLong(KEY_LAST_FAIL_WALL, System.currentTimeMillis())
+            .putLong(KEY_LAST_FAIL_ELAPSED, nowElapsed)
+            .putLong(KEY_LAST_FAIL_WALL, nowWall)
+            // SEC-04: ancora di boot al momento del fail.
+            .putLong(KEY_LAST_FAIL_BOOT_WALL, nowWall - nowElapsed)
             .apply()
         Log.w(TAG, "Failed backdoor attempt #$current")
     }
@@ -329,6 +344,7 @@ object StrictModeMethodChannel {
             .remove(KEY_FAIL_COUNT)
             .remove(KEY_LAST_FAIL_ELAPSED)
             .remove(KEY_LAST_FAIL_WALL)
+            .remove(KEY_LAST_FAIL_BOOT_WALL)
             .apply()
     }
 
@@ -344,9 +360,7 @@ object StrictModeMethodChannel {
     }
 
     /// Quanti ms mancano alla fine del lockout corrente; 0 se non in lockout.
-    /// Usa elapsedRealtime quando possibile (monotonic, no time tampering).
-    /// Dopo un reboot elapsedRealtime si azzera: in quel caso usiamo il
-    /// wall clock come fallback approssimato.
+    /// Delega il calcolo (puro, testabile) a [computeLockoutRemainingMs].
     private fun lockoutRemainingMs(context: Context): Long {
         val prefs = prefs(context) ?: return 0L
         val failCount = prefs.getInt(KEY_FAIL_COUNT, 0)
@@ -358,26 +372,84 @@ object StrictModeMethodChannel {
             else -> LOCKOUT_SOFT_MS
         }
 
-        val lastFailElapsed = prefs.getLong(KEY_LAST_FAIL_ELAPSED, 0L)
-        val lastFailWall = prefs.getLong(KEY_LAST_FAIL_WALL, 0L)
-        val nowElapsed = SystemClock.elapsedRealtime()
-        val nowWall = System.currentTimeMillis()
+        return computeLockoutRemainingMs(
+            lockoutDuration = lockoutDuration,
+            lastFailElapsed = prefs.getLong(KEY_LAST_FAIL_ELAPSED, 0L),
+            lastFailWall = prefs.getLong(KEY_LAST_FAIL_WALL, 0L),
+            lastFailBootWall = prefs.getLong(KEY_LAST_FAIL_BOOT_WALL, 0L),
+            nowElapsed = SystemClock.elapsedRealtime(),
+            nowWall = System.currentTimeMillis(),
+        )
+    }
 
-        // Detect reboot: elapsedRealtime al momento del fail era maggiore
-        // di quello attuale → device è stato riavviato. In quel caso fidiamoci
-        // del wall clock (l'utente potrebbe averlo mosso, ma è meglio di niente).
-        val sinceFail = if (lastFailElapsed > 0L && lastFailElapsed <= nowElapsed) {
-            nowElapsed - lastFailElapsed
-        } else if (lastFailWall > 0L && nowWall >= lastFailWall) {
-            nowWall - lastFailWall
+    /// SEC-04 — calcolo del residuo di lockout robusto al clock-tampering e al
+    /// reboot. Funzione PURA (nessun accesso a SharedPreferences / clock di
+    /// sistema): tutti gli input sono iniettati ⇒ unit-testabile in modo
+    /// deterministico.
+    ///
+    /// Principio: il lockout è il margine di sicurezza contro il brute force, e
+    /// l'avversario è l'utente stesso che muove l'orologio. NÉ un salto in
+    /// avanti NÉ uno indietro del wall clock devono poterlo accorciare.
+    ///
+    /// `elapsedRealtime` è MONOTONICO entro lo stesso boot e si azzera SOLO al
+    /// reboot. Da qui due rami:
+    ///
+    /// - **Stesso boot** (`nowElapsed >= lastFailElapsed`, il clock monotonico
+    ///   NON è regredito): progresso = `min(elapsedDelta, wallDelta)` clampato
+    ///   a ≥0. Un salto WALL in AVANTI gonfia `wallDelta` ma vince il più
+    ///   piccolo `elapsedDelta` (no scorciatoia). Un salto INDIETRO rende
+    ///   `wallDelta` piccolo/negativo → progresso ridotto/azzerato → PIÙ
+    ///   lockout (fail-secure). `min` è corretto anche nel caso ambiguo
+    ///   "reboot con uptime lungo" (vince comunque il delta più piccolo = il
+    ///   tempo reale trascorso). L'ancora di boot ([lastFailBootWall]) è usata
+    ///   come corroborazione del reboot, non come trigger primario, proprio
+    ///   per non scambiare un wall-jump (che pure sposta `wall-elapsed`) per
+    ///   un riavvio.
+    /// - **Reboot con clock azzerato** (`nowElapsed < lastFailElapsed`): il
+    ///   riferimento monotonico è perso. Usiamo `wallDelta` clampato a ≥0 (il
+    ///   tempo a device spento conta legittimamente). Corroboriamo con
+    ///   l'ancora di boot: se è CAMBIATA è un vero reboot; se è invariata il
+    ///   record è anomalo (corruzione) ⇒ fail-secure, lockout pieno.
+    ///
+    /// In ogni ramo un `last_fail_wall` nel FUTURO (wallDelta<0, possibile solo
+    /// manomettendo l'orologio) ⇒ progresso 0 ⇒ residuo PIENO, mai 0.
+    /// Residuo = `lockoutDuration - max(0, progresso)`, mai negativo.
+    ///
+    /// Limite residuo documentato: dopo un reboot il clock monotonico riparte,
+    /// quindi un avversario che riavvia E POI sposta il wall molto in avanti può
+    /// accorciare il lockout. È un attacco ad alto sforzo e il keyspace a 40 bit
+    /// non è brute-forzabile a mano: il lockout resta solo un margine.
+    internal fun computeLockoutRemainingMs(
+        lockoutDuration: Long,
+        lastFailElapsed: Long,
+        lastFailWall: Long,
+        lastFailBootWall: Long,
+        nowElapsed: Long,
+        nowWall: Long,
+    ): Long {
+        // Senza anchor validi (record incompleto) ⇒ fail-secure: lockout pieno.
+        if (lastFailWall <= 0L) return lockoutDuration
+
+        val wallDelta = nowWall - lastFailWall
+        val monotonicRegressed = nowElapsed < lastFailElapsed
+
+        val progressed: Long = if (monotonicRegressed) {
+            // Clock monotonico azzerato → reboot. Corroboriamo con l'ancora di
+            // boot: cambiata (o assente nei record legacy) = reboot reale →
+            // usa il wall clampato; invariata = anomalia → fail-secure (0).
+            val nowBootWall = nowWall - nowElapsed
+            val bootChanged = lastFailBootWall <= 0L ||
+                kotlin.math.abs(nowBootWall - lastFailBootWall) > BOOT_WALL_TOLERANCE_MS
+            if (bootChanged) maxOf(0L, wallDelta) else 0L
         } else {
-            // Wall clock spostato indietro: assumiamo che il lockout sia
-            // appena iniziato (fail-secure: l'utente non sblocca a botta
-            // di NTP manipulation).
-            0L
+            // Stesso boot: elapsedDelta è il tempo reale. Il più piccolo tra i
+            // due delta blocca sia il salto avanti (vince elapsedDelta) sia
+            // quello indietro (wallDelta piccolo).
+            val elapsedDelta = nowElapsed - lastFailElapsed
+            maxOf(0L, minOf(elapsedDelta, wallDelta))
         }
 
-        val remaining = lockoutDuration - sinceFail
+        val remaining = lockoutDuration - progressed
         return if (remaining > 0L) remaining else 0L
     }
 
