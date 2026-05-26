@@ -72,12 +72,40 @@ data class NativeWebsiteRule(
  *
  * Drift crea il file con path_provider.getApplicationDocumentsDirectory() che
  * su Android risolve a context.filesDir — accessibile a tutti i processi della
- * stessa app. Non serve cross-process sync custom: SQLite con WAL gestisce
- * la concorrenza fra main process e :accessibility process.
+ * stessa app. Non serve cross-process sync custom: SQLite gestisce la
+ * concorrenza fra main process e :accessibility process via i fcntl-lock del
+ * rollback journal (vedi invariante journal_mode sotto).
+ *
+ * ─── INVARIANTI CROSS-RUNTIME (ARCH-04) — leggere prima di toccare ──────────
+ *
+ * Koru ha DUE runtime sullo STESSO file SQLite. Questi accordi sono IMPLICITI
+ * nel codice ma NON enforced dal compilatore; sono parte del contratto:
+ *
+ *  1. **Drift possiede lo schema + le migrazioni.** Il nativo è read-mostly
+ *     (legge i profili; scrive solo log/usage su tabelle append-only) e DEVE
+ *     conformarsi allo schema che Drift definisce. Ogni nome di tabella/colonna
+ *     che il nativo usa è dichiarato UNA VOLTA in [DbSchema] — NON inline qui —
+ *     ed è verificato da [DbSchemaContractTest] (drift interno) e dal test Dart
+ *     `db_schema_contract_test.dart` (drift cross-runtime). Aggiungere una
+ *     query che tocca una colonna nuova ⇒ aggiungerla a [DbSchema] e alla mappa
+ *     Dart gemella, altrimenti i contract test falliscono.
+ *
+ *  2. **journal_mode = DELETE, MAI WAL.** Drift forza `journal_mode=DELETE` nel
+ *     suo setup (`app_database.dart::_openConnection`); qui ci allineiamo (vedi
+ *     [open]). Se il nativo passasse a WAL, i file ausiliari `-shm`/`-wal`
+ *     finirebbero in un layout non interoperabile fra le due librerie SQLite
+ *     distinte (sqlite3_flutter_libs lato Flutter vs libsqlite di sistema lato
+ *     Android) e Drift crasherebbe con SQLITE_IOERR_SHM* alle SELECT successive.
+ *     DELETE usa solo il file principale + un rollback journal temporaneo,
+ *     gestito via fcntl-lock compatibili con entrambe.
+ *
+ *  3. **busy_timeout = 5000 su entrambi i lati.** Garantisce che una scrittura
+ *     concorrente di un runtime non faccia fallire subito la lettura dell'altro
+ *     con SQLITE_BUSY: chi trova il DB locked riprova fino a 5s.
  */
 object NativeDatabase {
     private const val TAG = "NativeDatabase"
-    private const val DB_NAME = "koru.db"
+    private const val DB_NAME = DbSchema.DB_NAME
     private var db: SQLiteDatabase? = null
     private var dbPath: String? = null
 
@@ -98,14 +126,11 @@ object NativeDatabase {
         if (current != null && current.isOpen) return current
         val dbFile = findDbFile(context)
             ?: throw IllegalStateException("Database file not found – Flutter has not created it yet")
-        // No ENABLE_WRITE_AHEAD_LOGGING: Drift apre lo stesso file con la
-        // libreria sqlite3_flutter_libs (amalgamation diversa da libsqlite
-        // di sistema). Se mettiamo il file in WAL da qui, i file ausiliari
-        // `-shm`/`-wal` finiscono in un layout non interoperabile e Drift
-        // crasha con SQLITE_IOERR_SHM* alle SELECT successive (es.
-        // `SELECT * FROM intervals` del watcher profili). Drift forza
-        // `journal_mode=DELETE` nel suo setup callback — Kotlin si
-        // allinea allo stesso mode + busy_timeout sotto.
+        // INVARIANTE 2+3 (vedi doc di classe): NO ENABLE_WRITE_AHEAD_LOGGING.
+        // Allineiamo journal_mode=DELETE + busy_timeout=5000 a quanto Drift
+        // forza nel suo setup callback. Mettere il file in WAL da qui romperebbe
+        // l'interop dei file `-shm`/`-wal` fra le due librerie SQLite e Drift
+        // crasherebbe con SQLITE_IOERR_SHM* alle SELECT successive.
         val opened = SQLiteDatabase.openDatabase(
             dbFile.absolutePath, null,
             SQLiteDatabase.OPEN_READWRITE
@@ -131,12 +156,14 @@ object NativeDatabase {
     fun getEnabledProfiles(context: Context): List<NativeProfile> {
         val database = open(context)
         val out = mutableListOf<NativeProfile>()
+        val t = DbSchema.Profiles
         database.rawQuery(
-            "SELECT id, title, type_combinations, on_conditions, operator, day_flags, " +
-                "block_notifications, block_launch, is_enabled, is_locked, on_until, " +
-                "locked_until, paused_until, blocking_mode, block_unsupported_browsers, " +
-                "block_adult_content, color_hex, emoji " +
-                "FROM profiles WHERE is_enabled = 1 AND paused_until >= 0",
+            "SELECT ${t.ID}, ${t.TITLE}, ${t.TYPE_COMBINATIONS}, ${t.ON_CONDITIONS}, " +
+                "${t.OPERATOR}, ${t.DAY_FLAGS}, ${t.BLOCK_NOTIFICATIONS}, ${t.BLOCK_LAUNCH}, " +
+                "${t.IS_ENABLED}, ${t.IS_LOCKED}, ${t.ON_UNTIL}, ${t.LOCKED_UNTIL}, " +
+                "${t.PAUSED_UNTIL}, ${t.BLOCKING_MODE}, ${t.BLOCK_UNSUPPORTED_BROWSERS}, " +
+                "${t.BLOCK_ADULT_CONTENT}, ${t.COLOR_HEX}, ${t.EMOJI} " +
+                "FROM ${t.TABLE} WHERE ${t.IS_ENABLED} = 1 AND ${t.PAUSED_UNTIL} >= 0",
             null
         ).use { c ->
             while (c.moveToNext()) {
@@ -171,9 +198,11 @@ object NativeDatabase {
     fun getAppRelationsForProfile(context: Context, profileId: Int): List<NativeAppRelation> {
         val database = open(context)
         val out = mutableListOf<NativeAppRelation>()
+        val t = DbSchema.AppProfileRelations
         database.rawQuery(
-            "SELECT package_name, profile_id, is_enabled, overlay_config_json, blocked_sections_json " +
-                "FROM app_profile_relations WHERE profile_id = ?",
+            "SELECT ${t.PACKAGE_NAME}, ${t.PROFILE_ID}, ${t.IS_ENABLED}, " +
+                "${t.OVERLAY_CONFIG_JSON}, ${t.BLOCKED_SECTIONS_JSON} " +
+                "FROM ${t.TABLE} WHERE ${t.PROFILE_ID} = ?",
             arrayOf(profileId.toString())
         ).use { c ->
             while (c.moveToNext()) {
@@ -194,9 +223,11 @@ object NativeDatabase {
     fun getIntervalsForProfile(context: Context, profileId: Int): List<NativeInterval> {
         val database = open(context)
         val out = mutableListOf<NativeInterval>()
+        val t = DbSchema.Intervals
         database.rawQuery(
-            "SELECT id, profile_id, from_minutes, to_minutes, is_enabled FROM intervals " +
-                "WHERE profile_id = ? AND is_enabled = 1",
+            "SELECT ${t.ID}, ${t.PROFILE_ID}, ${t.FROM_MINUTES}, ${t.TO_MINUTES}, " +
+                "${t.IS_ENABLED} FROM ${t.TABLE} " +
+                "WHERE ${t.PROFILE_ID} = ? AND ${t.IS_ENABLED} = 1",
             arrayOf(profileId.toString())
         ).use { c ->
             while (c.moveToNext()) {
@@ -209,9 +240,11 @@ object NativeDatabase {
     fun getUsageLimitsForProfile(context: Context, profileId: Int): List<NativeUsageLimit> {
         val database = open(context)
         val out = mutableListOf<NativeUsageLimit>()
+        val t = DbSchema.UsageLimits
         database.rawQuery(
-            "SELECT id, profile_id, period_type, limit_type, last_reset_time, allowed_count, used_count " +
-                "FROM usage_limits WHERE profile_id = ?",
+            "SELECT ${t.ID}, ${t.PROFILE_ID}, ${t.PERIOD_TYPE}, ${t.LIMIT_TYPE}, " +
+                "${t.LAST_RESET_TIME}, ${t.ALLOWED_COUNT}, ${t.USED_COUNT} " +
+                "FROM ${t.TABLE} WHERE ${t.PROFILE_ID} = ?",
             arrayOf(profileId.toString())
         ).use { c ->
             while (c.moveToNext()) {
@@ -222,15 +255,17 @@ object NativeDatabase {
     }
 
     fun updateUsedCount(context: Context, limitId: Int, usedCount: Long) {
+        val t = DbSchema.UsageLimits
         open(context).execSQL(
-            "UPDATE usage_limits SET used_count = ? WHERE id = ?",
+            "UPDATE ${t.TABLE} SET ${t.USED_COUNT} = ? WHERE ${t.ID} = ?",
             arrayOf(usedCount, limitId)
         )
     }
 
     fun insertBlockSession(context: Context, name: String, timestamp: Long) {
+        val t = DbSchema.BlockSessions
         open(context).execSQL(
-            "INSERT INTO block_sessions (name, timestamp) VALUES (?, ?)",
+            "INSERT INTO ${t.TABLE} (${t.NAME}, ${t.TIMESTAMP}) VALUES (?, ?)",
             arrayOf(name, timestamp)
         )
     }
@@ -251,9 +286,11 @@ object NativeDatabase {
         val m = (cal.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')
         val d = cal.get(java.util.Calendar.DAY_OF_MONTH).toString().padStart(2, '0')
         val dayKey = "$y-$m-$d"
+        val t = DbSchema.RestrictedAccessEvents
         open(context).execSQL(
-            "INSERT INTO restricted_access_events " +
-                "(occurred_at, day_start_date, package_name, event_type, restriction_type) " +
+            "INSERT INTO ${t.TABLE} " +
+                "(${t.OCCURRED_AT}, ${t.DAY_START_DATE}, ${t.PACKAGE_NAME}, " +
+                "${t.EVENT_TYPE}, ${t.RESTRICTION_TYPE}) " +
                 "VALUES (?, ?, ?, ?, ?)",
             arrayOf(timestamp, dayKey, packageName, eventType, restrictionType),
         )
@@ -274,9 +311,10 @@ object NativeDatabase {
         val m = (cal.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')
         val d = cal.get(java.util.Calendar.DAY_OF_MONTH).toString().padStart(2, '0')
         val dayKey = "$y-$m-$d"
+        val t = DbSchema.IntentionUsageEvents
         open(context).execSQL(
-            "INSERT INTO intention_usage_events " +
-                "(occurred_at, day_start_date, package_name, intention_name) " +
+            "INSERT INTO ${t.TABLE} " +
+                "(${t.OCCURRED_AT}, ${t.DAY_START_DATE}, ${t.PACKAGE_NAME}, ${t.INTENTION_NAME}) " +
                 "VALUES (?, ?, ?, ?)",
             arrayOf(timestamp, dayKey, packageName, intentionName),
         )
@@ -298,9 +336,10 @@ object NativeDatabase {
         val m = (cal.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')
         val d = cal.get(java.util.Calendar.DAY_OF_MONTH).toString().padStart(2, '0')
         val dayKey = "$y-$m-$d"
+        val t = DbSchema.FocusUsageEvents
         open(context).execSQL(
-            "INSERT INTO focus_usage_events " +
-                "(occurred_at, day_start_date, duration_in_ms) " +
+            "INSERT INTO ${t.TABLE} " +
+                "(${t.OCCURRED_AT}, ${t.DAY_START_DATE}, ${t.DURATION_IN_MS}) " +
                 "VALUES (?, ?, ?)",
             arrayOf(timestamp, dayKey, durationMs),
         )
@@ -310,8 +349,9 @@ object NativeDatabase {
     /// Profilo senza entry → nessun vincolo wifi.
     fun getWifiSsidsByProfile(context: Context): Map<Int, Set<String>> {
         val out = mutableMapOf<Int, MutableSet<String>>()
+        val t = DbSchema.WifiNetworks
         open(context).rawQuery(
-            "SELECT profile_id, ssid FROM wifi_networks", null
+            "SELECT ${t.PROFILE_ID}, ${t.SSID} FROM ${t.TABLE}", null
         ).use { c ->
             while (c.moveToNext()) {
                 val pid = c.getInt(0)
@@ -324,9 +364,11 @@ object NativeDatabase {
 
     fun getWebsiteRulesForProfile(context: Context, profileId: Int): List<NativeWebsiteRule> {
         val out = mutableListOf<NativeWebsiteRule>()
+        val t = DbSchema.WebsiteRules
         open(context).rawQuery(
-            "SELECT id, profile_id, name, blocking_type, is_anywhere_in_url, is_enabled " +
-                "FROM website_rules WHERE profile_id = ? AND is_enabled = 1",
+            "SELECT ${t.ID}, ${t.PROFILE_ID}, ${t.NAME}, ${t.BLOCKING_TYPE}, " +
+                "${t.IS_ANYWHERE_IN_URL}, ${t.IS_ENABLED} " +
+                "FROM ${t.TABLE} WHERE ${t.PROFILE_ID} = ? AND ${t.IS_ENABLED} = 1",
             arrayOf(profileId.toString())
         ).use { c ->
             while (c.moveToNext()) {
@@ -338,10 +380,13 @@ object NativeDatabase {
 
     fun getAllWebsiteRulesForEnabledProfiles(context: Context): Map<Int, List<NativeWebsiteRule>> {
         val result = mutableMapOf<Int, MutableList<NativeWebsiteRule>>()
+        val w = DbSchema.WebsiteRules
+        val p = DbSchema.Profiles
         open(context).rawQuery(
-            "SELECT w.id, w.profile_id, w.name, w.blocking_type, w.is_anywhere_in_url, w.is_enabled " +
-                "FROM website_rules w INNER JOIN profiles p ON w.profile_id = p.id " +
-                "WHERE p.is_enabled = 1 AND p.paused_until >= 0 AND w.is_enabled = 1",
+            "SELECT w.${w.ID}, w.${w.PROFILE_ID}, w.${w.NAME}, w.${w.BLOCKING_TYPE}, " +
+                "w.${w.IS_ANYWHERE_IN_URL}, w.${w.IS_ENABLED} " +
+                "FROM ${w.TABLE} w INNER JOIN ${p.TABLE} p ON w.${w.PROFILE_ID} = p.${p.ID} " +
+                "WHERE p.${p.IS_ENABLED} = 1 AND p.${p.PAUSED_UNTIL} >= 0 AND w.${w.IS_ENABLED} = 1",
             null
         ).use { c ->
             while (c.moveToNext()) {
@@ -357,8 +402,9 @@ object NativeDatabase {
 
     fun isAdultContentSite(context: Context, domain: String): Boolean {
         val d = domain.removePrefix("www.")
+        val t = DbSchema.AdultContentSites
         open(context).rawQuery(
-            "SELECT EXISTS(SELECT 1 FROM adult_content_sites WHERE domain = ? OR domain = ?)",
+            "SELECT EXISTS(SELECT 1 FROM ${t.TABLE} WHERE ${t.DOMAIN} = ? OR ${t.DOMAIN} = ?)",
             arrayOf(d, "www.$d")
         ).use { c ->
             return c.moveToNext() && c.getInt(0) == 1

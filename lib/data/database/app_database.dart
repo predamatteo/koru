@@ -44,6 +44,38 @@ part 'app_database.g.dart';
 /// 21 tabelle: 17 da app_blocker (con piccoli ritocchi su profiles/app_profile_relations),
 /// 3 da ascent (restricted_access_events / intention_usage_events / focus_usage_events),
 /// 1 nuova (favorites) per il launcher.
+///
+/// ─── INVARIANTI CROSS-RUNTIME (ARCH-04) — leggere prima di migrare lo schema ─
+///
+/// Lo STESSO file `koru.db` è aperto da DUE runtime distinti:
+///  - Drift (questo layer Dart) è il PROPRIETARIO dello schema + delle
+///    migrazioni. È l'unico che esegue CREATE/ALTER TABLE.
+///  - Il lato nativo Kotlin (`android/.../db/NativeDatabase.kt`) legge lo stesso
+///    file con SQL grezzo e nomi di colonna hardcoded, per far rispettare il
+///    blocking dal processo AccessibilityService/ForegroundService.
+///
+/// Conseguenze da NON dimenticare quando si tocca lo schema qui:
+///
+///  1. **Una rename/drop di colonna usata dal nativo lo rompe SILENZIOSAMENTE.**
+///     Non c'è legame a compile-time: il Dart compila, ma a runtime la rawQuery
+///     nativa fallisce ⇒ risultato vuoto ⇒ l'enforcement smette senza errori
+///     visibili. La dipendenza del nativo è dichiarata in `DbSchema.kt` (Kotlin)
+///     e rispecchiata nella mappa `kNativeSchemaContract` del test
+///     `test/data/database/db_schema_contract_test.dart`. Quel test apre lo
+///     schema VIVO di Drift e verifica che contenga ogni (tabella → colonne) di
+///     cui il nativo dipende: se rinomini/elimini una di quelle colonne SENZA
+///     aggiornare il contratto, il test fallisce. Per rinominare una colonna
+///     "nativa" servono TRE modifiche coordinate: qui (+ migrazione), in
+///     `DbSchema.kt`, e nella mappa del test Dart.
+///
+///  2. **journal_mode = DELETE, MAI WAL** (vedi `_openConnection` sotto e lo
+///     stesso accordo in `NativeDatabase.open`). Le due librerie SQLite distinte
+///     (sqlite3_flutter_libs lato Flutter vs libsqlite di sistema lato Android)
+///     non condividono in modo affidabile i file ausiliari `-shm`/`-wal` del
+///     WAL → SQLITE_IOERR_SHM* su qualunque SELECT appena il nativo apre il DB.
+///
+///  3. **busy_timeout = 5000 su entrambi i lati**, così una scrittura
+///     concorrente di un runtime non fa fallire subito la lettura dell'altro.
 @DriftDatabase(
   tables: [
     Profiles,
