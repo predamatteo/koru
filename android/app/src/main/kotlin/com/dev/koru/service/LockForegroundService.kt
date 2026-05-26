@@ -24,6 +24,7 @@ import com.dev.koru.db.NativeAppRelation
 import com.dev.koru.db.NativeProfile
 import com.dev.koru.overlay.BlockReason
 import com.dev.koru.overlay.OverlayConfig
+import com.dev.koru.strictmode.StrictModeFailSafe
 import org.json.JSONObject
 
 class LockForegroundService : Service() {
@@ -203,6 +204,16 @@ class LockForegroundService : Service() {
         if (isRunning) return
 
         setBlockingPersistenceFlag(true)
+
+        // SEC-02: anche dal processo main, all'avvio dell'enforcement, ri-arma
+        // lo strict mode se rileviamo la firma del Clear-data-con-strict-attivo
+        // (device admin attivo + store vergine). Idempotente con il check
+        // dell'AccessibilityService.
+        try {
+            StrictModeFailSafe.checkAndReassert(applicationContext)
+        } catch (e: Exception) {
+            Log.w(TAG, "StrictModeFailSafe check failed: ${e.message}")
+        }
 
         lockRunnable = LockRunnable(
             context = applicationContext,

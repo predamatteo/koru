@@ -105,6 +105,29 @@ object StrictModeStore {
         return storedMask
     }
 
+    /// SEC-02: true se lo store NON ha MAI registrato una mask (né nello store
+    /// cifrato né nel file legacy). Distingue:
+    ///  - "prima installazione pulita" / "dati cancellati" (nessuna chiave) ⇒ true;
+    ///  - "l'utente ha disattivato strict legittimamente" (saveMask(0) ha scritto
+    ///    `mask=0` + hmac, chiave PRESENTE) ⇒ false.
+    /// Usato dal fail-safe [com.dev.koru.service.StrictModeFailSafe]: combinato
+    /// con "device admin ancora attivo" (segnale durevole che sopravvive a
+    /// Clear Data) discrimina il wipe dei dati dal first-install.
+    fun isEncryptedStoreFresh(context: Context): Boolean {
+        val prefs = encryptedPrefs(context)
+        if (prefs == null) {
+            // Keystore non disponibile: ci basiamo sul file legacy. Assente ⇒
+            // store vergine.
+            return !File(context.filesDir, LEGACY_FILE_NAME).exists()
+        }
+        val hasMask = prefs.contains(KEY_MASK)
+        val hasHmac = prefs.contains(KEY_MASK_HMAC)
+        if (hasMask || hasHmac) return false
+        // Nessuna chiave nello store cifrato: vergine SOLO se non c'è neppure il
+        // file legacy da migrare.
+        return !File(context.filesDir, LEGACY_FILE_NAME).exists()
+    }
+
     private fun migrateFromLegacy(context: Context, prefs: SharedPreferences): Int {
         val legacy = readLegacyFile(context)
         // Salva nel nuovo store anche se è 0: così marchiamo la migration

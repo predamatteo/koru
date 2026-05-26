@@ -27,6 +27,7 @@ import com.dev.koru.db.NativeWebsiteRule
 import com.dev.koru.overlay.BlockReason
 import com.dev.koru.overlay.OverlayConfig
 import com.dev.koru.strictmode.StrictModeEnforcer
+import com.dev.koru.strictmode.StrictModeFailSafe
 import org.json.JSONObject
 import java.util.Calendar
 import java.util.concurrent.atomic.AtomicReference
@@ -473,6 +474,15 @@ class KoruAccessibilityService : AccessibilityService() {
             registerReceiver(actionReceiver, filter, RECEIVER_NOT_EXPORTED)
         } else {
             registerReceiver(actionReceiver, filter)
+        }
+
+        // SEC-02: all'avvio del processo di enforcement, se rileviamo la firma
+        // del "Clear data con strict armato" (device admin attivo ma store
+        // vergine) ri-armiamo lo strict mode a ALL e notifichiamo (fail-secure).
+        try {
+            StrictModeFailSafe.checkAndReassert(applicationContext)
+        } catch (e: Exception) {
+            Log.w(TAG, "StrictModeFailSafe check failed: ${e.message}")
         }
 
         loadProfiles()

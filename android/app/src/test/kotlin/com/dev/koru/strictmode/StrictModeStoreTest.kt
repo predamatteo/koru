@@ -178,4 +178,40 @@ class StrictModeStoreTest {
         prefs.edit().putString(keyMaskHmac, "").apply()
         assertThat(StrictModeStore.readMask(ctx)).isEqualTo(StrictModeStore.ALL_OPTIONS_ENABLED)
     }
+
+    // -------- SEC-02: isEncryptedStoreFresh (discriminante fail-safe) --------
+
+    @Test
+    fun isEncryptedStoreFresh_pristineStore_isTrue() {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        // Store vergine (wipato in setUp) e nessun file legacy → fresh.
+        assertThat(StrictModeStore.isEncryptedStoreFresh(ctx)).isTrue()
+    }
+
+    @Test
+    fun isEncryptedStoreFresh_afterSaveMaskZero_isFalse() {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        // Disable LEGITTIMO: saveMask(0) scrive la chiave → NON fresh. È il
+        // caso che evita il falso positivo del fail-safe.
+        StrictModeStore.saveMask(ctx, 0)
+        val prefs = encryptedPrefs(ctx) ?: return // se Keystore ko, niente da verificare
+        assertThat(StrictModeStore.isEncryptedStoreFresh(ctx)).isFalse()
+    }
+
+    @Test
+    fun isEncryptedStoreFresh_afterSaveMaskNonZero_isFalse() {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        StrictModeStore.saveMask(ctx, StrictModeStore.ALL_OPTIONS_ENABLED)
+        val prefs = encryptedPrefs(ctx) ?: return
+        assertThat(StrictModeStore.isEncryptedStoreFresh(ctx)).isFalse()
+    }
+
+    @Test
+    fun isEncryptedStoreFresh_legacyFilePresent_isFalse() {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        // C'è un file legacy da migrare → non consideriamo lo store vergine
+        // (la mask "esisteva" prima dell'upgrade).
+        File(ctx.filesDir, legacyFile).writeText("31")
+        assertThat(StrictModeStore.isEncryptedStoreFresh(ctx)).isFalse()
+    }
 }
