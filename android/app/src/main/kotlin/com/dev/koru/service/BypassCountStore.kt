@@ -37,12 +37,15 @@ import org.json.JSONObject
  *   sotto lock cross-process (copy-before-mutate per costruzione).
  * - Scrittura atomica (temp+rename) ereditata dall'astrazione (SEC-09).
  *
- * Anti clock-abuse sul rollover di giorno: il "giorno effettivo" usato per
- * decidere se il counter è "di oggi" è calcolato da [decideDay], che mirror-a la
- * guardia monotonica di [UsageGuardStore.decide]. Spostando l'orologio indietro
- * (stesso boot) o in avanti in modo incoerente, [decideDay] NON fa rollover →
- * il counter resta → più frizione. (Il caso reboot+salto-avanti combinato è
- * irrobustito in un commit successivo, SEC-05.)
+ * SEC-05 — anti clock-abuse sul rollover di giorno: il "giorno effettivo" usato
+ * per decidere se il counter è "di oggi" è calcolato da [decideDay], che mirror-a
+ * la guardia monotonica di [UsageGuardStore.decide]. Spostando l'orologio
+ * (indietro, o IN AVANTI dopo un reboot) per "guadagnare" un giorno fresco e
+ * azzerare la friction, [decideDay] NON fa rollover a meno che il cambio di
+ * giorno sia corroborato da clock coerenti (stesso boot) o da un reboot con
+ * avanzamento wall PLAUSIBILE per il tempo spento. Direzione fail-secure: in
+ * caso di ambiguità si resta sullo STESSO giorno → il counter NON si azzera →
+ * PIÙ frizione (più countdown / durate più brevi), mai meno.
  */
 object BypassCountStore {
     private const val TAG = "BypassCountStore"
@@ -56,6 +59,14 @@ object BypassCountStore {
     /// assumiamo manipolazione dell'orologio. 1h di slack copre NTP/DST/timezone
     /// legittimi (stesso valore concettuale di [UsageGuardStore]).
     internal const val TIME_DRIFT_TOLERANCE_MS = 60_000L + 3_600_000L // 1 min + 1 ora DST
+
+    /// SEC-05 — tempo "spento" plausibile per un reboot: oltre questo, un
+    /// avanzamento wall post-reboot è considerato manipolazione. 2 giorni
+    /// coprono lo spegnimento per un weekend; un avversario che vuole "saltare
+    /// avanti" di più cade nel ramo fail-secure (congela il giorno → più
+    /// frizione). Non avendo un monotonico valido attraverso il reboot, questa
+    /// soglia è il miglior riferimento sul tempo realmente trascorso.
+    internal const val MAX_PLAUSIBLE_OFF_MS = 2L * 24 * 3_600_000L // 48h
 
     private val dateFormat: SimpleDateFormat
         get() = SimpleDateFormat("yyyy-MM-dd", Locale.US)
@@ -214,14 +225,16 @@ object BypassCountStore {
         )
 
     /**
-     * Decisione PURA (nessun I/O / clock di sistema): dato il giorno wall grezzo
-     * [rawToday], la baseline [meta] e i due orologi, ritorna il giorno da
-     * considerare "oggi" per il counter.
+     * SEC-05 — decisione PURA (nessun I/O / clock di sistema): dato il giorno
+     * wall grezzo [rawToday], la baseline [meta] e i due orologi, ritorna il
+     * giorno da considerare "oggi" per il counter.
      *
      * Mirror della guardia monotonica di [UsageGuardStore.decide]. Invariante di
      * sicurezza: il rollover a un giorno NUOVO (che azzererebbe la friction)
-     * avviene SOLO se corroborato; in caso di ambiguità (stesso boot) si congela
-     * al giorno salvato → più frizione.
+     * avviene SOLO se corroborato; in caso di ambiguità si congela al giorno
+     * salvato → più frizione. In particolare un **salto wall in avanti dopo un
+     * reboot** oltre [MAX_PLAUSIBLE_OFF_MS] NON è creduto (era il bug SEC-05: il
+     * vecchio codice, rilevato il reboot, si fidava ciecamente di `rawToday`).
      */
     internal fun decideDay(
         rawToday: String,
@@ -258,12 +271,20 @@ object BypassCountStore {
             // giorno salvato → counter NON azzerato → più frizione.
             wallWentBack || wallJumpedForward -> savedDay
 
-            // Reboot col giorno wall cambiato: gli UsageStats/wall sopravvivono
-            // al riavvio e il monotonico non è un riferimento attraverso il
-            // reboot → ci fidiamo del giorno wall (rollover). NB: questo ramo è
-            // ancora vulnerabile a un salto wall in avanti combinato col reboot
-            // (SEC-05), irrobustito in un commit successivo.
-            reboot -> rawToday
+            // Reboot col giorno wall cambiato: SEC-05. Il monotonico non è un
+            // riferimento attraverso il reboot. Il vecchio codice si fidava
+            // CIECAMENTE del wall qui → bastava reboot + data spostata in avanti
+            // per "saltare" a un giorno fresco e azzerare la friction. Ora:
+            //  - avanzamento wall PLAUSIBILE per il tempo realmente spento (un
+            //    device può restare spento ore/giorni): se 0 <= wallDelta <=
+            //    soglia, accettiamo come tempo trascorso → rollover;
+            //  - salto wall ENORME (>> tempo spento plausibile) o NEGATIVO (data
+            //    riportata indietro a cavallo del reboot): è l'attacco → congela
+            //    al giorno salvato → counter NON azzerato → più frizione.
+            // Soglia di plausibilità conservativa: meglio un po' di frizione di
+            // troppo (utente che lascia il device spento >2 giorni e riapre
+            // un'app non-strict capata) che uno sblocco gratis.
+            reboot -> if (wallDelta in 0..MAX_PLAUSIBLE_OFF_MS) rawToday else savedDay
 
             // Stesso boot, clock coerenti (|wallDelta - elapsedDelta| <= tol) e
             // wall non andato indietro: rollover di mezzanotte legittimo.
