@@ -1,8 +1,6 @@
 package com.dev.koru.service
 
 import android.content.Context
-import android.util.Log
-import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -14,9 +12,16 @@ import org.json.JSONObject
  *
  * Companion object e static var non sono condivise tra processi Android:
  * ogni processo ha la sua JVM con la propria istanza.
+ *
+ * ARCH-03/SEC-09: migrato su [FileBackedStore] → scrittura atomica (temp+rename,
+ * niente più file torn su `writeText`), cache invalidata su `(mtime,length)` e
+ * lock cross-process. Fail-safe su file corrotto: [Snapshot.IDLE] (nessun
+ * blocco). NB: per il quick-block "non bloccare" è la direzione benigna — il
+ * blocco catch-all è una sessione di focus volontaria, non un cap anti-evasione;
+ * un file corrotto al più termina anticipatamente una sessione, non sblocca un
+ * limite. La resistenza anti-clock vive in [Snapshot.shouldBlock] (SEC-11).
  */
 object QuickBlockStore {
-    private const val TAG = "QuickBlockStore"
     private const val FILE_NAME = "koru_quick_block_state.json"
 
     data class Snapshot(
@@ -49,44 +54,43 @@ object QuickBlockStore {
         }
     }
 
-    fun save(context: Context, snapshot: Snapshot) {
-        try {
-            val file = File(context.filesDir, FILE_NAME)
-            val json = JSONObject().apply {
-                put("isActive", snapshot.isActive)
-                put("isPomodoroMode", snapshot.isPomodoroMode)
-                put("isBreakPhase", snapshot.isBreakPhase)
-                put("expiresAt", snapshot.expiresAt)
-                put("whitelist", JSONArray(snapshot.whitelist.toList()))
-            }
-            file.writeText(json.toString())
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to save snapshot", e)
-        }
-    }
+    private val store = FileBackedStore(
+        fileName = FILE_NAME,
+        codec = object : FileBackedStore.Codec<Snapshot> {
+            override fun serialize(value: Snapshot): String =
+                JSONObject().apply {
+                    put("isActive", value.isActive)
+                    put("isPomodoroMode", value.isPomodoroMode)
+                    put("isBreakPhase", value.isBreakPhase)
+                    put("expiresAt", value.expiresAt)
+                    put("whitelist", JSONArray(value.whitelist.toList()))
+                }.toString()
 
-    fun read(context: Context): Snapshot {
-        return try {
-            val file = File(context.filesDir, FILE_NAME)
-            if (!file.exists()) return Snapshot.IDLE
-            val json = JSONObject(file.readText())
-            val arr = json.optJSONArray("whitelist")
-            val whitelist = mutableSetOf<String>()
-            if (arr != null) {
-                for (i in 0 until arr.length()) whitelist.add(arr.getString(i))
+            override fun deserialize(raw: String): Snapshot {
+                val json = JSONObject(raw)
+                val arr = json.optJSONArray("whitelist")
+                val whitelist = mutableSetOf<String>()
+                if (arr != null) {
+                    for (i in 0 until arr.length()) whitelist.add(arr.getString(i))
+                }
+                return Snapshot(
+                    isActive = json.optBoolean("isActive", false),
+                    isPomodoroMode = json.optBoolean("isPomodoroMode", false),
+                    isBreakPhase = json.optBoolean("isBreakPhase", false),
+                    expiresAt = json.optLong("expiresAt", 0L),
+                    whitelist = whitelist,
+                )
             }
-            Snapshot(
-                isActive = json.optBoolean("isActive", false),
-                isPomodoroMode = json.optBoolean("isPomodoroMode", false),
-                isBreakPhase = json.optBoolean("isBreakPhase", false),
-                expiresAt = json.optLong("expiresAt", 0L),
-                whitelist = whitelist,
-            )
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to read snapshot, returning IDLE", e)
-            Snapshot.IDLE
-        }
-    }
+        },
+        corruptFallback = { Snapshot.IDLE },
+    )
 
-    fun clear(context: Context) = save(context, Snapshot.IDLE)
+    /// Salva (sovrascrittura atomica) lo snapshot. Ritorna `true` se la
+    /// scrittura è andata a buon fine — [QuickBlockManager] propaga l'esito
+    /// (CR-09: lo stato di focus è enforcement-affecting).
+    fun save(context: Context, snapshot: Snapshot): Boolean = store.write(context, snapshot)
+
+    fun read(context: Context): Snapshot = store.read(context)
+
+    fun clear(context: Context): Boolean = save(context, Snapshot.IDLE)
 }

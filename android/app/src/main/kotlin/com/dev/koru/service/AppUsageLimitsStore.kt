@@ -1,10 +1,6 @@
 package com.dev.koru.service
 
 import android.content.Context
-import android.os.SystemClock
-import android.util.Log
-import java.io.File
-import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONObject
 
 /**
@@ -24,63 +20,62 @@ import org.json.JSONObject
  * `strict=true` ⇒ il blocco USAGE_LIMIT non permette "Open anyway".
  * `strict=false` ⇒ progressive friction (vedi [BypassCountStore]).
  *
- * Hardening (S6):
- * - Cache `AtomicReference<CachedSnapshot>` con baseline `elapsedRealtime`
- *   per evitare il file read ad ogni check del polling (1Hz). Era il bottleneck
- *   identificato dal Mobile Builder: ogni iterazione del polling parsava
- *   l'intero JSON da disco. Ora la prima read mette in cache, le successive
- *   sono O(1). La cache è invalidata su [save] (write esplicita).
- * - Niente sync API: la mutabilità è solo via [save], che bumpea il counter
- *   di versione e tutti i lettori successivi vedono il nuovo valore.
+ * ARCH-03/SEC-09: migrato su [FileBackedStore]. Prima la `save` usava un plain
+ * `writeText` (SEC-09): un crash a metà scrittura lasciava un file torn → tutti
+ * i cap giornalieri sparivano (fail-OPEN, l'app capata si sbloccava). Ora la
+ * scrittura è atomica (temp+rename) e c'è il lock cross-process. La cache è
+ * invalidata su `(mtime,length)` (la `length` cattura due scritture nello stesso
+ * secondo che `mtime` a 1s mancherebbe).
+ *
+ * Fail-secure su file CORROTTO: `corruptFallback` ritorna gli ULTIMI cap noti
+ * dalla cache (non una mappa vuota) — un parse error non deve azzerare i limiti,
+ * altrimenti basterebbe corrompere il file per sbloccare tutto. Se non c'è
+ * nemmeno una cache (primo avvio col file già corrotto) cadiamo su mappa vuota:
+ * non c'è uno stato precedente da preservare.
  */
 object AppUsageLimitsStore {
-    private const val TAG = "AppUsageLimitsStore"
     private const val FILE_NAME = "koru_app_limits.json"
 
     /// Limit config per un singolo package. `minutes <= 0` significa nessun
     /// limite attivo (lo store filtra questi entries via [save]).
     data class LimitEntry(val minutes: Int, val strict: Boolean)
 
-    private data class CachedSnapshot(
-        val data: Map<String, LimitEntry>,
-        val baselineElapsedMs: Long,
-        val fileLastModified: Long,
+    private val store = FileBackedStore(
+        fileName = FILE_NAME,
+        codec = object : FileBackedStore.Codec<Map<String, LimitEntry>> {
+            override fun serialize(value: Map<String, LimitEntry>): String {
+                val json = JSONObject()
+                for ((k, v) in value) {
+                    if (v.minutes <= 0) continue
+                    json.put(
+                        k,
+                        JSONObject().apply {
+                            put("minutes", v.minutes)
+                            put("strict", v.strict)
+                        },
+                    )
+                }
+                return json.toString()
+            }
+
+            override fun deserialize(raw: String): Map<String, LimitEntry> {
+                val json = JSONObject(raw)
+                val out = mutableMapOf<String, LimitEntry>()
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    val entry = parseEntry(json.opt(k)) ?: continue
+                    if (entry.minutes > 0) out[k] = entry
+                }
+                return out.toMap()
+            }
+        },
+        // SEC-09 fail-secure: file corrotto ⇒ tieni gli ultimi cap noti; se non
+        // c'è cache (null) ⇒ mappa vuota (nessuno stato precedente).
+        corruptFallback = { lastCached -> lastCached ?: emptyMap() },
     )
 
-    private val cache = AtomicReference<CachedSnapshot?>(null)
-
-    fun read(context: Context): Map<String, LimitEntry> {
-        val current = cache.get()
-        val file = File(context.filesDir, FILE_NAME)
-        val lastModified = if (file.exists()) file.lastModified() else 0L
-
-        if (current != null && current.fileLastModified == lastModified) {
-            return current.data
-        }
-
-        // Cache miss o file modificato fuori da save(): reload da disco.
-        return try {
-            if (!file.exists()) {
-                val empty = emptyMap<String, LimitEntry>()
-                cache.set(CachedSnapshot(empty, SystemClock.elapsedRealtime(), 0L))
-                return empty
-            }
-            val json = JSONObject(file.readText())
-            val out = mutableMapOf<String, LimitEntry>()
-            val keys = json.keys()
-            while (keys.hasNext()) {
-                val k = keys.next()
-                val entry = parseEntry(json.opt(k)) ?: continue
-                if (entry.minutes > 0) out[k] = entry
-            }
-            val frozen = out.toMap()
-            cache.set(CachedSnapshot(frozen, SystemClock.elapsedRealtime(), lastModified))
-            frozen
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to read limits, returning empty", e)
-            emptyMap()
-        }
-    }
+    fun read(context: Context): Map<String, LimitEntry> = store.read(context)
 
     /// Parsa un singolo entry tollerando il formato legacy. Ritorna null se
     /// il valore è inutilizzabile.
@@ -97,27 +92,12 @@ object AppUsageLimitsStore {
         else -> null
     }
 
-    fun save(context: Context, limits: Map<String, LimitEntry>) {
-        try {
-            val file = File(context.filesDir, FILE_NAME)
-            val json = JSONObject()
-            for ((k, v) in limits) {
-                if (v.minutes <= 0) continue
-                val obj = JSONObject().apply {
-                    put("minutes", v.minutes)
-                    put("strict", v.strict)
-                }
-                json.put(k, obj)
-            }
-            file.writeText(json.toString())
-            // Aggiorna immediatamente la cache così il prossimo read non
-            // deve nemmeno hit-are il filesystem per il check di lastModified.
-            val frozen = limits.filter { it.value.minutes > 0 }.toMap()
-            cache.set(CachedSnapshot(frozen, SystemClock.elapsedRealtime(), file.lastModified()))
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to save limits", e)
-        }
-    }
+    /// Salva (sovrascrittura atomica) la mappa dei limiti. Gli entry con
+    /// `minutes <= 0` sono filtrati dal codec. Ritorna `true` se la scrittura
+    /// è andata a buon fine — i chiamanti che portano stato di enforcement
+    /// possono propagare l'errore (CR-09).
+    fun save(context: Context, limits: Map<String, LimitEntry>): Boolean =
+        store.write(context, limits.filter { it.value.minutes > 0 })
 
     fun limitMinutesFor(context: Context, packageName: String): Int =
         read(context)[packageName]?.minutes ?: 0
@@ -127,4 +107,12 @@ object AppUsageLimitsStore {
 
     fun entryFor(context: Context, packageName: String): LimitEntry? =
         read(context)[packageName]
+
+    // ---------------- test hooks ----------------
+
+    /// Svuota la cache di processo (simula un secondo processo). Solo test.
+    internal fun invalidateCacheForTest() = store.invalidateCacheForTest()
+
+    /// Valore attualmente in cache (`null` se mai caricato). Solo test.
+    internal fun cachedDataForTest(): Map<String, LimitEntry>? = store.cachedDataForTest()
 }

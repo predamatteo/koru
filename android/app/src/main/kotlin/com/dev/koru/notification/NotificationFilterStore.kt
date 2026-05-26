@@ -1,8 +1,7 @@
 package com.dev.koru.notification
 
 import android.content.Context
-import android.util.Log
-import java.io.File
+import com.dev.koru.service.FileBackedStore
 import org.json.JSONArray
 
 /**
@@ -12,36 +11,35 @@ import org.json.JSONArray
  *
  * File: `filesDir/koru_notification_filters.json`
  * Formato: `["com.instagram.android", "com.facebook.katana", ...]`
+ *
+ * ARCH-03/SEC-09: migrato su [FileBackedStore] → scrittura atomica (temp+rename,
+ * niente più file torn su `writeText`), cache invalidata su `(mtime,length)` e
+ * lock cross-process. Fail-safe su file corrotto: set vuoto (nessun filtro;
+ * direzione benigna — al più una notifica non viene silenziata, non è uno stato
+ * di enforcement che blocca l'utente).
  */
 object NotificationFilterStore {
-    private const val TAG = "NotificationFilterStore"
     private const val FILE_NAME = "koru_notification_filters.json"
 
-    fun read(context: Context): Set<String> {
-        return try {
-            val file = File(context.filesDir, FILE_NAME)
-            if (!file.exists()) return emptySet()
-            val arr = JSONArray(file.readText())
-            val out = mutableSetOf<String>()
-            for (i in 0 until arr.length()) {
-                out.add(arr.getString(i))
-            }
-            out
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to read silenced set", e)
-            emptySet()
-        }
-    }
+    private val store = FileBackedStore(
+        fileName = FILE_NAME,
+        codec = object : FileBackedStore.Codec<Set<String>> {
+            override fun serialize(value: Set<String>): String =
+                JSONArray(value.toList()).toString()
 
-    fun save(context: Context, silenced: Set<String>) {
-        try {
-            val file = File(context.filesDir, FILE_NAME)
-            val arr = JSONArray(silenced.toList())
-            file.writeText(arr.toString())
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to save silenced set", e)
-        }
-    }
+            override fun deserialize(raw: String): Set<String> {
+                val arr = JSONArray(raw)
+                val out = mutableSetOf<String>()
+                for (i in 0 until arr.length()) out.add(arr.getString(i))
+                return out
+            }
+        },
+        corruptFallback = { emptySet() }, // direzione benigna: nessun filtro
+    )
+
+    fun read(context: Context): Set<String> = store.read(context)
+
+    fun save(context: Context, silenced: Set<String>): Boolean = store.write(context, silenced)
 
     fun isSilenced(context: Context, packageName: String): Boolean =
         read(context).contains(packageName)

@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import java.io.File
-import java.util.concurrent.atomic.AtomicReference
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -21,8 +20,8 @@ import org.robolectric.annotation.Config
  *    [AppUsageLimitsStore.isStrictFor] / [AppUsageLimitsStore.entryFor],
  *  - cache invalidation after [AppUsageLimitsStore.save].
  *
- * The store uses a static `AtomicReference` cache: every test resets it via
- * reflection so the runs are independent.
+ * ARCH-03: lo store ora delega a un [FileBackedStore]; la cache di processo è
+ * azzerata tra i test via il test hook `invalidateCacheForTest()`.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -43,12 +42,11 @@ class AppUsageLimitsStoreTest {
     private fun clearFileAndCache() {
         val ctx = ApplicationProvider.getApplicationContext<Context>()
         File(ctx.filesDir, fileName).delete()
-        // Reset the static AtomicReference<CachedSnapshot?> cache.
-        val field = AppUsageLimitsStore::class.java.getDeclaredField("cache")
-        field.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        val cache = field.get(AppUsageLimitsStore) as AtomicReference<Any?>
-        cache.set(null)
+        File(ctx.filesDir, "$fileName.tmp").delete()
+        File(ctx.filesDir, "$fileName.lock").delete()
+        // ARCH-03: la cache vive ora dentro il FileBackedStore interno; il test
+        // hook la azzera senza reflection sulla struttura privata.
+        AppUsageLimitsStore.invalidateCacheForTest()
     }
 
     // -------- LimitEntry data class --------
@@ -198,22 +196,12 @@ class AppUsageLimitsStoreTest {
             mapOf("com.a" to AppUsageLimitsStore.LimitEntry(30, true)),
         )
 
-        // Inspect the static cache via reflection: it must be populated after
-        // the save without us calling read() first. The CachedSnapshot is a
-        // private nested class, so we walk its fields.
-        val cacheField = AppUsageLimitsStore::class.java.getDeclaredField("cache")
-        cacheField.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        val cache = cacheField.get(AppUsageLimitsStore) as AtomicReference<Any?>
-        val snapshot = cache.get()
-        assertThat(snapshot).isNotNull()
-
-        // Pull `data` map out of the snapshot to confirm content.
-        val dataField = snapshot!!.javaClass.getDeclaredField("data")
-        dataField.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        val data = dataField.get(snapshot) as Map<String, AppUsageLimitsStore.LimitEntry>
-        assertThat(data).containsExactly(
+        // ARCH-03: la save deve popolare la cache di processo SENZA un read()
+        // intermedio (così il primo read non deve nemmeno toccare il FS). Il
+        // test hook espone il valore in cache senza reflection sui campi privati.
+        val cached = AppUsageLimitsStore.cachedDataForTest()
+        assertThat(cached).isNotNull()
+        assertThat(cached).containsExactly(
             "com.a",
             AppUsageLimitsStore.LimitEntry(30, true),
         )
@@ -239,5 +227,52 @@ class AppUsageLimitsStoreTest {
             "com.b",
             AppUsageLimitsStore.LimitEntry(99, false),
         )
+    }
+
+    // -------- SEC-09: scrittura atomica + fail-secure su file corrotto --------
+
+    @Test
+    fun save_isAtomic_noTempFileLeftBehind() {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        AppUsageLimitsStore.save(
+            ctx,
+            mapOf("com.a" to AppUsageLimitsStore.LimitEntry(30, true)),
+        )
+        // temp+rename: niente .tmp orfano dopo una save riuscita.
+        assertThat(File(ctx.filesDir, "$fileName.tmp").exists()).isFalse()
+        assertThat(File(ctx.filesDir, fileName).exists()).isTrue()
+    }
+
+    @Test
+    fun read_corruptFile_keepsLastKnownCaps_failSecure() {
+        // SEC-09 fail-secure: un file torn NON deve azzerare i cap (sarebbe
+        // fail-OPEN: l'app capata si sbloccherebbe). Carichiamo cap validi
+        // (popola la cache), poi corrompiamo il file: la read tiene gli ultimi
+        // cap noti.
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        AppUsageLimitsStore.save(
+            ctx,
+            mapOf("com.a" to AppUsageLimitsStore.LimitEntry(30, true)),
+        )
+        assertThat(AppUsageLimitsStore.read(ctx)).containsExactly(
+            "com.a",
+            AppUsageLimitsStore.LimitEntry(30, true),
+        )
+        // File torn (lunghezza diversa così (mtime,length) forza il reload).
+        File(ctx.filesDir, fileName).writeText("{tor")
+        assertThat(AppUsageLimitsStore.read(ctx)).containsExactly(
+            "com.a",
+            AppUsageLimitsStore.LimitEntry(30, true),
+        )
+        assertThat(AppUsageLimitsStore.isStrictFor(ctx, "com.a")).isTrue()
+    }
+
+    @Test
+    fun read_corruptFile_noPriorCache_returnsEmpty() {
+        // Primo avvio col file già corrotto e nessuna cache: non c'è uno stato
+        // precedente da preservare → mappa vuota (non possiamo inventare cap).
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        File(ctx.filesDir, fileName).writeText("{not json")
+        assertThat(AppUsageLimitsStore.read(ctx)).isEmpty()
     }
 }
