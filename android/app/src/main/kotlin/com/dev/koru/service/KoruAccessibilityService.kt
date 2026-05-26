@@ -376,6 +376,15 @@ class KoruAccessibilityService : AccessibilityService() {
                 // [lastBypassedActiveForeground]) → al rientro l'overlay
                 // con countdown ricompare. Una sessione = una scelta.
                 Log.i(TAG, "BYPASS-GRANTED: $pkg for ${durationMs / 60_000}min (TTL until ${System.currentTimeMillis() + durationMs})")
+                // Traccia SUBITO il pkg come "bypassato e in foreground" così
+                // l'auto-revoke all'uscita (onAccessibilityEvent) scatta anche
+                // per i limit-bypass, non solo per quelli di profilo. Senza,
+                // uscire e rientrare entro la finestra riapriva l'app senza
+                // frizione né incremento del contatore, e la frizione
+                // progressiva non scalava mai (H1). checkAppBlocking lo
+                // riconferma al primo evento; questo chiude la micro-finestra
+                // tra il grant e l'evento successivo.
+                lastBypassedActiveForeground = pkg
                 try {
                     NativeDatabase.insertRestrictedAccessEvent(
                         applicationContext,
@@ -884,21 +893,34 @@ class KoruAccessibilityService : AccessibilityService() {
         //
         // Inoltre il cap è valutato PRIMA del bypass di profilo (più sotto):
         // un budget cumulativo non si ricarica forzando un blocco di profilo.
-        // Unica eccezione: [isLimitBypassActive] — un bypass NATO dal limite
-        // stesso (USAGE_LIMIT / BYPASS_EXPIRED, solo app non-strict) lo
-        // sospende per la durata scelta. In strict non esiste bypass del
-        // limite, quindi qui blocca sempre, anche se il profilo è bypassato.
+        // Unica eccezione (solo NON-strict): un bypass NATO dal limite stesso
+        // (USAGE_LIMIT / BYPASS_EXPIRED) lo sospende per la durata scelta.
+        // STRICT ⇒ hard cap ASSOLUTO: blocca sempre, ignorando QUALSIASI
+        // bypass — sia quello di un profilo sia un eventuale limit-bypass
+        // residuo concesso quando l'app era ancora non-strict e poi commutata
+        // a strict mid-window (il flag `strict` è riletto live da
+        // AppUsageLimitsStore, cross-process, quindi strict è immediato).
         val limitEntry = AppUsageLimitsStore.entryFor(applicationContext, packageName)
         val limitMinutes = limitEntry?.minutes ?: 0
         val limitTodayMs = if (limitMinutes > 0) {
             UsageCounter.todayForegroundMs(applicationContext, packageName)
         } else 0L
         val limitMs = limitMinutes * 60_000L
+        val isLimitStrict = limitEntry?.strict ?: true
+
+        // Snapshot UNICO dello stato di bypass per questa valutazione: evita la
+        // TOCTOU tra il guard del limite e quello del profilo (la mappa può
+        // essere mutata da un altro thread o dall'auto-revoke fra le due
+        // letture). Da qui in poi si usano solo queste variabili.
+        val activeBypassReason = OverlayManager.bypassReason(packageName)
+        val limitBypassActive = activeBypassReason == BlockReason.USAGE_LIMIT ||
+            activeBypassReason == BlockReason.BYPASS_EXPIRED
+        val hasActiveBypass = activeBypassReason != null
+
         if (limitMinutes > 0 && limitTodayMs >= limitMs &&
-            !OverlayManager.isLimitBypassActive(packageName)
+            (isLimitStrict || !limitBypassActive)
         ) {
-            val isStrict = limitEntry?.strict ?: true
-            Log.w(TAG, ">>> BLOCKING APP (daily limit, strict=$isStrict): $packageName " +
+            Log.w(TAG, ">>> BLOCKING APP (daily limit, strict=$isLimitStrict): $packageName " +
                 "${limitTodayMs / 60_000}min used, cap=${limitMinutes}min")
             currentlyBlockingPackage = packageName
             cancelLimitCheck(packageName)
@@ -911,13 +933,13 @@ class KoruAccessibilityService : AccessibilityService() {
                 applicationContext,
                 packageName,
                 baseConfig = limitBaseConfig,
-                isStrict = isStrict,
+                isStrict = isLimitStrict,
             )
             mainHandler.post {
                 overlayManager?.show(
                     packageName = packageName,
                     appLabel = appLabel,
-                    profileTitle = if (isStrict) "Daily limit · strict" else "Daily limit",
+                    profileTitle = if (isLimitStrict) "Daily limit · strict" else "Daily limit",
                     reason = BlockReason.USAGE_LIMIT,
                     config = overlayConfig,
                     profileEmoji = "⏳",
@@ -938,20 +960,18 @@ class KoruAccessibilityService : AccessibilityService() {
             return true
         }
 
-        // Bypass del profilo/sezione attivo: l'utente ha forzato un blocco
-        // NON di limite ("Open anyway" + durata). Il cap giornaliero è già
-        // stato valutato sopra e NON viene scavalcato da questo bypass; qui
-        // sopprimiamo solo il re-block del profilo per la durata scelta e
-        // tracciamo il pkg per l'auto-revoke all'uscita (vedi
-        // [onAccessibilityEvent]).
-        if (OverlayManager.isBypassed(packageName)) {
+        // Bypass attivo (profilo/sezione, oppure un limit-bypass non-strict in
+        // corso): l'utente ha forzato un blocco con "Open anyway" + durata. Il
+        // cap è già stato valutato sopra e non è scavalcato; qui sopprimiamo il
+        // re-block per la durata scelta e tracciamo il pkg per l'auto-revoke
+        // all'uscita (vedi [onAccessibilityEvent]).
+        if (hasActiveBypass) {
             Log.i(TAG, "BYPASS-ACTIVE: $packageName in foreground, tracking for auto-revoke")
             lastBypassedActiveForeground = packageName
-            // Se l'app ha un cap non ancora raggiunto, pianifica comunque il
-            // re-check: senza, restando dentro col bypass di profilo attivo si
-            // supererebbero i 30' senza che nulla scatti fino alla scadenza del
-            // bypass. Al firing checkAppBlocking rivaluta il cap e — non essendo
-            // un bypass di limite — blocca con l'overlay USAGE_LIMIT.
+            // Cap non ancora raggiunto: pianifica comunque il re-check, così
+            // restando dentro col bypass attivo il limite scatta appena tocchi
+            // il cap (al firing checkAppBlocking rivaluta; se non è un bypass
+            // di limite — o l'app è strict — blocca con l'overlay USAGE_LIMIT).
             if (limitMinutes > 0 && limitTodayMs < limitMs) {
                 scheduleLimitCheck(packageName, limitMs - limitTodayMs)
             }
@@ -1131,7 +1151,15 @@ class KoruAccessibilityService : AccessibilityService() {
             // match (stabile su www/sottodomini). Tracciamo il browser come
             // bypassato-in-foreground per l'auto-revoke all'uscita (clearBypass
             // azzera tutti i domini del package). Stesso spirito del guard di
-            // checkAppBlocking (~riga 770), ma a granularita' dominio.
+            // bypass in [checkAppBlocking], ma a granularità dominio.
+            //
+            // PARITÀ (vedi memoria "blocking paths parity"): questo guard è
+            // intenzionalmente reason-agnostic — un dominio non ha un cap
+            // cumulativo, quindi non c'è "limit-bypass" da distinguere. Se un
+            // giorno si introduce un limite di tempo PER-DOMINIO, questo guard
+            // dovrà rispecchiare l'ordine di [checkAppBlocking] (cap valutato
+            // prima del bypass, eccezione solo [OverlayManager.isLimitBypassActive]),
+            // altrimenti si riapre lo stesso "+N min all'infinito" a livello sito.
             val bypassDomain = matchedRule.name.lowercase().trim()
             if (OverlayManager.isBypassed(packageName, bypassDomain)) {
                 lastBypassedActiveForeground = packageName

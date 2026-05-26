@@ -61,6 +61,10 @@ enum class BlockReason {
     SECTION_BLOCKED,
     WEBSITE_BLOCKED,
     FOCUS_MODE,
+    /// USAGE_LIMIT e BYPASS_EXPIRED sono gli unici reason "derivati dal
+    /// limite": [com.dev.koru.service.OverlayManager.isLimitBypassActive] li
+    /// usa per decidere se un bypass può sospendere il cap giornaliero. Se
+    /// aggiungi un nuovo reason legato a un limite, ricordati di includerlo lì.
     USAGE_LIMIT,
     /// Il bypass TTL-based (dopo duration picker) e' scaduto mentre l'utente
     /// era ancora dentro l'app. L'overlay mostra un prompt "Time's up" con

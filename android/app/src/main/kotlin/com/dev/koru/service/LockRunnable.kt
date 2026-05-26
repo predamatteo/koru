@@ -189,13 +189,17 @@ class LockRunnable(
         //    "Open anyway" su un blocco di profilo non ricarica il budget
         //    cumulativo del cap (era il bug "+5 min all'infinito sul limite
         //    passando dal blocco di profilo"). Coerente con
-        //    KoruAccessibilityService (path primario). Unica eccezione,
-        //    [OverlayManager.isLimitBypassActive]: un bypass nato DAL limite
-        //    (USAGE_LIMIT / BYPASS_EXPIRED, app non-strict) lo sospende per la
-        //    durata scelta. In strict non esiste bypass del limite → blocca
-        //    sempre, anche se il profilo è stato bypassato.
+        //    KoruAccessibilityService (path primario). Eccezione SOLO
+        //    non-strict, [OverlayManager.isLimitBypassActive]: un bypass nato
+        //    DAL limite (USAGE_LIMIT / BYPASS_EXPIRED) lo sospende per la
+        //    durata scelta. STRICT ⇒ hard cap assoluto: blocca sempre,
+        //    ignorando qualsiasi bypass (anche un limit-bypass residuo da
+        //    quando l'app era non-strict). Allineato a checkAppBlocking.
         val limitMinutes = AppUsageLimitsStore.limitMinutesFor(context, pkg)
-        if (limitMinutes > 0 && !OverlayManager.isLimitBypassActive(pkg)) {
+        if (limitMinutes > 0 &&
+            (AppUsageLimitsStore.isStrictFor(context, pkg) ||
+                !OverlayManager.isLimitBypassActive(pkg))
+        ) {
             val todayMs = UsageCounter.todayForegroundMs(context, pkg)
             if (todayMs >= limitMinutes * 60_000L) {
                 if (currentlyBlockingPackage != pkg) {

@@ -96,4 +96,46 @@ class OverlayManagerBypassTest {
         // ...e un bypass di sito non è mai un bypass del limite.
         assertThat(OverlayManager.isLimitBypassActive(pkg, "reddit.com")).isFalse()
     }
+
+    @Test
+    fun focusAndSectionReasons_areNotLimitBypass() {
+        // Gli altri reason non-limite cadono nel ramo else di isLimitBypassActive.
+        OverlayManager.markBypassed(pkg, 5 * 60_000L, reason = BlockReason.FOCUS_MODE)
+        assertThat(OverlayManager.isLimitBypassActive(pkg)).isFalse()
+        OverlayManager.markBypassed(pkg, 5 * 60_000L, reason = BlockReason.SECTION_BLOCKED)
+        assertThat(OverlayManager.isLimitBypassActive(pkg)).isFalse()
+    }
+
+    @Test
+    fun reMark_overwritesReason_lastWriteWins() {
+        // L'utente forza prima un blocco di profilo, poi (stesso pkg) un blocco
+        // di limite: l'ultimo grant determina il reason corrente.
+        OverlayManager.markBypassed(pkg, 5 * 60_000L, reason = BlockReason.APP_BLOCKED)
+        assertThat(OverlayManager.isLimitBypassActive(pkg)).isFalse()
+        OverlayManager.markBypassed(pkg, 5 * 60_000L, reason = BlockReason.USAGE_LIMIT)
+        assertThat(OverlayManager.isLimitBypassActive(pkg)).isTrue()
+    }
+
+    @Test
+    fun clearBypass_alsoClearsPerDomainEntries() {
+        // clearBypass azzera sia la chiave app-wide sia TUTTE le varianti
+        // per-dominio (pkg|*) — esercita il prefix-scan.
+        OverlayManager.markBypassed(pkg, 5 * 60_000L, reason = BlockReason.APP_BLOCKED)
+        OverlayManager.markBypassed(pkg, 5 * 60_000L, domain = "reddit.com", reason = BlockReason.WEBSITE_BLOCKED)
+        OverlayManager.markBypassed(pkg, 5 * 60_000L, domain = "x.com", reason = BlockReason.WEBSITE_BLOCKED)
+        OverlayManager.clearBypass(pkg)
+        assertThat(OverlayManager.isBypassed(pkg)).isFalse()
+        assertThat(OverlayManager.isBypassed(pkg, "reddit.com")).isFalse()
+        assertThat(OverlayManager.isBypassed(pkg, "x.com")).isFalse()
+    }
+
+    @Test
+    fun perDomainKeys_areIsolatedFromEachOther() {
+        // Un bypass su una chiave non "contagia" un'altra chiave (né un altro
+        // dominio né l'app-wide).
+        OverlayManager.markBypassed(pkg, 5 * 60_000L, domain = "a.com", reason = BlockReason.USAGE_LIMIT)
+        assertThat(OverlayManager.isLimitBypassActive(pkg, "a.com")).isTrue()
+        assertThat(OverlayManager.isLimitBypassActive(pkg, "b.com")).isFalse()
+        assertThat(OverlayManager.isLimitBypassActive(pkg)).isFalse()
+    }
 }
