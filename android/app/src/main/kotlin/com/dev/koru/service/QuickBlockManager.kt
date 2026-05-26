@@ -71,8 +71,16 @@ class QuickBlockManager {
         this.whitelist = whitelist
         isActive = true
         phaseStartedAt = System.currentTimeMillis()
-        persistSnapshot(durationMs)
+        val persisted = persistSnapshot(durationMs)
         startTimer(durationMs)
+        // CR-09: se la persistenza dello snapshot fallisce, il processo
+        // :accessibility (altra JVM) NON vedrà questa sessione di focus → il
+        // blocco catch-all non si applica lì. Non è più un fallimento silente:
+        // lo segnaliamo a livello WARN. Vedi report (follow-up: propagare alla
+        // UI/Dart resta fuori da questi file).
+        if (!persisted) {
+            Log.w(TAG, "Quick block snapshot NOT persisted — cross-process focus enforcement may be inactive")
+        }
         Log.i(TAG, "Quick block started: ${durationMs}ms, whitelist=${whitelist.size} apps")
     }
 
@@ -94,8 +102,11 @@ class QuickBlockManager {
         remainingMs = workMs
         isActive = true
         phaseStartedAt = System.currentTimeMillis()
-        persistSnapshot(workMs)
+        val persisted = persistSnapshot(workMs)
         startTimer(workMs)
+        if (!persisted) {
+            Log.w(TAG, "Pomodoro snapshot NOT persisted — cross-process focus enforcement may be inactive")
+        }
         Log.i(TAG, "Pomodoro started: ${workMs}ms work, ${breakMs}ms break, $cycles cycles, whitelist=${whitelist.size}")
     }
 
@@ -194,10 +205,12 @@ class QuickBlockManager {
         sendTickEvent()
     }
 
-    private fun persistSnapshot(phaseDurationMs: Long) {
+    /// Persiste lo snapshot corrente; ritorna `true` se la scrittura è riuscita.
+    /// CR-09: l'esito è propagato ai chiamanti invece di essere ingoiato.
+    private fun persistSnapshot(phaseDurationMs: Long): Boolean {
         val ctx = appContext ?: run {
             Log.w(TAG, "appContext not attached — cannot persist snapshot")
-            return
+            return false
         }
         // SEC-11: scadenza su DUE orologi. Il wall serve alla UI/compat; il
         // monotonico (elapsedRealtime, non riavvolgibile in avanti) impedisce
@@ -205,7 +218,7 @@ class QuickBlockManager {
         // reale. Entrambi calcolati dallo STESSO istante per coerenza.
         val expiresAt = if (phaseDurationMs > 0) System.currentTimeMillis() + phaseDurationMs else 0L
         val expiresAtElapsed = if (phaseDurationMs > 0) SystemClock.elapsedRealtime() + phaseDurationMs else 0L
-        QuickBlockStore.save(
+        return QuickBlockStore.save(
             ctx,
             QuickBlockStore.Snapshot(
                 isActive = isActive,
@@ -218,9 +231,15 @@ class QuickBlockManager {
         )
     }
 
-    private fun clearSnapshot() {
-        val ctx = appContext ?: return
-        QuickBlockStore.clear(ctx)
+    /// Azzera lo snapshot persistito; ritorna `true` se la scrittura è riuscita.
+    /// CR-09: un clear fallito lascerebbe il :accessibility a bloccare oltre la
+    /// fine sessione (fail verso PIÙ blocco, non un'evasione) → lo segnaliamo ma
+    /// non è critico in direzione sicurezza.
+    private fun clearSnapshot(): Boolean {
+        val ctx = appContext ?: return false
+        val ok = QuickBlockStore.clear(ctx)
+        if (!ok) Log.w(TAG, "Quick block snapshot NOT cleared — :accessibility may keep blocking until next write")
+        return ok
     }
 
     private fun sendTickEvent() {
