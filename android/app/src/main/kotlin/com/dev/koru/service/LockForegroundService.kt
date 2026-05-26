@@ -275,6 +275,26 @@ class LockForegroundService : Service() {
                 }
                 performGoHome()
             },
+            onFocusBlock = { packageName, appLabel ->
+                // CR-01: il backup applica anche il focus (quick-block /
+                // pomodoro work). Prima era ESCLUSIVO dell'AccessibilityService:
+                // se moriva durante una sessione focus, le app non-whitelist
+                // restavano sbloccate. Rendering identico al path primario
+                // (FOCUS_MODE + HOME); il logging DB sta in LockRunnable, come
+                // per onLimitBlock/onBlock.
+                Log.d(TAG, "[BACKUP] Focus block $packageName")
+                mainHandler.post {
+                    overlayManager?.show(
+                        packageName = packageName,
+                        appLabel = appLabel,
+                        profileTitle = "Focus session",
+                        reason = BlockReason.FOCUS_MODE,
+                        config = OverlayConfig.DEFAULT,
+                        profileEmoji = "🎯", // 🎯
+                    )
+                }
+                performGoHome()
+            },
             onUnblock = {
                 Log.d(TAG, "[BACKUP] Unblocking")
                 mainHandler.post { overlayManager?.dismiss() }

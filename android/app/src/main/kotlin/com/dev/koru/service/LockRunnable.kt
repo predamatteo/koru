@@ -7,6 +7,7 @@ import com.dev.koru.db.NativeDatabase
 import com.dev.koru.db.NativeAppRelation
 import com.dev.koru.db.NativeInterval
 import com.dev.koru.db.NativeProfile
+import com.dev.koru.overlay.BlockReason
 import java.util.Calendar
 
 /**
@@ -28,6 +29,12 @@ class LockRunnable(
     private val onBlock: (String, String, NativeProfile, NativeAppRelation?) -> Unit,
     private val onLimitBlock: (pkg: String, appLabel: String, limitMinutes: Int, todayMs: Long) -> Unit,
     private val onUnblock: () -> Unit,
+    /// Callback per il blocco FOCUS_MODE (quick-block / pomodoro work phase).
+    /// CR-01: il backup ora applica anche il focus, prima era assente — se
+    /// l'AccessibilityService moriva durante una sessione focus, le app
+    /// non-whitelist restavano sbloccate. Il wiring (overlay FOCUS_MODE +
+    /// performGoHome + restrictionType=4) vive in [LockForegroundService].
+    private val onFocusBlock: (pkg: String, appLabel: String) -> Unit,
 ) : Runnable {
 
     companion object {
@@ -46,6 +53,7 @@ class LockRunnable(
     private var profiles = emptyList<NativeProfile>()
     private var profileApps = mutableMapOf<Int, List<NativeAppRelation>>()
     private var profileIntervals = mutableMapOf<Int, List<NativeInterval>>()
+    private var profileWifis = mapOf<Int, Set<String>>()
     private var iterationCount = 0
     private var currentlyBlockingPackage: String? = null
 
@@ -122,17 +130,24 @@ class LockRunnable(
             profileIntervals.clear()
             for (profile in profiles) {
                 profileApps[profile.id] = NativeDatabase.getAppRelationsForProfile(context, profile.id)
-                if (profile.typeCombinations and TYPE_TIME != 0) {
-                    profileIntervals[profile.id] = NativeDatabase.getIntervalsForProfile(context, profile.id)
-                }
+                // Intervals caricati INCONDIZIONATAMENTE (prima solo se il bit
+                // TYPE_TIME era attivo): l'evaluator decide lui se gating-are
+                // sul tempo (controlla il bit typeCombinations), così la
+                // semantica è identica al path accessibility e non c'è un
+                // ramo di caricamento divergente da tenere allineato.
+                profileIntervals[profile.id] = NativeDatabase.getIntervalsForProfile(context, profile.id)
                 Log.i(TAG, "Profile '${profile.title}' (id=${profile.id}): mode=${if (profile.blockingMode == 0) "BLOCKLIST" else "ALLOWLIST"}, apps=${profileApps[profile.id]?.map { it.packageName }}")
             }
-            Log.i(TAG, "Loaded ${profiles.size} active profiles")
+            // CR-03: vincolo wifi anche nel backup, via lo stesso store del
+            // path accessibility.
+            profileWifis = NativeDatabase.getWifiSsidsByProfile(context)
+            Log.i(TAG, "Loaded ${profiles.size} active profiles, ${profileWifis.size} with wifi constraints")
         } catch (e: Exception) {
             Log.e(TAG, "Error loading profiles: ${e.message}", e)
             profiles = emptyList()
             profileApps.clear()
             profileIntervals.clear()
+            profileWifis = emptyMap()
         }
     }
 
@@ -184,142 +199,147 @@ class LockRunnable(
 
         if (iterationCount % 33 == 0) Log.d(TAG, "[BACKUP] Foreground: $pkg")
 
-        // 1) Daily usage limit FIRST: deve vincere sul profile block quando
-        //    il cap e' superato, ed è valutato PRIMA del bypass perché un
-        //    "Open anyway" su un blocco di profilo non ricarica il budget
-        //    cumulativo del cap (era il bug "+5 min all'infinito sul limite
-        //    passando dal blocco di profilo"). Coerente con
-        //    KoruAccessibilityService (path primario). Eccezione SOLO
-        //    non-strict, [OverlayManager.isLimitBypassActive]: un bypass nato
-        //    DAL limite (USAGE_LIMIT / BYPASS_EXPIRED) lo sospende per la
-        //    durata scelta. STRICT ⇒ hard cap assoluto: blocca sempre,
-        //    ignorando qualsiasi bypass (anche un limit-bypass residuo da
-        //    quando l'app era non-strict). Allineato a checkAppBlocking.
-        val limitMinutes = AppUsageLimitsStore.limitMinutesFor(context, pkg)
-        if (limitMinutes > 0 &&
-            (AppUsageLimitsStore.isStrictFor(context, pkg) ||
-                !OverlayManager.isLimitBypassActive(pkg))
-        ) {
-            // SEC-03: variante GUARDATA anche nel path di backup, così il cap
-            // resta scattato anche se l'AccessibilityService è morto e l'utente
-            // sposta la data indietro. Coerente con checkAppBlocking.
-            val todayMs = UsageCounter.guardedTodayForegroundMs(context, pkg)
-            if (todayMs >= limitMinutes * 60_000L) {
-                if (currentlyBlockingPackage != pkg) {
-                    currentlyBlockingPackage = pkg
-                    val appLabel = getAppLabel(pkg)
-                    Log.w(TAG, ">>> [BACKUP] BLOCKING $pkg (daily limit ${todayMs / 60_000}/${limitMinutes}min)")
-                    onLimitBlock(pkg, appLabel, limitMinutes, todayMs)
-                    try {
-                        NativeDatabase.insertRestrictedAccessEvent(
-                            context,
-                            pkg,
-                            eventType = 0, // TRIGGERED
-                            restrictionType = 3, // USAGE_LIMIT
-                            timestamp = System.currentTimeMillis(),
-                        )
-                    } catch (_: Exception) {}
+        // Decisione DELEGATA a [BlockPolicyEvaluator] — STESSA logica del path
+        // accessibility (focus → daily limit → bypass profilo → profile loop).
+        // Prima il backup aveva una copia divergente: niente focus (CR-01),
+        // niente wifi (CR-03), intervalli CHIUSI invece di half-open. Ora è
+        // l'evaluator a decidere e qui restano solo i side-effect del backup.
+        //
+        // Letture d'ambiente (lette qui, non dall'AccessibilityService che è
+        // morto se siamo arrivati fin qui):
+        // - focusShouldBlock: QuickBlockStore (CR-01, prima assente nel backup).
+        // - limit (SEC-03 guarded): solo se esiste un cap, evita la query usage.
+        // - currentWifiSsid: helper condiviso (CR-03).
+        val qb = QuickBlockStore.read(context)
+        val focusShouldBlock = qb.shouldBlock(pkg, System.currentTimeMillis())
+
+        val limitEntry = AppUsageLimitsStore.entryFor(context, pkg)
+        val limitMinutes = limitEntry?.minutes ?: 0
+        val isLimitStrict = limitEntry?.strict ?: true
+        // SEC-03: variante GUARDATA anche nel backup, così il cap resta scattato
+        // anche con AccessibilityService morto e data spostata indietro.
+        val limitTodayMs = if (limitMinutes > 0) {
+            UsageCounter.guardedTodayForegroundMs(context, pkg)
+        } else 0L
+
+        // O13: snapshot tramite toList() — loadProfiles() può sostituire
+        // l'intera lista da un altro callback (reloadProfiles via Flutter
+        // bridge); copiare evita ConcurrentModificationException.
+        val cal = Calendar.getInstance()
+        val decision = BlockPolicyEvaluator.evaluate(
+            BlockQuery(
+                packageName = pkg,
+                profiles = profiles.toList(),
+                profileApps = profileApps.toMap(),
+                profileIntervals = profileIntervals.toMap(),
+                profileWifis = profileWifis,
+                limitMinutes = limitMinutes,
+                isLimitStrict = isLimitStrict,
+                limitTodayMs = limitTodayMs,
+                focusShouldBlock = focusShouldBlock,
+                // Scope per-app (null): il backup non ha node tree, quindi non
+                // valuta sezioni/siti → solo bypass per-app, come prima.
+                bypassReasonFor = { scope -> OverlayManager.bypassReason(pkg, scope) },
+                nowWallMs = System.currentTimeMillis(),
+                nowMinutesOfDay = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE),
+                todayDayFlag = dayFlag(cal),
+                currentWifiSsid = currentWifiSsid(context),
+                // WEBSITE/SECTION NON sono raggiungibili dal backup: senza
+                // AccessibilityService non c'è l'albero dei nodi per rilevare
+                // URL o sezioni in-app. È un'asimmetria INTENZIONALE: quando
+                // l'accessibility è morto, il blocco siti/sezioni è sospeso.
+                // TODO(health-banner): superficiare "blocco website/sezioni in
+                // pausa" all'utente quando l'AccessibilityService è giù (UI
+                // fuori scope qui).
+                websiteScopeDomain = null,
+                sectionWireId = null,
+            ),
+        )
+
+        when (decision) {
+            is BlockDecision.Block -> when (decision.reason) {
+                BlockReason.FOCUS_MODE -> {
+                    if (currentlyBlockingPackage != pkg) {
+                        currentlyBlockingPackage = pkg
+                        val appLabel = getAppLabel(pkg)
+                        Log.w(TAG, ">>> [BACKUP] BLOCKING $pkg (focus)")
+                        onFocusBlock(pkg, appLabel)
+                        try {
+                            NativeDatabase.insertBlockSession(context, pkg, System.currentTimeMillis())
+                            NativeDatabase.insertRestrictedAccessEvent(
+                                context,
+                                pkg,
+                                eventType = 0, // TRIGGERED
+                                restrictionType = 4, // FOCUS_MODE
+                                timestamp = System.currentTimeMillis(),
+                            )
+                        } catch (_: Exception) {}
+                    }
+                    return
+                }
+
+                BlockReason.USAGE_LIMIT -> {
+                    if (currentlyBlockingPackage != pkg) {
+                        currentlyBlockingPackage = pkg
+                        val appLabel = getAppLabel(pkg)
+                        Log.w(TAG, ">>> [BACKUP] BLOCKING $pkg (daily limit " +
+                            "${decision.todayMs / 60_000}/${limitMinutes}min)")
+                        onLimitBlock(pkg, appLabel, limitMinutes, decision.todayMs)
+                        try {
+                            NativeDatabase.insertRestrictedAccessEvent(
+                                context,
+                                pkg,
+                                eventType = 0, // TRIGGERED
+                                restrictionType = 3, // USAGE_LIMIT
+                                timestamp = System.currentTimeMillis(),
+                            )
+                        } catch (_: Exception) {}
+                    }
+                    return
+                }
+
+                else -> { // APP_BLOCKED (FOCUS/USAGE_LIMIT gestiti sopra; WEBSITE/SECTION irraggiungibili)
+                    val profile = profiles.firstOrNull { it.id == decision.profileId }
+                    if (currentlyBlockingPackage != pkg && profile != null) {
+                        currentlyBlockingPackage = pkg
+                        val appLabel = getAppLabel(pkg)
+                        Log.w(TAG, ">>> [BACKUP] BLOCKING $pkg ($appLabel) by profile '${profile.title}'")
+                        onBlock(pkg, appLabel, profile, decision.relation)
+                        try {
+                            NativeDatabase.insertBlockSession(context, pkg, System.currentTimeMillis())
+                        } catch (_: Exception) {}
+                    }
+                    return
+                }
+            }
+
+            is BlockDecision.Allow -> {
+                // L'evaluator collassa "bypass attivo" e "nessun blocco" in
+                // Allow. Ri-leggiamo isBypassed(pkg) per preservare il tracking
+                // del bypass per-app (auto-revoke all'uscita), come prima.
+                if (OverlayManager.isBypassed(pkg)) {
+                    lastBypassedForegroundPkg = pkg
+                }
+                if (currentlyBlockingPackage != null) {
+                    Log.d(TAG, "<<< [BACKUP] UNBLOCKING (switched to $pkg)")
+                    currentlyBlockingPackage = null
+                    onUnblock()
                 }
                 return
             }
         }
-
-        // 2) Bypass attivo (utente ha scelto "Open anyway" con TTL): rispetta
-        //    il bypass come fa l'AccessibilityService, senza rifare HOME.
-        //    Tracciamo il pkg come "bypassato e in foreground" così che il
-        //    prossimo cambio di foreground possa innescare l'auto-revoke. Il
-        //    cap è già stato controllato sopra (un bypass di profilo non lo
-        //    nasconde più).
-        if (OverlayManager.isBypassed(pkg)) {
-            lastBypassedForegroundPkg = pkg
-            if (currentlyBlockingPackage != null) {
-                currentlyBlockingPackage = null
-                onUnblock()
-            }
-            return
-        }
-
-        // 3) Profile-based blocking (logica originale).
-        // O13: snapshot tramite toList() — loadProfiles() può sostituire
-        // l'intera lista da un altro callback (reloadProfiles via Flutter
-        // bridge). Iterando direttamente su `profiles` si rischiava
-        // ConcurrentModificationException quando il broadcast arrivava
-        // a metà ciclo.
-        val profilesSnapshot = profiles.toList()
-        for (profile in profilesSnapshot) {
-            if (!isProfileActiveNow(profile)) continue
-
-            val relation = findBlockingRelation(profile, pkg) ?: continue
-            if (currentlyBlockingPackage != pkg) {
-                currentlyBlockingPackage = pkg
-                val appLabel = getAppLabel(pkg)
-                Log.w(TAG, ">>> [BACKUP] BLOCKING $pkg ($appLabel) by profile '${profile.title}'")
-                onBlock(pkg, appLabel, profile, relation)
-                try {
-                    NativeDatabase.insertBlockSession(context, pkg, System.currentTimeMillis())
-                } catch (_: Exception) {}
-            }
-            return
-        }
-
-        if (currentlyBlockingPackage != null) {
-            Log.d(TAG, "<<< [BACKUP] UNBLOCKING (switched to $pkg)")
-            currentlyBlockingPackage = null
-            onUnblock()
-        }
     }
 
-    /// Returns the AppProfileRelation that triggers the block (so caller can
-    /// extract overlayConfigJson / blockedSectionsJson), or null if no block.
-    private fun findBlockingRelation(profile: NativeProfile, packageName: String): NativeAppRelation? {
-        val apps = profileApps[profile.id] ?: return null
-        val enabledApps = apps.filter { it.isEnabled }
-
-        return when (profile.blockingMode) {
-            MODE_BLOCKLIST -> enabledApps.firstOrNull { it.packageName == packageName }
-            MODE_ALLOWLIST ->
-                if (enabledApps.isNotEmpty() && enabledApps.none { it.packageName == packageName }) {
-                    // synthetic relation: allowlist doesn't have a per-app overlay config
-                    NativeAppRelation(packageName, profile.id, true, null, null)
-                } else null
-            else -> null
-        }
-    }
-
-    private fun isProfileActiveNow(profile: NativeProfile): Boolean {
-        if (profile.pausedUntil < 0) return false
-        if (profile.pausedUntil > 0 && profile.pausedUntil > System.currentTimeMillis()) return false
-
-        val cal = Calendar.getInstance()
-        val todayFlag = when (cal.get(Calendar.DAY_OF_WEEK)) {
-            Calendar.MONDAY -> 1
-            Calendar.TUESDAY -> 2
-            Calendar.WEDNESDAY -> 4
-            Calendar.THURSDAY -> 8
-            Calendar.FRIDAY -> 16
-            Calendar.SATURDAY -> 32
-            Calendar.SUNDAY -> 64
-            else -> 0
-        }
-        if (profile.dayFlags and todayFlag == 0) return false
-
-        if (profile.typeCombinations and TYPE_TIME != 0) {
-            val intervals = profileIntervals[profile.id] ?: emptyList()
-            if (intervals.isNotEmpty()) {
-                val nowMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
-                val inInterval = intervals.any { iv ->
-                    if (iv.fromMinutes <= iv.toMinutes) {
-                        nowMinutes in iv.fromMinutes..iv.toMinutes
-                    } else {
-                        nowMinutes >= iv.fromMinutes || nowMinutes <= iv.toMinutes
-                    }
-                }
-                if (!inInterval) return false
-            }
-        }
-
-        if (profile.onUntil > 0 && System.currentTimeMillis() > profile.onUntil) return false
-        return true
+    /// Bit del giorno corrente (allineato a [BlockPolicyEvaluator] / DayFlags).
+    private fun dayFlag(cal: Calendar): Int = when (cal.get(Calendar.DAY_OF_WEEK)) {
+        Calendar.MONDAY -> 1
+        Calendar.TUESDAY -> 2
+        Calendar.WEDNESDAY -> 4
+        Calendar.THURSDAY -> 8
+        Calendar.FRIDAY -> 16
+        Calendar.SATURDAY -> 32
+        Calendar.SUNDAY -> 64
+        else -> 0
     }
 
     private fun getAppLabel(packageName: String): String = try {

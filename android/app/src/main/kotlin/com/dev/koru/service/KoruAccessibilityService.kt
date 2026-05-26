@@ -1379,25 +1379,10 @@ class KoruAccessibilityService : AccessibilityService() {
         }
     }
 
-    /// Legge il SSID corrente via WifiManager (stesso pattern di
-    /// BlockingMethodChannel.getCurrentWifiSsid). Ritorna null se
-    /// non connessi o mancano permessi.
-    private fun getCurrentWifiSsid(): String? {
-        return try {
-            val wm = applicationContext
-                .getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
-            val info = wm?.connectionInfo ?: return null
-            val ssid = info.ssid
-            if (ssid == null || ssid == "<unknown ssid>") return null
-            if (ssid.length >= 2 && ssid.startsWith("\"") && ssid.endsWith("\"")) {
-                ssid.substring(1, ssid.length - 1)
-            } else {
-                ssid
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
+    /// Legge il SSID corrente. Delega all'helper condiviso [currentWifiSsid]
+    /// (vedi WifiSsidProvider.kt) usato anche dal backup [LockRunnable] — una
+    /// sola implementazione, nessuna parità-per-copia (CR-03).
+    private fun getCurrentWifiSsid(): String? = currentWifiSsid(applicationContext)
 
     private fun forceReloadProfiles() {
         Log.i(TAG, "Force reloading profiles")
