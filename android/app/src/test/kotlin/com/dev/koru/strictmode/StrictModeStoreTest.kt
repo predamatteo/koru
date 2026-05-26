@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import java.io.File
 import org.junit.After
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -121,6 +122,17 @@ class StrictModeStoreTest {
     @Test
     fun migration_fromLegacyFile_movesValueAndDeletesFile() {
         val ctx = ApplicationProvider.getApplicationContext<Context>()
+        // La migration (travaso file legacy → store cifrato + cancellazione del
+        // file) gira SOLO quando EncryptedSharedPreferences è disponibile. Sotto
+        // Robolectric il Keystore spesso non lo è: in quel caso readMask resta
+        // sul fallback legacy (legge il valore ma NON migra né cancella), quindi
+        // il test non può esercitare il path. Lo skippiamo esplicitamente (gli
+        // altri test sullo store cifrato — readMask_hmac* — fanno già `?: return`
+        // per lo stesso motivo) invece di fallire su un limite dell'ambiente.
+        assumeTrue(
+            "EncryptedSharedPreferences non disponibile (Keystore assente sotto Robolectric)",
+            encryptedPrefs(ctx) != null,
+        )
         File(ctx.filesDir, legacyFile).writeText("15")
         // First read triggers the migration.
         val read = StrictModeStore.readMask(ctx)
