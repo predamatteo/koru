@@ -24,8 +24,12 @@ import io.flutter.plugin.common.MethodChannel
  *
  * Owns la validazione del backdoor code lato native con:
  * - Rate limiting esponenziale: 5/24h/72h lockout dopo tentativi falliti.
- * - Replay protection: ogni code è single-use (set in EncryptedSharedPreferences
- *   + idealmente sync con tabella `used_backdoor_codes` nel DB Drift).
+ * - Replay protection (SEC-06): la tabella `used_backdoor_codes` del DB Drift è
+ *   la fonte AUTORITATIVA del check single-use (INSERT OR IGNORE + query). Le
+ *   EncryptedSharedPreferences mantengono solo una CACHE veloce, ma keyed per
+ *   settimana e prunata per settimana: la settimana corrente/recente non viene
+ *   MAI evitta, quindi un code usato non può mai tornare riusabile. Un code è
+ *   "usato" se LO dice il DB OPPURE la cache (unione → nessun falso negativo).
  * - Atomic unblock: validate → markUsed → setMask(0) tutto in un handler.
  * - Device admin guard: `disableDeviceAdmin` rifiuta se strict mode è attivo.
  *
@@ -49,7 +53,24 @@ object StrictModeMethodChannel {
     // l'ancora "ora" rileva i reboot in modo esplicito, senza affidarsi a
     // confronti fragili tra elapsed passato e presente.
     private const val KEY_LAST_FAIL_BOOT_WALL = "last_fail_boot_wall_ms"
-    private const val KEY_USED_CODES = "used_codes_set"
+
+    // SEC-06: cache locale (veloce) dei code usati. NON è la fonte autoritativa
+    // — lo è la tabella `used_backdoor_codes` del DB. Ogni entry è codificata
+    // come `<weekKey>|<code>` (weekKey ordinabile, vedi WEEK_KEY_FORMAT) così la
+    // pruning può eliminare le settimane PIÙ VECCHIE per prime, senza mai
+    // toccare quelle correnti/recenti. Bumpato da `used_codes_set` (set flat di
+    // soli code, prunato a caso → SEC-06) a v2 con prefisso di settimana.
+    private const val KEY_USED_CODES = "used_codes_set_v2"
+
+    /// Separatore tra weekKey e code nelle entry di cache. `|` non compare
+    /// mai in un weekKey (`YYYY-Www`) né in un code (alfabeto base32) → split
+    /// non ambiguo.
+    private const val USED_CACHE_DELIM = "|"
+
+    /// Tetto di entry nella cache prefs. Generoso: in pratica si usano pochi
+    /// code/settimana. Oltre il tetto, [pruneUsedCache] elimina le settimane più
+    /// vecchie, MAI la corrente. Il DB resta comunque autoritativo e illimitato.
+    private const val USED_CACHE_MAX = 500
 
     /// Tolleranza sull'ancora di boot per dichiarare "reboot". `wall - elapsed`
     /// oscilla di qualche secondo per via di NTP slew e arrotondamenti; oltre
@@ -283,14 +304,6 @@ object StrictModeMethodChannel {
         if (matches) {
             markCodeUsed(context, normalized)
             resetFailedAttempts(context)
-            // Tentativo opzionale di scrittura nella tabella DB (audit log).
-            try {
-                val db = NativeDatabase.open(context)
-                db.execSQL(
-                    "INSERT OR IGNORE INTO used_backdoor_codes (code, used_at) VALUES (?, ?)",
-                    arrayOf(normalized, System.currentTimeMillis()),
-                )
-            } catch (_: Exception) {}
             return BackdoorOutcome.Valid
         }
 
@@ -300,31 +313,104 @@ object StrictModeMethodChannel {
         return if (remainingAfter > 0) BackdoorOutcome.Locked(remainingAfter) else BackdoorOutcome.Invalid
     }
 
+    /// SEC-06 — replay check. Un code è "usato" se LO dichiara la tabella DB
+    /// `used_backdoor_codes` (fonte autoritativa, durevole, illimitata) OPPURE
+    /// la cache prefs (fast-path). L'UNIONE evita falsi negativi: anche se una
+    /// delle due scritture fosse fallita, l'altra cattura comunque il replay,
+    /// quindi un code usato non torna MAI riusabile.
     private fun isCodeUsed(context: Context, code: String): Boolean {
-        val prefs = prefs(context) ?: return false
-        val used = prefs.getStringSet(KEY_USED_CODES, emptySet()) ?: emptySet()
-        return used.contains(code)
+        return isCodeUsedInDb(context, code) || isCodeUsedInCache(context, code)
     }
 
-    private fun markCodeUsed(context: Context, code: String) {
-        val prefs = prefs(context) ?: return
-        val current = prefs.getStringSet(KEY_USED_CODES, emptySet())?.toMutableSet() ?: mutableSetOf()
-        current += code
-        // Cap del set: dopo 100 entries, droppa le più vecchie (in pratica
-        // mai raggiunto, ma evita unbounded growth se l'utente trigge-asse
-        // emergency unblock decine di volte). Set non è ordinato — droppiamo
-        // semplicemente entries random.
-        if (current.size > 100) {
-            val toRemove = current.size - 100
-            val iter = current.iterator()
-            repeat(toRemove) {
-                if (iter.hasNext()) {
-                    iter.next()
-                    iter.remove()
-                }
-            }
+    /// Query autoritativa sulla tabella DB. Su DB non raggiungibile (file non
+    /// ancora creato da Flutter, race di apertura) ritorna false e si delega
+    /// alla cache: è il fast-path che copre la finestra in cui il DB è giù.
+    private fun isCodeUsedInDb(context: Context, code: String): Boolean {
+        return try {
+            NativeDatabase.open(context).rawQuery(
+                "SELECT EXISTS(SELECT 1 FROM used_backdoor_codes WHERE code = ?)",
+                arrayOf(code),
+            ).use { c -> c.moveToNext() && c.getInt(0) == 1 }
+        } catch (e: Exception) {
+            Log.w(TAG, "used_backdoor_codes query failed (cache fallback): ${e.message}")
+            false
         }
-        prefs.edit().putStringSet(KEY_USED_CODES, current).apply()
+    }
+
+    private fun isCodeUsedInCache(context: Context, code: String): Boolean {
+        val prefs = prefs(context) ?: return false
+        val used = prefs.getStringSet(KEY_USED_CODES, emptySet()) ?: emptySet()
+        return cacheContainsCode(used, code)
+    }
+
+    /// SEC-06 — marca un code come usato in ENTRAMBI gli store: prima il DB
+    /// (autoritativo, INSERT OR IGNORE), poi la cache prefs (keyed per settimana
+    /// e prunata per settimana, mai la corrente).
+    private fun markCodeUsed(context: Context, code: String) {
+        // 1) DB autoritativo.
+        try {
+            NativeDatabase.open(context).execSQL(
+                "INSERT OR IGNORE INTO used_backdoor_codes (code, used_at) VALUES (?, ?)",
+                arrayOf(code, System.currentTimeMillis()),
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "used_backdoor_codes insert failed (cache still records): ${e.message}")
+        }
+
+        // 2) Cache prefs keyed per settimana.
+        val prefs = prefs(context) ?: return
+        val current = prefs.getStringSet(KEY_USED_CODES, emptySet()) ?: emptySet()
+        val week = currentWeekKey()
+        val updated = pruneUsedCache(
+            entries = current + "$week$USED_CACHE_DELIM$code",
+            currentWeek = week,
+            maxEntries = USED_CACHE_MAX,
+        )
+        prefs.edit().putStringSet(KEY_USED_CODES, updated).apply()
+    }
+
+    /// SEC-06 — true se [entries] (formato `<week>|<code>`) contiene [code] in
+    /// QUALSIASI settimana. Funzione PURA, unit-testabile.
+    internal fun cacheContainsCode(entries: Set<String>, code: String): Boolean {
+        val suffix = "$USED_CACHE_DELIM$code"
+        return entries.any { it.endsWith(suffix) }
+    }
+
+    /// SEC-06 — pruning della cache che NON evicta mai la settimana corrente.
+    /// Aggiunta l'entry, se si supera [maxEntries] si eliminano le entry delle
+    /// settimane PIÙ VECCHIE (ordinamento lessicografico del weekKey, che è
+    /// zero-padded e quindi cronologico), saltando SEMPRE quelle di
+    /// [currentWeek]. Garanzia: il code della settimana corrente resta in cache
+    /// anche dopo >100 (o >[maxEntries]) altri code. Funzione PURA, testabile.
+    internal fun pruneUsedCache(
+        entries: Set<String>,
+        currentWeek: String,
+        maxEntries: Int,
+    ): Set<String> {
+        if (entries.size <= maxEntries) return entries
+
+        val currentPrefix = "$currentWeek$USED_CACHE_DELIM"
+        val (currentWeekEntries, olderEntries) = entries.partition { it.startsWith(currentPrefix) }
+
+        // Le entry della settimana corrente sono intoccabili. Dalle altre
+        // teniamo solo le più recenti fino a riempire il budget residuo.
+        val budgetForOlder = (maxEntries - currentWeekEntries.size).coerceAtLeast(0)
+        val keptOlder = olderEntries
+            .sortedDescending() // weekKey decrescente = dalla più recente
+            .take(budgetForOlder)
+
+        return (currentWeekEntries + keptOlder).toSet()
+    }
+
+    /// WeekKey ordinabile cronologicamente: `YYYY-Www` con settimana a 2 cifre
+    /// zero-padded (es. `2026-W05`), così l'ordinamento lessicografico coincide
+    /// con quello cronologico. Indipendente dal weekKey di [BackdoorCodeGenerator]
+    /// (qui serve solo per il pruning interno della cache).
+    private fun currentWeekKey(): String {
+        val cal = java.util.Calendar.getInstance()
+        val year = cal.get(java.util.Calendar.YEAR)
+        val week = cal.get(java.util.Calendar.WEEK_OF_YEAR)
+        return "%04d-W%02d".format(year, week)
     }
 
     private fun recordFailedAttempt(context: Context) {
