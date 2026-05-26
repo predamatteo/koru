@@ -3,12 +3,10 @@ package com.dev.koru.service
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONObject
 
 /**
@@ -23,57 +21,129 @@ import org.json.JSONObject
  * ```
  * {
  *   "com.pkg": {"date": "2026-05-05", "count": 3},
- *   "_meta": {"last_reset_wall_ms": 1715000000000, "last_reset_elapsed_ms": 9876543}
+ *   "_meta": {"last_reset_day": "2026-05-05", "last_reset_wall_ms": 1715000000000, "last_reset_elapsed_ms": 9876543}
  * }
  * ```
  *
- * Hardening (S6):
- * - Cache `AtomicReference<JSONObject>` per evitare file I/O ad ogni
- *   query: il polling del :accessibility (1Hz) chiamava `todayCount` a
- *   ogni iterazione, causando re-parse del JSON ogni secondo. Ora la
- *   prima read mette in cache, le successive vanno a memoria.
- *   La cache è invalidata su write (increment/reset).
- * - Anti-time-manipulation: salviamo `last_reset_wall_ms` + `last_reset_elapsed_ms`.
- *   Se l'utente sposta l'orologio indietro per "guadagnare" un nuovo
- *   giorno e resettare il counter, il delta elapsed (monotonic) non
- *   coincide col delta wall e rifiutiamo il reset.
+ * ARCH-03/CR-04 — migrato su [FileBackedStore]:
+ * - Prima la cache (`AtomicReference<JSONObject>`) **non si invalidava mai**
+ *   (`readCached` ritornava l'istanza cache-ata senza controllare il file):
+ *   il conteggio mostrato dal main process restava permanentemente stale
+ *   rispetto agli `increment` fatti dal `:accessibility` (CR-04). Ora la cache
+ *   è invalidata su `(mtime,length)`.
+ * - Prima [increment]/[reset] mutavano IN PLACE il `JSONObject` condiviso in
+ *   cache (`json.put`/`json.remove`) → data race tra i thread/processi (CR-04).
+ *   Ora la mutazione è un read-modify-write su uno stato immutabile ([State]),
+ *   sotto lock cross-process (copy-before-mutate per costruzione).
+ * - Scrittura atomica (temp+rename) ereditata dall'astrazione (SEC-09).
  *
- * Il reset è implicito: se la data salvata non corrisponde a oggi,
- * `todayCount` ritorna 0 senza riscrivere il file (la riscrittura avviene
- * al primo `increment` del nuovo giorno).
+ * Anti clock-abuse sul rollover di giorno: il "giorno effettivo" usato per
+ * decidere se il counter è "di oggi" è calcolato da [decideDay], che mirror-a la
+ * guardia monotonica di [UsageGuardStore.decide]. Spostando l'orologio indietro
+ * (stesso boot) o in avanti in modo incoerente, [decideDay] NON fa rollover →
+ * il counter resta → più frizione. (Il caso reboot+salto-avanti combinato è
+ * irrobustito in un commit successivo, SEC-05.)
  */
 object BypassCountStore {
     private const val TAG = "BypassCountStore"
     private const val FILE_NAME = "koru_bypass_counts.json"
     private const val META_KEY = "_meta"
+    private const val META_LAST_RESET_DAY = "last_reset_day"
     private const val META_LAST_RESET_WALL = "last_reset_wall_ms"
     private const val META_LAST_RESET_ELAPSED = "last_reset_elapsed_ms"
 
-    /// Tolleranza tra wall delta e elapsed delta. Se differiscono per più di
-    /// questa quantità, assumiamo che l'utente abbia manipolato l'orologio
-    /// e non resettiamo il counter giornaliero.
-    private const val TIME_DRIFT_TOLERANCE_MS = 60_000L
+    /// Tolleranza tra wall delta e elapsed delta. Oltre questa differenza
+    /// assumiamo manipolazione dell'orologio. 1h di slack copre NTP/DST/timezone
+    /// legittimi (stesso valore concettuale di [UsageGuardStore]).
+    internal const val TIME_DRIFT_TOLERANCE_MS = 60_000L + 3_600_000L // 1 min + 1 ora DST
 
     private val dateFormat: SimpleDateFormat
         get() = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
-    /// In-memory cache cross-process. Ogni processo (main + :accessibility)
-    /// ha il suo, ma il file su disco è la fonte di verità: le write da un
-    /// processo invalidano la cache del PROPRIO processo solo dopo la
-    /// successiva read fresca. Per Koru va bene perché le scritture sono
-    /// quasi sempre fatte dal :accessibility (increment al duration picker)
-    /// e il main legge raramente (UI).
-    private val cache = AtomicReference<JSONObject?>(null)
+    /// Contatore di un singolo package per un dato giorno.
+    internal data class CountEntry(val date: String, val count: Int)
+
+    /// Baseline temporale globale per la guardia anti clock-abuse.
+    internal data class Meta(val lastResetDay: String, val lastWall: Long, val lastElapsed: Long)
+
+    /// Stato IMMUTABILE dello store. Copy-before-mutate per costruzione: ogni
+    /// mutazione produce una nuova [State] (niente in-place su strutture
+    /// condivise → niente data race, CR-04).
+    internal data class State(val entries: Map<String, CountEntry>, val meta: Meta?) {
+        companion object {
+            val EMPTY = State(emptyMap(), null)
+        }
+    }
+
+    private val store = FileBackedStore(
+        fileName = FILE_NAME,
+        codec = object : FileBackedStore.Codec<State> {
+            override fun serialize(value: State): String {
+                val json = JSONObject()
+                for ((pkg, e) in value.entries) {
+                    json.put(
+                        pkg,
+                        JSONObject().apply {
+                            put("date", e.date)
+                            put("count", e.count)
+                        },
+                    )
+                }
+                value.meta?.let { m ->
+                    json.put(
+                        META_KEY,
+                        JSONObject().apply {
+                            put(META_LAST_RESET_DAY, m.lastResetDay)
+                            put(META_LAST_RESET_WALL, m.lastWall)
+                            put(META_LAST_RESET_ELAPSED, m.lastElapsed)
+                        },
+                    )
+                }
+                return json.toString()
+            }
+
+            override fun deserialize(raw: String): State {
+                val json = JSONObject(raw)
+                val entries = mutableMapOf<String, CountEntry>()
+                var meta: Meta? = null
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    val obj = json.optJSONObject(k) ?: continue
+                    if (k == META_KEY) {
+                        meta = Meta(
+                            lastResetDay = obj.optString(META_LAST_RESET_DAY, ""),
+                            lastWall = obj.optLong(META_LAST_RESET_WALL, 0L),
+                            lastElapsed = obj.optLong(META_LAST_RESET_ELAPSED, 0L),
+                        )
+                    } else {
+                        entries[k] = CountEntry(
+                            date = obj.optString("date", ""),
+                            count = obj.optInt("count", 0),
+                        )
+                    }
+                }
+                return State(entries.toMap(), meta)
+            }
+        },
+        // Fail-secure: file corrotto ⇒ stato vuoto. Per il counter "vuoto"
+        // significa friction al minimo: NON è la direzione anti-evasione più
+        // dura, ma il bypass count NON è un hard cap (lo strict mode lo è, e
+        // bypassa interamente questo path). È coerente col comportamento storico
+        // (file corrotto → count 0) e non sblocca alcun limite.
+        corruptFallback = { State.EMPTY },
+    )
 
     /// Numero di bypass usati oggi per [packageName]. Ritorna 0 se la data
-    /// salvata non è oggi (o se nessun entry esiste).
+    /// salvata non è il giorno effettivo (o se nessun entry esiste). Read-only:
+    /// non riscrive il file (il rollover materiale avviene al prossimo
+    /// [increment]).
     fun todayCount(context: Context, packageName: String): Int {
         return try {
-            val json = readCached(context) ?: return 0
-            val obj = json.optJSONObject(packageName) ?: return 0
-            val date = obj.optString("date", "")
-            if (date != safeTodayString(context, json)) return 0
-            obj.optInt("count", 0)
+            val state = store.read(context)
+            val entry = state.entries[packageName] ?: return 0
+            if (entry.date != effectiveToday(state)) return 0
+            entry.count
         } catch (e: Exception) {
             Log.w(TAG, "Failed to read bypass count, returning 0", e)
             0
@@ -81,134 +151,135 @@ object BypassCountStore {
     }
 
     /// Incrementa il counter di [packageName] e ritorna il nuovo valore.
-    /// Se la data salvata non è oggi, riparte da 1.
+    /// Se la data salvata non è il giorno effettivo, riparte da 1. RMW atomico
+    /// sotto lock cross-process.
     fun increment(context: Context, packageName: String): Int {
-        return try {
-            val json = readCached(context) ?: JSONObject()
-            val today = safeTodayString(context, json)
-            val existing = json.optJSONObject(packageName)
-            val newCount = if (existing == null || existing.optString("date") != today) {
-                1
-            } else {
-                existing.optInt("count", 0) + 1
+        var result = 0
+        try {
+            store.mutate(context) { state ->
+                val today = effectiveToday(state)
+                val existing = state.entries[packageName]
+                val newCount = if (existing == null || existing.date != today) 1 else existing.count + 1
+                result = newCount
+
+                val entries = state.entries.toMutableMap().apply {
+                    this[packageName] = CountEntry(today, newCount)
+                }
+                // Aggiorna la baseline temporale solo al cambio di giorno (o al
+                // primo write): così il prossimo check anti-tampering ha
+                // riferimenti freschi senza spostarli a ogni increment.
+                val meta = if (state.meta?.lastResetDay == today) {
+                    state.meta
+                } else {
+                    Meta(
+                        lastResetDay = today,
+                        lastWall = System.currentTimeMillis(),
+                        lastElapsed = SystemClock.elapsedRealtime(),
+                    )
+                }
+                State(entries.toMap(), meta)
             }
-            json.put(packageName, JSONObject().apply {
-                put("date", today)
-                put("count", newCount)
-            })
-            // Aggiorna meta solo se è effettivamente cambiato il giorno o
-            // se è il primo write (no meta record). Track baseline temporali
-            // così il prossimo check anti-tampering ha riferimenti freschi.
-            updateMetaIfDayChanged(json, today)
-            persist(context, json)
-            newCount
         } catch (e: Exception) {
             Log.e(TAG, "Failed to increment bypass count", e)
-            0
+            return 0
         }
+        return result
     }
 
     /// Reset esplicito (utile per debug e per quando l'utente abilita lo
     /// strict mode su un'app — i contatori storici diventano irrilevanti).
     fun reset(context: Context, packageName: String) {
         try {
-            val json = readCached(context) ?: return
-            json.remove(packageName)
-            persist(context, json)
+            store.mutate(context) { state ->
+                if (!state.entries.containsKey(packageName)) {
+                    state
+                } else {
+                    State(state.entries - packageName, state.meta)
+                }
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to reset bypass count", e)
         }
     }
 
-    /// Calcola la string di oggi usando wall clock, MA prima verifica che
-    /// l'utente non abbia spostato l'orologio. Se rileva manipulation,
-    /// "congela" il giorno al valore precedentemente salvato.
-    private fun safeTodayString(context: Context, json: JSONObject): String {
-        val rawToday = todayString()
-        val meta = json.optJSONObject(META_KEY)
-        if (meta == null) {
-            // Prima volta: salviamo subito baseline.
-            return rawToday
+    /// Giorno EFFETTIVO da usare per il confronto col `date` salvato, applicando
+    /// la guardia anti clock-abuse a partire dalla baseline in [State.meta].
+    private fun effectiveToday(state: State): String =
+        decideDay(
+            rawToday = todayString(),
+            meta = state.meta,
+            latestSavedDate = latestSavedDate(state),
+            nowWall = System.currentTimeMillis(),
+            nowElapsed = SystemClock.elapsedRealtime(),
+        )
+
+    /**
+     * Decisione PURA (nessun I/O / clock di sistema): dato il giorno wall grezzo
+     * [rawToday], la baseline [meta] e i due orologi, ritorna il giorno da
+     * considerare "oggi" per il counter.
+     *
+     * Mirror della guardia monotonica di [UsageGuardStore.decide]. Invariante di
+     * sicurezza: il rollover a un giorno NUOVO (che azzererebbe la friction)
+     * avviene SOLO se corroborato; in caso di ambiguità (stesso boot) si congela
+     * al giorno salvato → più frizione.
+     */
+    internal fun decideDay(
+        rawToday: String,
+        meta: Meta?,
+        latestSavedDate: String?,
+        nowWall: Long,
+        nowElapsed: Long,
+    ): String {
+        // Nessuna baseline (primo avvio o meta assente): non possiamo verificare
+        // i clock → usiamo il wall grezzo (non c'è storia da proteggere).
+        if (meta == null || meta.lastWall <= 0L || meta.lastElapsed <= 0L) return rawToday
+
+        val savedDay = if (meta.lastResetDay.isNotEmpty()) meta.lastResetDay else (latestSavedDate ?: rawToday)
+        // Giorno invariato rispetto alla baseline: niente rollover da decidere.
+        if (savedDay == rawToday) return savedDay
+
+        val wallDelta = nowWall - meta.lastWall
+        val elapsedDelta = nowElapsed - meta.lastElapsed
+
+        // Reboot: elapsedRealtime regredito (riparte da ~0 al boot). Il clock
+        // monotonico NON è un riferimento per questo intervallo.
+        val reboot = elapsedDelta < 0L
+
+        // Salto wall indietro (stesso boot): l'utente ha riportato la data a
+        // ieri per azzerare il counter → NON fare rollover, congela.
+        val wallWentBack = !reboot && wallDelta < -TIME_DRIFT_TOLERANCE_MS
+
+        // Salto wall in avanti incoerente (stesso boot): wall corre molto più
+        // dell'elapsed reale → tentativo di "saltare" a un giorno fresco.
+        val wallJumpedForward = !reboot && wallDelta > elapsedDelta + TIME_DRIFT_TOLERANCE_MS
+
+        return when {
+            // Anomalia del clock stesso-boot (avanti o indietro): congela al
+            // giorno salvato → counter NON azzerato → più frizione.
+            wallWentBack || wallJumpedForward -> savedDay
+
+            // Reboot col giorno wall cambiato: gli UsageStats/wall sopravvivono
+            // al riavvio e il monotonico non è un riferimento attraverso il
+            // reboot → ci fidiamo del giorno wall (rollover). NB: questo ramo è
+            // ancora vulnerabile a un salto wall in avanti combinato col reboot
+            // (SEC-05), irrobustito in un commit successivo.
+            reboot -> rawToday
+
+            // Stesso boot, clock coerenti (|wallDelta - elapsedDelta| <= tol) e
+            // wall non andato indietro: rollover di mezzanotte legittimo.
+            kotlin.math.abs(wallDelta - elapsedDelta) <= TIME_DRIFT_TOLERANCE_MS -> rawToday
+
+            // Default fail-secure: giorno cambiato ma clock sospetto → congela.
+            else -> savedDay
         }
-        val lastWall = meta.optLong(META_LAST_RESET_WALL, 0L)
-        val lastElapsed = meta.optLong(META_LAST_RESET_ELAPSED, 0L)
-        if (lastWall == 0L || lastElapsed == 0L) return rawToday
-
-        val nowWall = System.currentTimeMillis()
-        val nowElapsed = SystemClock.elapsedRealtime()
-        val wallDelta = nowWall - lastWall
-        val elapsedDelta = nowElapsed - lastElapsed
-
-        // Caso 1: wall andato indietro → user ha spostato l'orologio indietro
-        // (probabilmente per resettare il counter). Tieni la data di ieri.
-        if (wallDelta < -TIME_DRIFT_TOLERANCE_MS) {
-            Log.w(TAG, "Wall clock moved backward (${wallDelta}ms vs elapsed ${elapsedDelta}ms) — freezing day")
-            // Ritorna l'ultimo `date` letto da un qualsiasi entry come fallback.
-            return latestSavedDate(json) ?: rawToday
-        }
-
-        // Caso 2: elapsed non è monotone-greater di wall (reboot non spiegherebbe
-        // questa direzione). Se wall avanza molto più velocemente di elapsed
-        // (wall - elapsed delta > tolerance), user ha portato avanti l'orologio
-        // per "scappare" a un lockout. Idem: congela.
-        // Eccezione: dopo un reboot, elapsed riparte da 0 → elapsedDelta è
-        // negativo o piccolissimo, ma wallDelta è grande. In quel caso ci
-        // fidiamo del wall (è la situazione "real" più comune).
-        val rebootDetected = elapsedDelta < 0L || elapsedDelta < wallDelta - 3600_000L
-        if (!rebootDetected && wallDelta > elapsedDelta + TIME_DRIFT_TOLERANCE_MS + 3600_000L) {
-            // Tolleranza extra di 1 ora per NTP sync legittimi (cambio di
-            // timezone, daylight saving). Sopra quella soglia → manipulation.
-            Log.w(TAG, "Wall clock moved forward unrealistically (${wallDelta}ms vs ${elapsedDelta}ms elapsed)")
-            return latestSavedDate(json) ?: rawToday
-        }
-
-        return rawToday
     }
 
-    private fun latestSavedDate(json: JSONObject): String? {
-        val keys = json.keys()
+    private fun latestSavedDate(state: State): String? {
         var latest: String? = null
-        while (keys.hasNext()) {
-            val k = keys.next()
-            if (k == META_KEY) continue
-            val entry = json.optJSONObject(k) ?: continue
-            val date = entry.optString("date", "")
-            if (date.isNotEmpty() && (latest == null || date > latest)) {
-                latest = date
-            }
+        for ((_, e) in state.entries) {
+            if (e.date.isNotEmpty() && (latest == null || e.date > latest!!)) latest = e.date
         }
         return latest
-    }
-
-    private fun updateMetaIfDayChanged(json: JSONObject, today: String) {
-        val meta = json.optJSONObject(META_KEY)
-        val previousDay = meta?.optString("last_reset_day", "") ?: ""
-        if (previousDay == today && meta != null) return
-        json.put(META_KEY, JSONObject().apply {
-            put("last_reset_day", today)
-            put(META_LAST_RESET_WALL, System.currentTimeMillis())
-            put(META_LAST_RESET_ELAPSED, SystemClock.elapsedRealtime())
-        })
-    }
-
-    private fun readCached(context: Context): JSONObject? {
-        cache.get()?.let { return it }
-        return try {
-            val file = File(context.filesDir, FILE_NAME)
-            if (!file.exists()) return null
-            val parsed = JSONObject(file.readText())
-            cache.set(parsed)
-            parsed
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to load bypass counts from disk", e)
-            null
-        }
-    }
-
-    private fun persist(context: Context, json: JSONObject) {
-        val file = File(context.filesDir, FILE_NAME)
-        file.writeText(json.toString())
-        cache.set(json)
     }
 
     private fun todayString(): String {
@@ -220,4 +291,8 @@ object BypassCountStore {
         }
         return dateFormat.format(Date(cal.timeInMillis))
     }
+
+    // ---------------- test hooks ----------------
+
+    internal fun invalidateCacheForTest() = store.invalidateCacheForTest()
 }
