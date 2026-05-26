@@ -9,12 +9,22 @@ sealed class DetectedSection(val wireId: String, val packageName: String) {
     object YouTubeShorts : DetectedSection("YOUTUBE_SHORTS", "com.google.android.youtube")
 
     companion object {
-        val all: List<DetectedSection> = listOf(
-            InstagramReels,
-            InstagramStories,
-            InstagramExplore,
-            YouTubeShorts,
-        )
+        // `by lazy` è OBBLIGATORIO: con un inizializzatore eager
+        // (`val all = listOf(InstagramReels, …)`) scatta il bug di ordine di
+        // inizializzazione delle sealed class Kotlin (KT-8970). Quando `.all` è
+        // il PRIMO accesso al tipo, gli `object` annidati non sono ancora
+        // inizializzati e vengono catturati come `null` nella lista (il primo,
+        // InstagramReels, risultava null → NPE in fromWireId / usi di `.all`).
+        // `by lazy` rinvia la costruzione al primo get, quando l'init della
+        // classe esterna è già completato e gli object sono risolvibili.
+        val all: List<DetectedSection> by lazy {
+            listOf(
+                InstagramReels,
+                InstagramStories,
+                InstagramExplore,
+                YouTubeShorts,
+            )
+        }
 
         fun fromWireId(id: String): DetectedSection? = all.firstOrNull { it.wireId == id }
     }
