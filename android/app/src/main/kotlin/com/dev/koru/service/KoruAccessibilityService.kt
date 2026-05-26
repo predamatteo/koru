@@ -852,68 +852,24 @@ class KoruAccessibilityService : AccessibilityService() {
             return false
         }
 
-        // Quick-block / Pomodoro-work: blocca tutto tranne whitelist.
-        // Lo stato è letto da QuickBlockStore (file su disco) perché
-        // QuickBlockManager vive nel processo main e qui siamo in
-        // `:accessibility` → memory isolation fra JVM.
-        val qbSnapshot = QuickBlockStore.read(applicationContext)
-        if (qbSnapshot.shouldBlock(packageName, System.currentTimeMillis())) {
-            Log.w(TAG, ">>> BLOCKING APP (focus): $packageName")
-            currentlyBlockingPackage = packageName
-            val appLabel = getAppLabel(packageName)
-            mainHandler.post {
-                overlayManager?.show(
-                    packageName = packageName,
-                    appLabel = appLabel,
-                    profileTitle = "Focus session",
-                    reason = BlockReason.FOCUS_MODE,
-                    config = OverlayConfig.DEFAULT,
-                    profileEmoji = "\uD83C\uDFAF", // 🎯
-                )
-            }
-            // FOCUS_MODE: forceHome=true. La user-intent del Pomodoro / focus
-            // session è uscire dall'app, non navigare lo stack interno.
-            // BACK su un'app con activity nested chiuderebbe solo l'inner
-            // activity e l'app target resterebbe in foreground.
-            performGoHomeForBlock(forceHome = true, blockedPackage = packageName)
-            val now = System.currentTimeMillis()
-            try {
-                NativeDatabase.insertBlockSession(applicationContext, packageName, now)
-                NativeDatabase.insertRestrictedAccessEvent(
-                    applicationContext,
-                    packageName,
-                    eventType = 0,
-                    restrictionType = 4, // FOCUS_MODE
-                    timestamp = now,
-                )
-            } catch (_: Exception) {}
-            return true
-        }
-
-        // Daily usage limit FIRST: deve vincere sul profile block quando il
-        // cap e' superato. Bug pre-fix: profile loop girava per primo, quindi
-        // un'app bloccata SIA da profilo SIA da daily limit (con cap gia'
-        // sforato) mostrava APP_BLOCKED + BypassPolicy() di default (countdown
-        // ~9s + "Open anyway") invece del USAGE_LIMIT overlay strict/progressive.
-        // L'utente attendeva il countdown e poteva aprire l'app nonostante il
-        // tempo fosse gia' finito (e in strict mode il bypass non dovrebbe
-        // essere consentito affatto). Lo spostamento del check qui fa sì
-        // che il USAGE_LIMIT overlay prevalga e il messaging rifletta la
-        // realtà. La schedulazione del re-check (caso cap non ancora
-        // raggiunto) resta DOPO il profile loop.
+        // Decisione DELEGATA a [BlockPolicyEvaluator]: focus → daily limit →
+        // bypass di profilo → profile loop. L'ordine (e ogni guard) è
+        // cross-checkato col vecchio inline; qui restano solo i side-effect.
         //
-        // Inoltre il cap è valutato PRIMA del bypass di profilo (più sotto):
-        // un budget cumulativo non si ricarica forzando un blocco di profilo.
-        // Unica eccezione (solo NON-strict): un bypass NATO dal limite stesso
-        // (USAGE_LIMIT / BYPASS_EXPIRED) lo sospende per la durata scelta.
-        // STRICT ⇒ hard cap ASSOLUTO: blocca sempre, ignorando QUALSIASI
-        // bypass — sia quello di un profilo sia un eventuale limit-bypass
-        // residuo concesso quando l'app era ancora non-strict e poi commutata
-        // a strict mid-window (il flag `strict` è riletto live da
-        // AppUsageLimitsStore, cross-process, quindi strict è immediato).
+        // Letture d'ambiente identiche a prima:
+        // - QuickBlock (focus): file store, cross-process (`:accessibility`).
+        // - Limit (SEC-03 guarded): cap cumulativo anti clock-backward. Il
+        //   flag `strict` è riletto live da AppUsageLimitsStore (cross-process)
+        //   quindi una commutazione a strict mid-window è immediata.
+        // - bypassReasonFor: chiude su OverlayManager.bypassReason col clock
+        //   duale gestito nello store; per checkAppBlocking lo scope è sempre
+        //   l'intero package (null), come il vecchio bypassReason(packageName).
+        val qbSnapshot = QuickBlockStore.read(applicationContext)
+        val focusShouldBlock = qbSnapshot.shouldBlock(packageName, System.currentTimeMillis())
+
         val limitEntry = AppUsageLimitsStore.entryFor(applicationContext, packageName)
         val limitMinutes = limitEntry?.minutes ?: 0
-        // SEC-03: usa la variante GUARDATA (monotonic anti clock-backward) per
+        // SEC-03: variante GUARDATA (monotonic anti clock-backward) per
         // l'enforcement del cap. Un cambio data all'indietro non azzera l'uso.
         val limitTodayMs = if (limitMinutes > 0) {
             UsageCounter.guardedTodayForegroundMs(applicationContext, packageName)
@@ -921,140 +877,205 @@ class KoruAccessibilityService : AccessibilityService() {
         val limitMs = limitMinutes * 60_000L
         val isLimitStrict = limitEntry?.strict ?: true
 
-        // Snapshot UNICO dello stato di bypass per questa valutazione: evita la
-        // TOCTOU tra il guard del limite e quello del profilo (la mappa può
-        // essere mutata da un altro thread o dall'auto-revoke fra le due
-        // letture). Da qui in poi si usano solo queste variabili.
-        val activeBypassReason = OverlayManager.bypassReason(packageName)
-        val limitBypassActive = activeBypassReason == BlockReason.USAGE_LIMIT ||
-            activeBypassReason == BlockReason.BYPASS_EXPIRED
-        val hasActiveBypass = activeBypassReason != null
+        val decision = BlockPolicyEvaluator.evaluate(
+            buildBlockQuery(
+                packageName = packageName,
+                snapshot = snapshot,
+                limitMinutes = limitMinutes,
+                isLimitStrict = isLimitStrict,
+                limitTodayMs = limitTodayMs,
+                focusShouldBlock = focusShouldBlock,
+            ),
+        )
 
-        if (limitMinutes > 0 && limitTodayMs >= limitMs &&
-            (isLimitStrict || !limitBypassActive)
-        ) {
-            Log.w(TAG, ">>> BLOCKING APP (daily limit, strict=$isLimitStrict): $packageName " +
-                "${limitTodayMs / 60_000}min used, cap=${limitMinutes}min")
-            currentlyBlockingPackage = packageName
-            cancelLimitCheck(packageName)
-            val appLabel = getAppLabel(packageName)
-            val limitRelation = snapshot.profileApps.values.asSequence()
-                .flatten()
-                .firstOrNull { it.packageName == packageName }
-            val limitBaseConfig = OverlayConfig.fromJsonString(limitRelation?.overlayConfigJson)
-            val (overlayConfig, policy) = OverlayPolicies.buildUsageLimitOverlay(
-                applicationContext,
-                packageName,
-                baseConfig = limitBaseConfig,
-                isStrict = isLimitStrict,
-            )
-            mainHandler.post {
-                overlayManager?.show(
-                    packageName = packageName,
-                    appLabel = appLabel,
-                    profileTitle = if (isLimitStrict) "Daily limit · strict" else "Daily limit",
-                    reason = BlockReason.USAGE_LIMIT,
-                    config = overlayConfig,
-                    profileEmoji = "⏳",
-                    bypassPolicy = policy,
-                )
-            }
-            performGoHomeForBlock(blockedPackage = packageName)
-            val now = System.currentTimeMillis()
-            try {
-                NativeDatabase.insertRestrictedAccessEvent(
-                    applicationContext,
-                    packageName,
-                    eventType = 0,
-                    restrictionType = 3, // USAGE_LIMIT
-                    timestamp = now,
-                )
-            } catch (_: Exception) {}
-            return true
-        }
-
-        // Bypass attivo (profilo/sezione, oppure un limit-bypass non-strict in
-        // corso): l'utente ha forzato un blocco con "Open anyway" + durata. Il
-        // cap è già stato valutato sopra e non è scavalcato; qui sopprimiamo il
-        // re-block per la durata scelta e tracciamo il pkg per l'auto-revoke
-        // all'uscita (vedi [onAccessibilityEvent]).
-        if (hasActiveBypass) {
-            Log.i(TAG, "BYPASS-ACTIVE: $packageName in foreground, tracking for auto-revoke")
-            lastBypassedActiveForeground = packageName
-            // Cap non ancora raggiunto: pianifica comunque il re-check, così
-            // restando dentro col bypass attivo il limite scatta appena tocchi
-            // il cap (al firing checkAppBlocking rivaluta; se non è un bypass
-            // di limite — o l'app è strict — blocca con l'overlay USAGE_LIMIT).
-            if (limitMinutes > 0 && limitTodayMs < limitMs) {
-                scheduleLimitCheck(packageName, limitMs - limitTodayMs)
-            }
-            return false
-        }
-
-        for (profile in snapshot.profiles) {
-            if (!isProfileActiveNow(profile, snapshot)) continue
-
-            val apps = snapshot.profileApps[profile.id] ?: emptyList()
-            val enabledApps = apps.filter { it.isEnabled }.map { it.packageName }
-
-            val shouldBlock = when (profile.blockingMode) {
-                0 -> enabledApps.contains(packageName)
-                1 -> enabledApps.isNotEmpty() && !enabledApps.contains(packageName)
-                else -> false
-            }
-
-            if (shouldBlock) {
-                Log.w(TAG, ">>> BLOCKING APP: $packageName by '${profile.title}'")
-                currentlyBlockingPackage = packageName
-                val appLabel = getAppLabel(packageName)
-                val relation = apps.firstOrNull { it.packageName == packageName }
-                val config = OverlayConfig.fromJsonString(relation?.overlayConfigJson)
-                mainHandler.post {
-                    overlayManager?.show(
-                        packageName = packageName,
-                        appLabel = appLabel,
-                        profileTitle = profile.title,
-                        reason = BlockReason.APP_BLOCKED,
-                        config = config,
-                        profileEmoji = profile.emoji,
-                    )
+        when (decision) {
+            is BlockDecision.Block -> when (decision.reason) {
+                BlockReason.FOCUS_MODE -> {
+                    Log.w(TAG, ">>> BLOCKING APP (focus): $packageName")
+                    currentlyBlockingPackage = packageName
+                    val appLabel = getAppLabel(packageName)
+                    mainHandler.post {
+                        overlayManager?.show(
+                            packageName = packageName,
+                            appLabel = appLabel,
+                            profileTitle = decision.profileTitle,
+                            reason = BlockReason.FOCUS_MODE,
+                            config = OverlayConfig.DEFAULT,
+                            profileEmoji = decision.profileEmoji,
+                        )
+                    }
+                    // FOCUS_MODE: forceHome=true. La user-intent del Pomodoro /
+                    // focus session è uscire dall'app, non navigare lo stack
+                    // interno. BACK su un'app con activity nested chiuderebbe
+                    // solo l'inner activity e l'app resterebbe in foreground.
+                    performGoHomeForBlock(forceHome = true, blockedPackage = packageName)
+                    val now = System.currentTimeMillis()
+                    try {
+                        NativeDatabase.insertBlockSession(applicationContext, packageName, now)
+                        NativeDatabase.insertRestrictedAccessEvent(
+                            applicationContext,
+                            packageName,
+                            eventType = 0,
+                            restrictionType = 4, // FOCUS_MODE
+                            timestamp = now,
+                        )
+                    } catch (_: Exception) {}
+                    return true
                 }
-                performGoHomeForBlock(blockedPackage = packageName)
-                val now = System.currentTimeMillis()
-                try {
-                    NativeDatabase.insertBlockSession(applicationContext, packageName, now)
-                    NativeDatabase.insertRestrictedAccessEvent(
+
+                BlockReason.USAGE_LIMIT -> {
+                    Log.w(TAG, ">>> BLOCKING APP (daily limit, strict=${decision.isStrictLimit}): " +
+                        "$packageName ${decision.todayMs / 60_000}min used, cap=${limitMinutes}min")
+                    currentlyBlockingPackage = packageName
+                    cancelLimitCheck(packageName)
+                    val appLabel = getAppLabel(packageName)
+                    // Config custom dall'eventuale relation per-app/profilo del
+                    // pkg (branding del limite). Cercata su tutto lo snapshot
+                    // perché il cap è globale, non profile-scoped.
+                    val limitRelation = snapshot.profileApps.values.asSequence()
+                        .flatten()
+                        .firstOrNull { it.packageName == packageName }
+                    val limitBaseConfig = OverlayConfig.fromJsonString(limitRelation?.overlayConfigJson)
+                    val (overlayConfig, policy) = OverlayPolicies.buildUsageLimitOverlay(
                         applicationContext,
                         packageName,
-                        eventType = 0, // TRIGGERED
-                        restrictionType = 0, // APP
-                        timestamp = now,
+                        baseConfig = limitBaseConfig,
+                        isStrict = decision.isStrictLimit,
                     )
-                } catch (_: Exception) {}
-                sendBlockingStateEvent(true, packageName, profile)
-                return true
+                    mainHandler.post {
+                        overlayManager?.show(
+                            packageName = packageName,
+                            appLabel = appLabel,
+                            profileTitle = decision.profileTitle,
+                            reason = BlockReason.USAGE_LIMIT,
+                            config = overlayConfig,
+                            profileEmoji = decision.profileEmoji,
+                            bypassPolicy = policy,
+                        )
+                    }
+                    performGoHomeForBlock(blockedPackage = packageName)
+                    val now = System.currentTimeMillis()
+                    try {
+                        NativeDatabase.insertRestrictedAccessEvent(
+                            applicationContext,
+                            packageName,
+                            eventType = 0,
+                            restrictionType = 3, // USAGE_LIMIT
+                            timestamp = now,
+                        )
+                    } catch (_: Exception) {}
+                    return true
+                }
+
+                else -> { // APP_BLOCKED (gli altri reason non sono raggiungibili qui)
+                    val profile = snapshot.profiles.firstOrNull { it.id == decision.profileId }
+                    Log.w(TAG, ">>> BLOCKING APP: $packageName by '${decision.profileTitle}'")
+                    currentlyBlockingPackage = packageName
+                    val appLabel = getAppLabel(packageName)
+                    val config = OverlayConfig.fromJsonString(decision.relation?.overlayConfigJson)
+                    mainHandler.post {
+                        overlayManager?.show(
+                            packageName = packageName,
+                            appLabel = appLabel,
+                            profileTitle = decision.profileTitle,
+                            reason = BlockReason.APP_BLOCKED,
+                            config = config,
+                            profileEmoji = decision.profileEmoji,
+                        )
+                    }
+                    performGoHomeForBlock(blockedPackage = packageName)
+                    val now = System.currentTimeMillis()
+                    try {
+                        NativeDatabase.insertBlockSession(applicationContext, packageName, now)
+                        NativeDatabase.insertRestrictedAccessEvent(
+                            applicationContext,
+                            packageName,
+                            eventType = 0, // TRIGGERED
+                            restrictionType = 0, // APP
+                            timestamp = now,
+                        )
+                    } catch (_: Exception) {}
+                    if (profile != null) sendBlockingStateEvent(true, packageName, profile)
+                    return true
+                }
+            }
+
+            is BlockDecision.Allow -> {
+                // L'evaluator collassa "bypass di profilo attivo" e "nessun
+                // blocco" entrambi in Allow. Qui ri-discriminiamo (come prima)
+                // leggendo lo stato di bypass per scegliere il bookkeeping:
+                //  - bypass attivo ⇒ traccia il pkg per l'auto-revoke + (se cap
+                //    non raggiunto) pianifica il re-check, MA non smontare
+                //    l'overlay (l'app sta girando dentro il bypass);
+                //  - nessun blocco ⇒ pianifica re-check del limite (se esiste)
+                //    e smonta l'overlay residuo.
+                if (OverlayManager.bypassReason(packageName) != null) {
+                    Log.i(TAG, "BYPASS-ACTIVE: $packageName in foreground, tracking for auto-revoke")
+                    lastBypassedActiveForeground = packageName
+                    if (limitMinutes > 0 && limitTodayMs < limitMs) {
+                        scheduleLimitCheck(packageName, limitMs - limitTodayMs)
+                    }
+                    return false
+                }
+
+                // Daily limit esiste ma cap non ancora raggiunto: re-check fra
+                // (limitMs - limitTodayMs) ms così se l'utente resta dentro
+                // l'app il blocco scatta quando il cap viene toccato, non solo
+                // al prossimo window state change.
+                if (limitMinutes > 0) {
+                    scheduleLimitCheck(packageName, limitMs - limitTodayMs)
+                }
+
+                // Nessun profilo blocca questo pkg — se avevamo un overlay, dismiss.
+                if (currentlyBlockingPackage != null) {
+                    currentlyBlockingPackage = null
+                    mainHandler.post { overlayManager?.dismiss() }
+                    sendBlockingStateEvent(false, "", null)
+                }
+                return false
             }
         }
+    }
 
-        // Daily limit esiste ma cap non ancora raggiunto: pianifica un
-        // re-check fra (limitMs - limitTodayMs) ms cosi' se l'utente resta
-        // dentro l'app il blocco scatta nel momento in cui il cap viene
-        // toccato, non solo al prossimo cambio di window state. Senza
-        // questo timer, un utente che entra a 28' e resta dentro continua
-        // a usare l'app oltre i 30' senza che nulla lo fermi (bug osservato
-        // su Instagram). Il caso "cap gia' superato" e' gestito sopra prima
-        // del profile loop.
-        if (limitMinutes > 0) {
-            scheduleLimitCheck(packageName, limitMs - limitTodayMs)
-        }
-
-        // Nessun profilo blocca questo pkg — se avevamo un overlay, dismiss.
-        if (currentlyBlockingPackage != null) {
-            currentlyBlockingPackage = null
-            mainHandler.post { overlayManager?.dismiss() }
-            sendBlockingStateEvent(false, "", null)
-        }
-        return false
+    /// Costruisce una [BlockQuery] per il path accessibility con l'ambiente
+    /// risolto (clock/giorno/minuti/wifi) e `bypassReasonFor` che chiude su
+    /// [OverlayManager.bypassReason]. I parametri opzionali coprono i 3 path:
+    /// - app: domain/section null;
+    /// - sezione: `sectionWireId` valorizzato (limit/focus = 0/false);
+    /// - sito: `websiteScopeDomain` valorizzato + `profilesOverride` ristretto
+    ///   al profilo che ha fatto match (limit/focus = 0/false).
+    /// `bypassReasonFor(scope)`: scope==null ⇒ bypass per-app; per i siti il
+    /// name regola; per le sezioni `section:<wireId>`.
+    private fun buildBlockQuery(
+        packageName: String,
+        snapshot: ProfilesSnapshot,
+        limitMinutes: Int = 0,
+        isLimitStrict: Boolean = true,
+        limitTodayMs: Long = 0L,
+        focusShouldBlock: Boolean = false,
+        websiteScopeDomain: String? = null,
+        sectionWireId: String? = null,
+        profilesOverride: List<NativeProfile>? = null,
+    ): BlockQuery {
+        val cal = Calendar.getInstance()
+        return BlockQuery(
+            packageName = packageName,
+            profiles = profilesOverride ?: snapshot.profiles,
+            profileApps = snapshot.profileApps,
+            profileIntervals = snapshot.profileIntervals,
+            profileWifis = snapshot.profileWifis,
+            limitMinutes = limitMinutes,
+            isLimitStrict = isLimitStrict,
+            limitTodayMs = limitTodayMs,
+            focusShouldBlock = focusShouldBlock,
+            bypassReasonFor = { scope -> OverlayManager.bypassReason(packageName, scope) },
+            nowWallMs = System.currentTimeMillis(),
+            nowMinutesOfDay = currentMinutesOfDay(cal),
+            todayDayFlag = currentDayFlag(cal),
+            currentWifiSsid = getCurrentWifiSsid(),
+            websiteScopeDomain = websiteScopeDomain,
+            sectionWireId = sectionWireId,
+        )
     }
 
     private fun checkInAppContentBlocking(
@@ -1072,55 +1093,57 @@ class KoruAccessibilityService : AccessibilityService() {
         lastDetectedSectionWireId = detected.wireId
         lastSectionEventTime = now
 
-        for (profile in snapshot.profiles) {
-            if (!isProfileActiveNow(profile, snapshot)) continue
-            val apps = snapshot.profileApps[profile.id] ?: continue
-            val relation = apps.firstOrNull { it.packageName == packageName } ?: continue
+        // Decisione DELEGATA: l'evaluator scorre i profili attivi ORA, controlla
+        // relation esiste + app NON bloccata interamente (!isEnabled) +
+        // blockedSectionsJson contiene il wireId, e applica il CR-07 bypass
+        // guard scoped `section:<wireId>`. Qui restano solo overlay/HOME/log.
+        val decision = BlockPolicyEvaluator.evaluate(
+            buildBlockQuery(
+                packageName = packageName,
+                snapshot = snapshot,
+                sectionWireId = detected.wireId,
+            ),
+        )
+        val block = decision as? BlockDecision.Block ?: return false
+        if (block.reason != BlockReason.SECTION_BLOCKED) return false
 
-            // Se app è già bloccata interamente, il checkAppBlocking la gestisce.
-            if (relation.isEnabled) continue
-
-            val json = relation.blockedSectionsJson ?: continue
-            if (!json.contains(detected.wireId)) continue
-
-            Log.w(TAG, ">>> BLOCKING SECTION ${detected.wireId} in $packageName by '${profile.title}'")
-            val appLabel = getAppLabel(packageName)
-            val config = OverlayConfig.fromJsonString(relation.overlayConfigJson)
-            mainHandler.post {
-                overlayManager?.show(
-                    packageName = packageName,
-                    appLabel = appLabel,
-                    profileTitle = profile.title,
-                    reason = BlockReason.SECTION_BLOCKED,
-                    config = config,
-                    profileEmoji = profile.emoji,
-                )
-            }
-            // SECTION_BLOCKED: forceHome=true. Bloccare una "sezione"
-            // dentro un'app (es. Reels, Shorts) ha senso solo se l'app
-            // viene effettivamente chiusa. BACK chiuderebbe solo la
-            // sub-activity (es. il viewer Reels) e l'utente resterebbe
-            // sulla home dell'app, libero di tornare immediatamente
-            // sulla sezione bloccata.
-            performGoHomeForBlock(forceHome = true, blockedPackage = packageName)
-            try {
-                NativeDatabase.insertBlockSession(
-                    applicationContext,
-                    "$packageName/${detected.wireId}",
-                    now,
-                )
-                NativeDatabase.insertRestrictedAccessEvent(
-                    applicationContext,
-                    packageName,
-                    eventType = 0,
-                    restrictionType = 1, // SECTION
-                    timestamp = now,
-                )
-            } catch (_: Exception) {}
-            sendSectionEvent(packageName, detected.wireId, profile)
-            return true
+        val profile = snapshot.profiles.firstOrNull { it.id == block.profileId }
+        Log.w(TAG, ">>> BLOCKING SECTION ${detected.wireId} in $packageName by '${block.profileTitle}'")
+        val appLabel = getAppLabel(packageName)
+        val config = OverlayConfig.fromJsonString(block.relation?.overlayConfigJson)
+        mainHandler.post {
+            overlayManager?.show(
+                packageName = packageName,
+                appLabel = appLabel,
+                profileTitle = block.profileTitle,
+                reason = BlockReason.SECTION_BLOCKED,
+                config = config,
+                profileEmoji = block.profileEmoji,
+            )
         }
-        return false
+        // SECTION_BLOCKED: forceHome=true. Bloccare una "sezione"
+        // dentro un'app (es. Reels, Shorts) ha senso solo se l'app
+        // viene effettivamente chiusa. BACK chiuderebbe solo la
+        // sub-activity (es. il viewer Reels) e l'utente resterebbe
+        // sulla home dell'app, libero di tornare immediatamente
+        // sulla sezione bloccata.
+        performGoHomeForBlock(forceHome = true, blockedPackage = packageName)
+        try {
+            NativeDatabase.insertBlockSession(
+                applicationContext,
+                "$packageName/${detected.wireId}",
+                now,
+            )
+            NativeDatabase.insertRestrictedAccessEvent(
+                applicationContext,
+                packageName,
+                eventType = 0,
+                restrictionType = 1, // SECTION
+                timestamp = now,
+            )
+        } catch (_: Exception) {}
+        if (profile != null) sendSectionEvent(packageName, detected.wireId, profile)
+        return true
     }
 
     private fun checkWebsiteBlocking(
@@ -1151,10 +1174,11 @@ class KoruAccessibilityService : AccessibilityService() {
 
         for ((profileId, rules) in snapshot.websiteRulesCache) {
             // Gating temporale: blocca i domini solo se il profilo è attivo
-            // ORA (time interval, dayFlags, pausa, onUntil, wifi). Senza questo
-            // il blocco domini restava SEMPRE attivo ignorando lo schedule del
-            // profilo — stesso check di checkAppBlocking (~915) e del section
-            // blocking (~996), che invece lo applicano correttamente.
+            // ORA (time interval, dayFlags, pausa, onUntil, wifi). Questo
+            // `continue` esplicito preserva la semantica di loop (profilo
+            // inattivo → passa al prossimo) — l'evaluator ricontrolla l'active
+            // now sul query single-profilo, ma il check qui distingue
+            // "inattivo" (skip) da "bypassato" (stop) sul ramo Allow sotto.
             val matchedProfile = snapshot.profiles.firstOrNull { it.id == profileId }
             if (matchedProfile == null || !isProfileActiveNow(matchedProfile, snapshot)) continue
             // SEC-07: i nomi delle regole sono pattern di blocco scelti dall'utente
@@ -1165,29 +1189,32 @@ class KoruAccessibilityService : AccessibilityService() {
             val matchedRule = WebsiteMatcher.firstMatch(rules, detected.fullUrl, detected.domain) ?: continue
 
             // Bypass PER-DOMINIO: l'utente ha scelto "Open anyway" + durata su
-            // QUESTO dominio. Finché il TTL non scade non ri-mostriamo l'overlay,
-            // ma solo per questo dominio — gli altri siti bloccati nel browser
-            // restano bloccati. La chiave e' il name della regola che ha fatto
-            // match (stabile su www/sottodomini). Tracciamo il browser come
-            // bypassato-in-foreground per l'auto-revoke all'uscita (clearBypass
-            // azzera tutti i domini del package). Stesso spirito del guard di
-            // bypass in [checkAppBlocking], ma a granularità dominio.
-            //
-            // PARITÀ (vedi memoria "blocking paths parity"): questo guard è
-            // intenzionalmente reason-agnostic — un dominio non ha un cap
-            // cumulativo, quindi non c'è "limit-bypass" da distinguere. Se un
-            // giorno si introduce un limite di tempo PER-DOMINIO, questo guard
-            // dovrà rispecchiare l'ordine di [checkAppBlocking] (cap valutato
-            // prima del bypass, eccezione solo [OverlayManager.isLimitBypassActive]),
-            // altrimenti si riapre lo stesso "+N min all'infinito" a livello sito.
+            // QUESTO dominio. La chiave è il name della regola che ha fatto
+            // match (stabile su www/sottodomini). Il guard è DELEGATO
+            // all'evaluator (query single-profilo, websiteScopeDomain =
+            // bypassDomain) — reason-agnostic come prima (un dominio non ha un
+            // cap cumulativo). Se un giorno si introduce un limite di tempo
+            // PER-DOMINIO, andrà modellato nell'evaluator come per il cap app.
             val bypassDomain = matchedRule.name.lowercase().trim()
-            if (OverlayManager.isBypassed(packageName, bypassDomain)) {
+            val decision = BlockPolicyEvaluator.evaluate(
+                buildBlockQuery(
+                    packageName = packageName,
+                    snapshot = snapshot,
+                    websiteScopeDomain = bypassDomain,
+                    profilesOverride = listOf(matchedProfile),
+                ),
+            )
+            if (decision is BlockDecision.Allow) {
+                // Profilo attivo (già verificato sopra) ⇒ l'Allow qui è per il
+                // bypass per-dominio: traccia il browser per l'auto-revoke
+                // all'uscita (clearBypass azzera tutti i domini del package) e
+                // ferma la scansione (stesso behavior del vecchio `return`).
                 lastBypassedActiveForeground = packageName
                 return
             }
+            val block = decision as BlockDecision.Block // WEBSITE_BLOCKED
 
             Log.w(TAG, ">>> BLOCKING SITE: ${detected.domain} by profile $profileId (rule=$bypassDomain)")
-            val profileTitle = matchedProfile.title
             // Setta currentlyBlockingPackage cosi' quando l'utente cambia
             // tab a un sito non bloccato (o naviga via dal browser),
             // il path "no profile blocks this pkg" di checkAppBlocking
@@ -1198,10 +1225,10 @@ class KoruAccessibilityService : AccessibilityService() {
                 overlayManager?.show(
                     packageName = packageName,
                     appLabel = detected.domain,
-                    profileTitle = profileTitle,
+                    profileTitle = block.profileTitle,
                     reason = BlockReason.WEBSITE_BLOCKED,
-                    profileEmoji = matchedProfile.emoji,
-                    blockedDomain = bypassDomain,
+                    profileEmoji = block.profileEmoji,
+                    blockedDomain = block.bypassScopeDomain,
                 )
             }
             // WEBSITE_BLOCKED: forceHome=true. L'utente sta navigando in
@@ -1225,15 +1252,28 @@ class KoruAccessibilityService : AccessibilityService() {
         }
     }
 
+    /// Thin wrapper Android attorno a [BlockPolicyEvaluator.isProfileActiveNow]:
+    /// risolve l'ambiente (clock, giorno, minuti, wifi) e delega la logica
+    /// pura. La decisione è la stessa usata da [checkAppBlocking] e dagli altri
+    /// path via [evaluateBlock] — questo metodo resta per i call site che
+    /// vogliono solo il booleano "attivo ora" di un singolo profilo.
     private fun isProfileActiveNow(
         profile: NativeProfile,
         snapshot: ProfilesSnapshot = profilesSnapshot.get(),
-    ): Boolean {
-        if (profile.pausedUntil < 0) return false
-        if (profile.pausedUntil > 0 && profile.pausedUntil > System.currentTimeMillis()) return false
+    ): Boolean = BlockPolicyEvaluator.isProfileActiveNow(
+        profile = profile,
+        intervals = snapshot.profileIntervals[profile.id] ?: emptyList(),
+        wifiSet = snapshot.profileWifis[profile.id],
+        nowWallMs = System.currentTimeMillis(),
+        nowMinutesOfDay = currentMinutesOfDay(),
+        todayDayFlag = currentDayFlag(),
+        currentWifiSsid = getCurrentWifiSsid(),
+    )
 
-        val cal = Calendar.getInstance()
-        val todayFlag = when (cal.get(Calendar.DAY_OF_WEEK)) {
+    /// Bit del giorno corrente (allineato a [BlockPolicyEvaluator] e a DayFlags
+    /// lato Dart). Lun=1, Mar=2, Mer=4, Gio=8, Ven=16, Sab=32, Dom=64.
+    private fun currentDayFlag(cal: Calendar = Calendar.getInstance()): Int =
+        when (cal.get(Calendar.DAY_OF_WEEK)) {
             Calendar.MONDAY -> 1
             Calendar.TUESDAY -> 2
             Calendar.WEDNESDAY -> 4
@@ -1243,43 +1283,10 @@ class KoruAccessibilityService : AccessibilityService() {
             Calendar.SUNDAY -> 64
             else -> 0
         }
-        if (profile.dayFlags and todayFlag == 0) return false
-        if (profile.onUntil > 0 && System.currentTimeMillis() > profile.onUntil) return false
 
-        // Time interval check: se il profilo ha typeCombinations con bit
-        // PROFILE_TYPE_TIME e ci sono intervals enabled, l'orario corrente
-        // deve cadere in almeno uno di essi (cross-midnight supportato).
-        val hasTimeType = (profile.typeCombinations and PROFILE_TYPE_TIME) != 0
-        val intervals = snapshot.profileIntervals[profile.id] ?: emptyList()
-        if (hasTimeType && intervals.isNotEmpty()) {
-            val nowMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 +
-                cal.get(Calendar.MINUTE)
-            val inAny = intervals.any { iv ->
-                val from = iv.fromMinutes
-                val to = iv.toMinutes
-                if (from == to) {
-                    true // 24h
-                } else if (from < to) {
-                    nowMinutes in from until to
-                } else {
-                    // cross-midnight (es. 22:00 → 06:00)
-                    nowMinutes >= from || nowMinutes < to
-                }
-            }
-            if (!inAny) return false
-        }
-
-        // Wifi constraint (Phase 2): se il profilo ha almeno un SSID
-        // configurato, attivo solo se l'SSID corrente matcha. Se non
-        // possiamo leggere il SSID (permesso location non concesso)
-        // trattiamo come "no match" → profilo inattivo per sicurezza.
-        val wifiSet = snapshot.profileWifis[profile.id]
-        if (wifiSet != null && wifiSet.isNotEmpty()) {
-            val current = getCurrentWifiSsid()
-            if (current == null || !wifiSet.contains(current)) return false
-        }
-        return true
-    }
+    /// Minuto-del-giorno corrente (0..1439), ora locale.
+    private fun currentMinutesOfDay(cal: Calendar = Calendar.getInstance()): Int =
+        cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
 
     private fun loadProfiles() {
         try {
