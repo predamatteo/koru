@@ -5,7 +5,6 @@ import androidx.test.core.app.ApplicationProvider
 import com.dev.koru.overlay.OverlayConfig
 import com.google.common.truth.Truth.assertThat
 import java.io.File
-import java.util.concurrent.atomic.AtomicReference
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -44,11 +43,11 @@ class OverlayPoliciesTest {
     private fun clearBypassState() {
         val ctx = ApplicationProvider.getApplicationContext<Context>()
         File(ctx.filesDir, bypassFile).delete()
-        val field = BypassCountStore::class.java.getDeclaredField("cache")
-        field.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        val cache = field.get(BypassCountStore) as AtomicReference<Any?>
-        cache.set(null)
+        File(ctx.filesDir, "$bypassFile.tmp").delete()
+        File(ctx.filesDir, "$bypassFile.lock").delete()
+        // ARCH-03/CR-04: la cache di BypassCountStore vive ora dentro il
+        // FileBackedStore interno; il test hook la azzera senza reflection.
+        BypassCountStore.invalidateCacheForTest()
     }
 
     private fun incrementCount(times: Int) {
