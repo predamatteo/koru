@@ -140,6 +140,10 @@ object StrictModeMethodChannel {
                         result.success(StrictModeStore.readMask(activity))
                     }
                     "generateBackdoorCode" -> {
+                        // SEC-10: può essere null se il Keystore non è disponibile
+                        // (fail-secure: nessun codice deterministico indovinabile).
+                        // Il Dart distingue null ("temporaneamente non disponibile,
+                        // riprova") da un codice reale.
                         result.success(BackdoorCodeGenerator.generateCurrentCode(activity))
                     }
                     "getRemainingAttempts" -> {

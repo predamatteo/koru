@@ -55,7 +55,8 @@ class BackdoorLocked extends BackdoorOutcome {
 ///   - `disableDeviceAdmin` può ritornare `PlatformException(STRICT_ACTIVE)`
 ///     se strict mode è attivo (l'utente deve prima passare backdoor code).
 /// - `isDeviceAdminActive` → bool.
-/// - `generateBackdoorCode` → string (code corrente, già rotated weekly).
+/// - `generateBackdoorCode` → string (code corrente, già rotated weekly),
+///   oppure `null` se il Keystore non è disponibile (SEC-10, fail-secure).
 /// - `validateBackdoorCode {code: string}` → bool, oppure
 ///   `PlatformException(LOCKED_OUT|REPLAY)`.
 /// - `performEmergencyUnblock {code: string}` → bool (true = mask azzerata).
@@ -99,8 +100,12 @@ class StrictModeChannel {
   Future<int> getStrictModeOptions() async =>
       (await _channel.invokeMethod<int>('getStrictModeOptions')) ?? 0;
 
-  Future<String> generateBackdoorCode() async =>
-      (await _channel.invokeMethod<String>('generateBackdoorCode')) ?? '';
+  /// Codice settimanale corrente, oppure `null` se il native non può emetterne
+  /// uno (SEC-10: Keystore non disponibile → fail-secure, nessun codice
+  /// deterministico indovinabile). L'UI mostra il `null` come "temporaneamente
+  /// non disponibile, riprova" invece di un codice fittizio.
+  Future<String?> generateBackdoorCode() async =>
+      _channel.invokeMethod<String>('generateBackdoorCode');
 
   /// Validazione del code. Lato Kotlin gestisce rate limit + replay; questo
   /// metodo wrappa l'outcome in [BackdoorOutcome] così la UI non deve

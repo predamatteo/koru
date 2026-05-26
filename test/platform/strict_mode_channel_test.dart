@@ -149,9 +149,13 @@ void main() {
       expect(calls.first.method, 'generateBackdoorCode');
     });
 
-    test('generateBackdoorCode returns empty string on null', () async {
+    test('generateBackdoorCode returns null when native emits none (SEC-10)',
+        () async {
+      // SEC-10: il native ritorna null se il Keystore non è disponibile
+      // (fail-secure). Il channel propaga il null così l'UI può mostrare
+      // "temporaneamente non disponibile" invece di un codice fittizio.
       setMockHandler((_) async => null);
-      expect(await StrictModeChannel().generateBackdoorCode(), '');
+      expect(await StrictModeChannel().generateBackdoorCode(), isNull);
     });
   });
 

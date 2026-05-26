@@ -25,6 +25,11 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
   bool _loaded = false;
   bool _submitting = false;
 
+  /// SEC-10: il native non può emettere un codice (Keystore non disponibile).
+  /// Mostriamo "temporaneamente non disponibile, riprova" invece di un codice
+  /// fittizio o, peggio, uno deterministico indovinabile.
+  bool _codeUnavailable = false;
+
   StrictModeChannel get _channel =>
       ref.read(platformChannelServiceProvider).strictMode;
 
@@ -43,6 +48,7 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
     setState(() {
       _loaded = true;
       _currentCode = code;
+      _codeUnavailable = code == null;
       _attemptsLeft = attempts;
       _lockoutRemainingMs = lockout;
     });
@@ -86,7 +92,10 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
           // ruota il code automaticamente.
           final newCode = await _channel.generateBackdoorCode();
           if (!mounted) return;
-          setState(() => _currentCode = newCode);
+          setState(() {
+            _currentCode = newCode;
+            _codeUnavailable = newCode == null;
+          });
         case BackdoorInvalid():
           setState(() {
             _validationResult = 'Codice non valido.';
@@ -155,25 +164,51 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 16),
-                    SelectableText(
-                      _currentCode ?? '••••••••',
-                      style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                        letterSpacing: 8,
-                        fontWeight: FontWeight.w700,
-                        fontFamily: 'Orbitron',
+                    // SEC-10: se il native non può emettere un codice (Keystore
+                    // non disponibile) non mostriamo un codice fittizio —
+                    // segnaliamo lo stato e invitiamo a riprovare.
+                    if (_codeUnavailable) ...[
+                      Text(
+                        'Codice temporaneamente non disponibile',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(color: KoruColors.danger),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Copia il codice in un posto sicuro. Ruota ogni settimana, '
-                      'è generato in modo casuale sul tuo dispositivo, funziona '
-                      'offline, e ogni codice è single-use: appena lo usi per '
-                      'sbloccare lo strict mode viene sostituito da uno nuovo.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: KoruColors.textSecondary,
-                        height: 1.4,
+                      const SizedBox(height: 12),
+                      Text(
+                        'Lo spazio sicuro del dispositivo (Keystore) non è '
+                        'raggiungibile in questo momento, quindi non possiamo '
+                        'generare il codice settimanale. Riprova tra poco o '
+                        'riavvia il dispositivo.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: KoruColors.textSecondary,
+                          height: 1.4,
+                        ),
                       ),
-                    ),
+                    ] else ...[
+                      SelectableText(
+                        _currentCode ?? '••••••••',
+                        style:
+                            Theme.of(context).textTheme.displaySmall?.copyWith(
+                          letterSpacing: 8,
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'Orbitron',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Copia il codice in un posto sicuro. Ruota ogni '
+                        'settimana, è generato in modo casuale sul tuo '
+                        'dispositivo, funziona offline, e ogni codice è '
+                        'single-use: appena lo usi per sbloccare lo strict '
+                        'mode viene sostituito da uno nuovo.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: KoruColors.textSecondary,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
