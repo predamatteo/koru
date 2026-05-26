@@ -21,6 +21,7 @@ import com.dev.koru.db.NativeDatabase
 import com.dev.koru.service.AppUsageLimitsStore
 import com.dev.koru.service.KoruAccessibilityService
 import com.dev.koru.service.LockForegroundService
+import com.dev.koru.strictmode.KoruDeviceAdminReceiver
 
 class MainActivity : FlutterActivity() {
     private var packageEventsReceiver: PackageEventsReceiver? = null
@@ -40,6 +41,12 @@ class MainActivity : FlutterActivity() {
         // polling loop continua a far rispettare profili e daily limits.
         // Idempotente: niente succede se è già running.
         ensureBackupBlockingServiceStarted()
+        // SEC-12: cold start con l'intent di KoruDeviceAdminReceiver
+        // (EXTRA_REQUIRE_BACKDOOR_CODE). configureFlutterEngine NON è ancora
+        // girato, quindi NavigationMethodChannel.channel è null → la richiesta
+        // viene marcata come pendente e il listener Dart la fa PULL appena
+        // registra il proprio handler. Non navighiamo qui (Flutter non è pronto).
+        maybeRequireBackdoorCode(intent)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -193,6 +200,10 @@ class MainActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // SEC-12: se l'intent chiede il backdoor code (l'utente sta tentando di
+        // disabilitare il device admin con strict mode attivo) apriamo il prompt
+        // e fermiamoci qui — ha priorità sulla navigazione launcher/home.
+        if (maybeRequireBackdoorCode(intent)) return
         val now = System.currentTimeMillis()
         val suppressUntil = KoruAccessibilityService.suppressLauncherNavigationUntilMs
         val isHome = isHomeIntent(intent)
@@ -214,6 +225,28 @@ class MainActivity : FlutterActivity() {
         } else {
             NavigationMethodChannel.goToHomeIfOnLauncher()
         }
+    }
+
+    /**
+     * SEC-12: se [intent] porta l'extra [KoruDeviceAdminReceiver.EXTRA_REQUIRE_BACKDOOR_CODE]
+     * (settato da [KoruDeviceAdminReceiver.onDisableRequested] quando l'utente
+     * tenta di disabilitare il device admin con strict mode attivo), inoltra a
+     * Flutter la richiesta di aprire il prompt del backdoor code via
+     * [NavigationMethodChannel.goToBackdoorPrompt] e ritorna true.
+     *
+     * Consuma l'extra (lo rimuove dall'intent) per non riaprire il prompt a ogni
+     * successivo onNewIntent/onResume che riusa lo stesso intent.
+     */
+    private fun maybeRequireBackdoorCode(intent: Intent?): Boolean {
+        if (intent == null) return false
+        if (!intent.getBooleanExtra(KoruDeviceAdminReceiver.EXTRA_REQUIRE_BACKDOOR_CODE, false)) {
+            return false
+        }
+        Log.i("MainActivity", "SEC-12: backdoor code prompt requested (device-admin disable)")
+        intent.removeExtra(KoruDeviceAdminReceiver.EXTRA_REQUIRE_BACKDOOR_CODE)
+        setIntent(intent)
+        NavigationMethodChannel.goToBackdoorPrompt()
+        return true
     }
 
     private fun isHomeIntent(intent: Intent): Boolean =

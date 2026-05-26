@@ -16,9 +16,12 @@ import com.dev.koru.MainActivity
  *
  * Hardening:
  * - [onDisableRequested]: se strict mode è ATTIVO, lanciamo MainActivity con
- *   un extra `require_backdoor_code=true` (l'UI Flutter mostrerà il dialog
- *   di backdoor in fullscreen). Restituiamo comunque una stringa di warning,
- *   ma la difesa primaria è l'activity fullscreen.
+ *   un extra `require_backdoor_code=true`. SEC-12: MainActivity legge l'extra
+ *   (in onCreate e onNewIntent) e inoltra a Flutter via NavigationMethodChannel
+ *   la richiesta di aprire il prompt del backdoor code. È un DETERRENT UX, non
+ *   un blocco vero: Android non permette di rifiutare il disable senza Device
+ *   Owner (vedi nota sotto), quindi mostriamo il prompt e una stringa di
+ *   warning, ma se l'utente conferma comunque in Settings il disable procede.
  * - [onDisabled]: se l'utente è riuscito comunque a disabilitarci (es. via
  *   Settings di sistema durante una corner-case), azzeriamo la mask per
  *   coerenza UI E mostriamo una notifica persistente per fare capire che
