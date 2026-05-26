@@ -200,7 +200,10 @@ class LockRunnable(
             (AppUsageLimitsStore.isStrictFor(context, pkg) ||
                 !OverlayManager.isLimitBypassActive(pkg))
         ) {
-            val todayMs = UsageCounter.todayForegroundMs(context, pkg)
+            // SEC-03: variante GUARDATA anche nel path di backup, così il cap
+            // resta scattato anche se l'AccessibilityService è morto e l'utente
+            // sposta la data indietro. Coerente con checkAppBlocking.
+            val todayMs = UsageCounter.guardedTodayForegroundMs(context, pkg)
             if (todayMs >= limitMinutes * 60_000L) {
                 if (currentlyBlockingPackage != pkg) {
                     currentlyBlockingPackage = pkg

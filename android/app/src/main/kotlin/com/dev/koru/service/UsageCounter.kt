@@ -44,6 +44,24 @@ object UsageCounter {
     }
 
     /**
+     * SEC-03 — variante per l'ENFORCEMENT del cap giornaliero: come
+     * [todayForegroundMs] ma fatta passare per [UsageGuardStore], che applica
+     * la guardia monotonica anti clock-backward. Un cambio di data all'indietro
+     * NON azzera più "usato oggi": l'accumulato del giorno viene portato avanti
+     * e il cap (specie quello strict/hard) resta scattato. Il rollover di
+     * mezzanotte legittimo continua a funzionare.
+     *
+     * Usata da entrambi i path di enforcement del limite (AccessibilityService
+     * e LockRunnable di backup) così la decisione di cap è coerente e protetta
+     * in tutti e due i processi. Le viste UI (card "used/cap") continuano a
+     * usare [todayForegroundMs] grezza, senza side-effect di scrittura.
+     */
+    fun guardedTodayForegroundMs(context: Context, packageName: String): Long {
+        val raw = todayForegroundMs(context, packageName)
+        return UsageGuardStore.observe(context, packageName, raw)
+    }
+
+    /**
      * Esegue la state machine su `queryEvents` per la finestra
      * [startMs, endMs] e invoca [onSession] per ogni sessione di foreground
      * con `(packageName, fromTs, toTs)` RAW (non clippati né splittati): è il

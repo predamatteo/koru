@@ -903,8 +903,10 @@ class KoruAccessibilityService : AccessibilityService() {
         // AppUsageLimitsStore, cross-process, quindi strict è immediato).
         val limitEntry = AppUsageLimitsStore.entryFor(applicationContext, packageName)
         val limitMinutes = limitEntry?.minutes ?: 0
+        // SEC-03: usa la variante GUARDATA (monotonic anti clock-backward) per
+        // l'enforcement del cap. Un cambio data all'indietro non azzera l'uso.
         val limitTodayMs = if (limitMinutes > 0) {
-            UsageCounter.todayForegroundMs(applicationContext, packageName)
+            UsageCounter.guardedTodayForegroundMs(applicationContext, packageName)
         } else 0L
         val limitMs = limitMinutes * 60_000L
         val isLimitStrict = limitEntry?.strict ?: true
