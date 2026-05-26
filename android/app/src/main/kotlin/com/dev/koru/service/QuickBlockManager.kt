@@ -2,6 +2,7 @@ package com.dev.koru.service
 
 import android.content.Context
 import android.os.CountDownTimer
+import android.os.SystemClock
 import android.util.Log
 import com.dev.koru.channels.ServiceEventChannel
 import com.dev.koru.db.NativeDatabase
@@ -198,7 +199,12 @@ class QuickBlockManager {
             Log.w(TAG, "appContext not attached — cannot persist snapshot")
             return
         }
+        // SEC-11: scadenza su DUE orologi. Il wall serve alla UI/compat; il
+        // monotonico (elapsedRealtime, non riavvolgibile in avanti) impedisce
+        // che un salto wall in avanti faccia finire la sessione prima del tempo
+        // reale. Entrambi calcolati dallo STESSO istante per coerenza.
         val expiresAt = if (phaseDurationMs > 0) System.currentTimeMillis() + phaseDurationMs else 0L
+        val expiresAtElapsed = if (phaseDurationMs > 0) SystemClock.elapsedRealtime() + phaseDurationMs else 0L
         QuickBlockStore.save(
             ctx,
             QuickBlockStore.Snapshot(
@@ -207,6 +213,7 @@ class QuickBlockManager {
                 isBreakPhase = isBreakPhase,
                 expiresAt = expiresAt,
                 whitelist = whitelist,
+                expiresAtElapsed = expiresAtElapsed,
             ),
         )
     }

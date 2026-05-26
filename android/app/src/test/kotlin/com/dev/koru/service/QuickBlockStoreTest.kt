@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import java.io.File
 import org.junit.After
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -26,10 +27,21 @@ class QuickBlockStoreTest {
 
     private val fileName = "koru_quick_block_state.json"
 
+    @Before
+    fun setUp() = cleanup()
+
     @After
-    fun tearDown() {
+    fun tearDown() = cleanup()
+
+    private fun cleanup() {
         val ctx = ApplicationProvider.getApplicationContext<Context>()
         File(ctx.filesDir, fileName).delete()
+        File(ctx.filesDir, "$fileName.tmp").delete()
+        File(ctx.filesDir, "$fileName.lock").delete()
+        // ARCH-03: la cache di processo del FileBackedStore sopravvive nel JVM
+        // di test; azzerala per isolamento (specie per i test che scrivono un
+        // file grezzo legacy/corrotto).
+        QuickBlockStore.invalidateCacheForTest()
     }
 
     // -------- Snapshot.IDLE --------
@@ -126,6 +138,77 @@ class QuickBlockStoreTest {
         assertThat(snap.shouldBlock("com.x", 1000L)).isTrue()
     }
 
+    // -------- SEC-11: scadenza a doppio clock --------
+
+    /// Snapshot con entrambi gli orologi (post-SEC-11).
+    private fun dualClockSnapshot(expiresAtWall: Long, expiresAtElapsed: Long) =
+        QuickBlockStore.Snapshot(
+            isActive = true,
+            isPomodoroMode = false,
+            isBreakPhase = false,
+            expiresAt = expiresAtWall,
+            whitelist = emptySet(),
+            expiresAtElapsed = expiresAtElapsed,
+        )
+
+    @Test
+    fun shouldBlock_forwardWallJumpAlone_doesNotEndFocusEarly() {
+        // CUORE SEC-11: l'utente porta il WALL avanti oltre expiresAt per far
+        // finire la sessione prima. Ma il monotonico (non falsificabile) non è
+        // ancora scaduto → la sessione NON termina (fail-secure: non finire prima).
+        val snap = dualClockSnapshot(expiresAtWall = 10_000L, expiresAtElapsed = 5_000L)
+        // nowWall ben oltre la scadenza wall, nowElapsed ancora dentro.
+        assertThat(snap.shouldBlock("com.x", nowWall = 999_999L, nowElapsed = 4_000L)).isTrue()
+    }
+
+    @Test
+    fun shouldBlock_bothClocksPast_endsFocus() {
+        // Tempo reale trascorso: ENTRAMBI gli orologi oltre la scadenza → scaduta.
+        val snap = dualClockSnapshot(expiresAtWall = 10_000L, expiresAtElapsed = 5_000L)
+        assertThat(snap.shouldBlock("com.x", nowWall = 11_000L, nowElapsed = 6_000L)).isFalse()
+    }
+
+    @Test
+    fun shouldBlock_onlyElapsedPast_wallNotYet_staysBlocked() {
+        // Solo il monotonico è oltre (es. wall spostato INDIETRO): l'AND richiede
+        // anche il wall → non scaduta → resta bloccata (no fine anticipata; il
+        // timer reale di QuickBlockManager azzera comunque lo snapshot a fine
+        // durata, quindi nessuna estensione infinita reale).
+        val snap = dualClockSnapshot(expiresAtWall = 10_000L, expiresAtElapsed = 5_000L)
+        assertThat(snap.shouldBlock("com.x", nowWall = 1_000L, nowElapsed = 6_000L)).isTrue()
+    }
+
+    @Test
+    fun shouldBlock_legacySnapshot_noElapsed_fallsBackToWallOnly() {
+        // Snapshot legacy (expiresAtElapsed = 0): non potendo incrociare i clock,
+        // comportamento wall-only storico → wall oltre ⇒ scaduta.
+        val legacy = QuickBlockStore.Snapshot(
+            isActive = true,
+            isPomodoroMode = false,
+            isBreakPhase = false,
+            expiresAt = 10_000L,
+            whitelist = emptySet(),
+            // expiresAtElapsed default 0
+        )
+        assertThat(legacy.shouldBlock("com.x", nowWall = 11_000L, nowElapsed = 1L)).isFalse()
+        assertThat(legacy.shouldBlock("com.x", nowWall = 9_000L, nowElapsed = 999_999L)).isTrue()
+    }
+
+    @Test
+    fun shouldBlock_dualClock_breakPhaseStillUnblocks() {
+        // L'AND di scadenza non scavalca le altre regole: in break phase non si
+        // blocca anche se non scaduto.
+        val snap = QuickBlockStore.Snapshot(
+            isActive = true,
+            isPomodoroMode = true,
+            isBreakPhase = true,
+            expiresAt = 10_000L,
+            whitelist = emptySet(),
+            expiresAtElapsed = 5_000L,
+        )
+        assertThat(snap.shouldBlock("com.x", nowWall = 1_000L, nowElapsed = 1_000L)).isFalse()
+    }
+
     // -------- save / read roundtrip --------
 
     @Test
@@ -154,6 +237,44 @@ class QuickBlockStoreTest {
         QuickBlockStore.save(ctx, QuickBlockStore.Snapshot.IDLE)
         val readBack = QuickBlockStore.read(ctx)
         assertThat(readBack).isEqualTo(QuickBlockStore.Snapshot.IDLE)
+    }
+
+    @Test
+    fun saveThenRead_preservesExpiresAtElapsed() {
+        // SEC-11: il clock monotonico deve sopravvivere alla serializzazione
+        // (regression guard: un typo nella chiave sfuggirebbe ai test di
+        // shouldBlock puri).
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        QuickBlockStore.save(
+            ctx,
+            QuickBlockStore.Snapshot(
+                isActive = true,
+                isPomodoroMode = false,
+                isBreakPhase = false,
+                expiresAt = 1_700_000_000_000L,
+                whitelist = emptySet(),
+                expiresAtElapsed = 987_654L,
+            ),
+        )
+        val readBack = QuickBlockStore.read(ctx)
+        assertThat(readBack.expiresAt).isEqualTo(1_700_000_000_000L)
+        assertThat(readBack.expiresAtElapsed).isEqualTo(987_654L)
+    }
+
+    @Test
+    fun read_legacySnapshotWithoutElapsed_parsesElapsedAsZero() {
+        // SEC-11 backward compat: uno snapshot scritto prima del campo
+        // expiresAtElapsed deve parsare con elapsed = 0 (→ wall-only), senza
+        // errori.
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        File(ctx.filesDir, fileName).writeText(
+            """{"isActive":true,"isPomodoroMode":false,"isBreakPhase":false,"expiresAt":12345,"whitelist":["com.a"]}""",
+        )
+        val readBack = QuickBlockStore.read(ctx)
+        assertThat(readBack.isActive).isTrue()
+        assertThat(readBack.expiresAt).isEqualTo(12345L)
+        assertThat(readBack.expiresAtElapsed).isEqualTo(0L)
+        assertThat(readBack.whitelist).containsExactly("com.a")
     }
 
     // -------- Fallback paths --------
