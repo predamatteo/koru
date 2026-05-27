@@ -508,6 +508,16 @@ class KoruAccessibilityService : AccessibilityService() {
             if (now - lastProfileLoadTime > 10_000) loadProfiles()
             // Recupera snapshot aggiornato dopo eventuale reload.
             val freshSnapshot = profilesSnapshot.get()
+            // CR-08: ricontrolla PRIMA app/limit/focus, poi (se non bloccato)
+            // il sito — stesso ordine del ramo TYPE_WINDOW_STATE_CHANGED. Un
+            // browser può finire sotto un daily-limit o un focus/quick-block che
+            // PARTE mentre l'utente è già dentro (genera content-change ma non
+            // window-state-change): senza questo, su quegli eventi il cap / la
+            // transizione di focus non venivano rivalutati. scheduleLimitCheck
+            // mitiga parzialmente il solo caso daily-limit; questo copre anche il
+            // focus-iniziato-mentre-dentro (belt-and-suspenders, fail-secure:
+            // può solo bloccare di più, mai di meno).
+            if (checkAppBlocking(pkg, freshSnapshot)) return
             withRootInActiveWindow { root ->
                 if (root == null) {
                     Log.w(TAG, "BROWSER ${event.eventType}: rootInActiveWindow null for $pkg")
