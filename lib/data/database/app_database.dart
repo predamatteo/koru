@@ -41,9 +41,14 @@ part 'app_database.g.dart';
 
 /// Database Drift centrale di Koru.
 ///
-/// 21 tabelle: 17 da app_blocker (con piccoli ritocchi su profiles/app_profile_relations),
-/// 3 da ascent (restricted_access_events / intention_usage_events / focus_usage_events),
-/// 1 nuova (favorites) per il launcher.
+/// Le tabelle registrate sono elencate in `@DriftDatabase(tables: [...])` qui
+/// sotto (la lista è la fonte di verità — non duplicare il conteggio qui che
+/// si è già rivelato stale, vedi review ARCH-10). Provenienza, per gruppi:
+/// la maggior parte da app_blocker (con ritocchi su profiles/
+/// app_profile_relations), 3 da ascent (restricted_access_events /
+/// intention_usage_events / focus_usage_events), più le aggiunte Koru per il
+/// launcher e la Phase 2 (favorites, launcher_folders, achievements_unlocked,
+/// streak_state, journal_entries).
 ///
 /// ─── INVARIANTI CROSS-RUNTIME (ARCH-04) — leggere prima di migrare lo schema ─
 ///
@@ -325,19 +330,6 @@ class AppDatabase extends _$AppDatabase {
                   s.timestamp.isSmallerThanValue(endMs),
             ))
           .get();
-
-  // --- Settings KV queries ---
-  Future<String?> getSetting(String key) async {
-    final row =
-        await (select(settings)..where((s) => s.key.equals(key))).getSingleOrNull();
-    return row?.value;
-  }
-
-  Future<void> setSetting(String key, String value) async {
-    await into(settings).insertOnConflictUpdate(
-      SettingsCompanion.insert(key: key, value: value),
-    );
-  }
 
   // --- Mood queries ---
   Future<MoodCheckIn?> getMoodForDate(String day) =>

@@ -367,30 +367,9 @@ void main() {
       });
     });
 
-    // ─── Settings KV ───────────────────────────────────────────────────────
-    group('settings KV', () {
-      test('getSetting returns null when key is missing', () async {
-        expect(await db.getSetting('nope'), isNull);
-      });
-
-      test('setSetting then getSetting roundtrip', () async {
-        await db.setSetting('theme', 'dark');
-        expect(await db.getSetting('theme'), 'dark');
-      });
-
-      test('setSetting overwrites a previous value (upsert)', () async {
-        await db.setSetting('theme', 'dark');
-        await db.setSetting('theme', 'light');
-        expect(await db.getSetting('theme'), 'light');
-      });
-
-      test('different keys do not collide', () async {
-        await db.setSetting('a', '1');
-        await db.setSetting('b', '2');
-        expect(await db.getSetting('a'), '1');
-        expect(await db.getSetting('b'), '2');
-      });
-    });
+    // Settings KV: accessor getSetting/setSetting rimossi come dead code
+    // (ARCH-08, zero caller a runtime). La tabella Settings resta definita
+    // ma senza accessor → nessun test qui.
 
     // ─── BlockingConfig ────────────────────────────────────────────────────
     group('blocking config', () {
