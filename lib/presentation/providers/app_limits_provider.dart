@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -36,10 +37,21 @@ class AppLimitsNotifier extends AsyncNotifier<Map<String, AppLimitConfig>> {
       );
     }
     state = AsyncData(next);
-    await ref
+    final saved = await ref
         .read(platformChannelServiceProvider)
         .blocking
         .setAppDailyLimits(next);
+    // CR-09: il nativo ora ritorna il vero esito della scrittura atomica dello
+    // store. Se `false`, il cap (stato di enforcement) NON e' stato persistito:
+    // lo stato Riverpod ottimistico diverge dal disco. Lo segnaliamo invece di
+    // assumere il successo silenziosamente come prima.
+    if (!saved) {
+      developer.log(
+        'setAppDailyLimits FAILED to persist (pkg=$packageName minutes=$minutes)',
+        name: 'AppLimits',
+        level: 1000,
+      );
+    }
     await ref.read(achievementEvaluationProvider.notifier).trigger();
   }
 
@@ -53,10 +65,19 @@ class AppLimitsNotifier extends AsyncNotifier<Map<String, AppLimitConfig>> {
     final next = {...current};
     next[packageName] = existing.copyWith(strict: strict);
     state = AsyncData(next);
-    await ref
+    final saved = await ref
         .read(platformChannelServiceProvider)
         .blocking
         .setAppDailyLimits(next);
+    // CR-09: propaga l'esito reale del salvataggio (vedi setLimit).
+    if (!saved) {
+      developer.log(
+        'setAppDailyLimits FAILED to persist strict flag '
+        '(pkg=$packageName strict=$strict)',
+        name: 'AppLimits',
+        level: 1000,
+      );
+    }
     // Quando si abilita lo strict mode, i contatori storici non sono più
     // rilevanti (la frizione progressiva non si applica); reset esplicito.
     if (strict) {
@@ -87,10 +108,19 @@ class AppLimitsNotifier extends AsyncNotifier<Map<String, AppLimitConfig>> {
     };
     if (cleaned.length == current.length) return;
     state = AsyncData(cleaned);
-    await ref
+    final saved = await ref
         .read(platformChannelServiceProvider)
         .blocking
         .setAppDailyLimits(cleaned);
+    // CR-09: propaga l'esito reale del salvataggio (vedi setLimit).
+    if (!saved) {
+      developer.log(
+        'setAppDailyLimits FAILED to persist cleanup '
+        '(${current.length - cleaned.length} stale entries)',
+        name: 'AppLimits',
+        level: 1000,
+      );
+    }
   }
 }
 

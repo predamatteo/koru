@@ -104,11 +104,31 @@ class DailyUsage {
       );
 }
 
-/// Flutter-side facade per com.koru/blocking MethodChannel.
+/// Flutter-side facade per il MethodChannel `com.koru/blocking`.
+///
+/// ARCH-09: questa classe era un god-facade da ~292 righe che impacchettava 7+
+/// concern. E' stata decomposta — SENZA cambiare l'API pubblica che i provider
+/// chiamano e SENZA toccare il canale — organizzando i metodi in SEZIONI
+/// per-concern chiaramente delimitate (sotto), tutte dietro lo STESSO
+/// [_channel].
+///
+/// Nota di design: le sezioni restano metodi della stessa classe invece di
+/// `extension` separate, di proposito. Le extension Dart sono in scope solo
+/// dove la loro libreria e' importata DIRETTAMENTE; i call-site (i provider)
+/// raggiungono `BlockingChannel` per import TRANSITIVO via `providers.dart`,
+/// quindi delle extension non vedrebbero i metodi e si romperebbero a compile
+/// time. Mantenere un'unica classe sezionata da' lo stesso beneficio di
+/// decomposizione/leggibilita' con ZERO churn nei call-site e zero rischio sul
+/// wire-contract (nome canale, method name, argomenti, shape risultati
+/// byte-identici).
 class BlockingChannel {
   BlockingChannel();
 
   static const _channel = MethodChannel('com.koru/blocking');
+
+  // =========================================================================
+  // Concern: service lifecycle (LockForegroundService di backup).
+  // =========================================================================
 
   Future<bool> startBlockingService() async =>
       (await _channel.invokeMethod<bool>('startBlockingService')) ?? false;
@@ -118,6 +138,10 @@ class BlockingChannel {
 
   Future<bool> isBlockingServiceRunning() async =>
       (await _channel.invokeMethod<bool>('isBlockingServiceRunning')) ?? false;
+
+  // =========================================================================
+  // Concern: inventario app installate (drawer / launcher / merge provider).
+  // =========================================================================
 
   Future<List<InstalledAppInfo>> getInstalledApps() async {
     final raw = await _channel.invokeMethod<List<dynamic>>('getInstalledApps');
@@ -137,6 +161,10 @@ class BlockingChannel {
         await _channel.invokeListMethod<String>('getInstalledPackageNames');
     return raw ?? const [];
   }
+
+  // =========================================================================
+  // Concern: usage-stats foreground (finestra, per-giorno, totale "oggi").
+  // =========================================================================
 
   Future<List<AppUsageInfo>> getUsageStats({
     required int startMs,
@@ -172,6 +200,16 @@ class BlockingChannel {
         .toList(growable: false);
   }
 
+  Future<int> getUsageTodayMs(String packageName) async =>
+      (await _channel.invokeMethod<int>('getUsageTodayMs', {
+        'packageName': packageName,
+      })) ??
+      0;
+
+  // =========================================================================
+  // Concern: quick-block e Pomodoro (focus a tempo).
+  // =========================================================================
+
   Future<bool> startQuickBlock(
     Duration duration, {
     List<String> whitelist = const [],
@@ -202,6 +240,10 @@ class BlockingChannel {
   Future<bool> stopPomodoro() async =>
       (await _channel.invokeMethod<bool>('stopPomodoro')) ?? false;
 
+  // =========================================================================
+  // Concern: azioni dirette su una singola app (launch / uninstall / app-info).
+  // =========================================================================
+
   Future<bool> launchApp(String packageName) async =>
       (await _channel.invokeMethod<bool>('launchApp', {
         'packageName': packageName,
@@ -220,6 +262,10 @@ class BlockingChannel {
       })) ??
       false;
 
+  // =========================================================================
+  // Concern: info di device/sistema (batteria, carica, dialer, fotocamera).
+  // =========================================================================
+
   Future<int> getBatteryLevel() async =>
       (await _channel.invokeMethod<int>('getBatteryLevel')) ?? -1;
 
@@ -231,6 +277,10 @@ class BlockingChannel {
 
   Future<String?> getDefaultCameraPackage() async =>
       _channel.invokeMethod<String>('getDefaultCameraPackage');
+
+  // =========================================================================
+  // Concern: limiti giornalieri per-app + contatore bypass.
+  // =========================================================================
 
   Future<Map<String, AppLimitConfig>> getAppDailyLimits() async {
     final raw = await _channel
@@ -244,6 +294,11 @@ class BlockingChannel {
     return out;
   }
 
+  /// Persiste la mappa dei limiti lato nativo. CR-09: il nativo ora ritorna il
+  /// vero esito della scrittura atomica dello store (prima rispondeva sempre
+  /// `true`). Propaghiamo quel Boolean: `false` ⇒ il salvataggio di uno stato
+  /// di enforcement e' fallito e il chiamante puo' reagire (i provider loggano
+  /// l'errore invece di assumere il successo). `null` dal canale ⇒ `false`.
   Future<bool> setAppDailyLimits(Map<String, AppLimitConfig> limits) async =>
       (await _channel.invokeMethod<bool>('setAppDailyLimits', {
         'limits': limits.map((k, v) => MapEntry(k, v.toMap())),
@@ -262,17 +317,19 @@ class BlockingChannel {
     });
   }
 
-  Future<int> getUsageTodayMs(String packageName) async =>
-      (await _channel.invokeMethod<int>('getUsageTodayMs', {
-        'packageName': packageName,
-      })) ??
-      0;
+  // =========================================================================
+  // Concern: filtro notifiche (package silenziati) + permesso notif. access.
+  // =========================================================================
 
   Future<List<String>> getSilencedPackages() async {
     final raw = await _channel.invokeListMethod<String>('getSilencedPackages');
     return raw ?? const [];
   }
 
+  /// Persiste il set di package silenziati lato nativo. CR-09: come
+  /// [setAppDailyLimits], il nativo ora ritorna il vero esito della scrittura
+  /// atomica (prima sempre `true`). `false` ⇒ salvataggio fallito; i provider
+  /// loggano invece di assumere il successo. `null` dal canale ⇒ `false`.
   Future<bool> setSilencedPackages(List<String> packages) async =>
       (await _channel.invokeMethod<bool>('setSilencedPackages', {
         'packages': packages,
@@ -286,6 +343,10 @@ class BlockingChannel {
   Future<void> openNotificationAccessSettings() async {
     await _channel.invokeMethod<bool>('openNotificationAccessSettings');
   }
+
+  // =========================================================================
+  // Concern: rete WiFi (SSID corrente per i profili WiFi-scoped).
+  // =========================================================================
 
   Future<String?> getCurrentWifiSsid() async =>
       _channel.invokeMethod<String>('getCurrentWifiSsid');

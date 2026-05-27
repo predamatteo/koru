@@ -107,6 +107,33 @@ void main() {
       );
       verify(() => h.blocking.setSilencedPackages(<String>[])).called(1);
     });
+
+    test('toggle() handles a native save failure without throwing (CR-09)',
+        () async {
+      // CR-09: setSilencedPackages ora puo' ritornare `false` (scrittura
+      // nativa fallita). Il provider DEVE comunque invocare il canale e non
+      // crashare: lo stato ottimistico resta, il fallimento e' loggato.
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      when(() => h.blocking.getSilencedPackages())
+          .thenAnswer((_) async => const []);
+      when(() => h.blocking.setSilencedPackages(any()))
+          .thenAnswer((_) async => false);
+
+      await h.container.read(notificationFilterProvider.future);
+
+      await h.container
+          .read(notificationFilterProvider.notifier)
+          .toggle('com.x');
+
+      // Lo stato ottimistico e' applicato e la chiamata nativa e' avvenuta.
+      expect(
+        h.container.read(notificationFilterProvider).valueOrNull,
+        {'com.x'},
+      );
+      verify(() => h.blocking.setSilencedPackages(['com.x'])).called(1);
+    });
   });
 
   group('notificationAccessGrantedProvider', () {

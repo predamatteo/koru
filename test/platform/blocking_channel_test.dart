@@ -383,6 +383,27 @@ void main() {
           await BlockingChannel().setAppDailyLimits(const {});
       expect(ok, isFalse);
     });
+
+    test('setAppDailyLimits propagates native false (CR-09 save failed)',
+        () async {
+      // CR-09: il nativo ora ritorna il vero esito della scrittura atomica
+      // dello store (Boolean). Quando lo store fallisce e risponde `false`,
+      // il facade Dart DEVE propagare `false`, non assumere il successo.
+      setMockHandler((_) async => false);
+      final ok = await BlockingChannel().setAppDailyLimits({
+        'com.x': const AppLimitConfig(minutes: 60, strict: true),
+      });
+      expect(ok, isFalse);
+      expect(calls.first.method, 'setAppDailyLimits');
+    });
+
+    test('setAppDailyLimits returns true when native save succeeds', () async {
+      setMockHandler((_) async => true);
+      final ok = await BlockingChannel().setAppDailyLimits({
+        'com.x': const AppLimitConfig(minutes: 60, strict: true),
+      });
+      expect(ok, isTrue);
+    });
   });
 
   group('BlockingChannel - bypass counter', () {
@@ -433,6 +454,21 @@ void main() {
     test('setSilencedPackages returns false on null', () async {
       setMockHandler((_) async => null);
       expect(await BlockingChannel().setSilencedPackages([]), isFalse);
+    });
+
+    test('setSilencedPackages propagates native false (CR-09 save failed)',
+        () async {
+      // CR-09: come setAppDailyLimits, il nativo ritorna l'esito reale della
+      // scrittura atomica. `false` ⇒ il facade Dart propaga `false`.
+      setMockHandler((_) async => false);
+      final ok = await BlockingChannel().setSilencedPackages(['a', 'b']);
+      expect(ok, isFalse);
+      expect(calls.first.method, 'setSilencedPackages');
+    });
+
+    test('setSilencedPackages returns true when native save succeeds', () async {
+      setMockHandler((_) async => true);
+      expect(await BlockingChannel().setSilencedPackages(['a']), isTrue);
     });
 
     test('isNotificationAccessGranted returns bool', () async {

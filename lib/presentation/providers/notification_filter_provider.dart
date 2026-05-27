@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/di/providers.dart';
@@ -21,18 +23,36 @@ class NotificationFilterNotifier extends AsyncNotifier<Set<String>> {
       next.add(packageName);
     }
     state = AsyncData(next);
-    await ref
+    final saved = await ref
         .read(platformChannelServiceProvider)
         .blocking
         .setSilencedPackages(next.toList());
+    // CR-09: il nativo ora ritorna il vero esito della scrittura atomica del
+    // filtro. Se `false` il salvataggio NON e' andato a disco e lo stato
+    // Riverpod ottimistico diverge; lo segnaliamo invece di assumere successo.
+    if (!saved) {
+      developer.log(
+        'setSilencedPackages FAILED to persist toggle (pkg=$packageName)',
+        name: 'NotifFilter',
+        level: 1000,
+      );
+    }
   }
 
   Future<void> clearAll() async {
     state = const AsyncData(<String>{});
-    await ref
+    final saved = await ref
         .read(platformChannelServiceProvider)
         .blocking
         .setSilencedPackages(const []);
+    // CR-09: propaga l'esito reale del salvataggio (vedi toggle).
+    if (!saved) {
+      developer.log(
+        'setSilencedPackages FAILED to persist clearAll',
+        name: 'NotifFilter',
+        level: 1000,
+      );
+    }
   }
 }
 

@@ -70,6 +70,31 @@ void main() {
       verify(() => h.blocking.setAppDailyLimits(any())).called(1);
     });
 
+    test('setLimit() handles a native save failure without throwing (CR-09)',
+        () async {
+      // CR-09: setAppDailyLimits ora puo' ritornare `false` (scrittura nativa
+      // dello store fallita). Il provider DEVE comunque invocare il canale,
+      // applicare lo stato ottimistico e NON crashare (il fallimento e'
+      // loggato, non silenziosamente ignorato come prima).
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      primeForMutations(h);
+      // Override: il salvataggio nativo fallisce.
+      when(() => h.blocking.setAppDailyLimits(any()))
+          .thenAnswer((_) async => false);
+
+      await h.container.read(appLimitsProvider.future);
+
+      await h.container
+          .read(appLimitsProvider.notifier)
+          .setLimit('com.x', 30);
+
+      final next = h.container.read(appLimitsProvider).valueOrNull!;
+      expect(next['com.x']!.minutes, 30);
+      verify(() => h.blocking.setAppDailyLimits(any())).called(1);
+    });
+
     test('setLimit() with minutes<=0 removes the entry', () async {
       final h = buildTestContainer();
       addTearDown(h.dispose);
