@@ -12,6 +12,7 @@ import '../../../providers/achievements_provider.dart';
 import '../../../providers/app_list_provider.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
 import '../../block_overlay/block_overlay_screen.dart';
+import '../../block_overlay/overlay_config_style.dart';
 
 /// Designer dell'overlay per-app-per-profilo. Permette di scegliere colore
 /// sfondo, messaggio, durata countdown, shake, bypass dopo countdown.

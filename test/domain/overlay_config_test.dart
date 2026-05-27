@@ -36,10 +36,9 @@ void main() {
       );
     });
 
-    test('backgroundColor parses hex to Color with full alpha', () {
-      const config = OverlayConfig(backgroundColorHex: '#5C8262');
-      final color = config.backgroundColor;
-      expect(color.toARGB32().toRadixString(16).toUpperCase(), 'FF5C8262');
-    });
+    // La derivazione hex → Color è migrata nell'estensione di presentation
+    // `OverlayConfigStyle.backgroundColor` (ARCH-07: domain libero da
+    // Flutter). Test relativo in
+    // test/presentation/screens/block_overlay/overlay_config_style_test.dart.
   });
 }

@@ -1,10 +1,13 @@
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
-
 /// Configurazione dell'overlay di blocco, serializzabile in JSON per
 /// persistenza in Drift (`app_profile_relations.overlay_config_json`)
 /// e per trasmissione al native tramite MethodChannel.
+///
+/// Layer domain puro: il colore di sfondo è conservato come stringa hex
+/// ([backgroundColorHex]); la conversione a `Color` vive nell'estensione di
+/// presentation `OverlayConfigStyle.backgroundColor`
+/// (`presentation/screens/block_overlay/overlay_config_style.dart`).
 class OverlayConfig {
   const OverlayConfig({
     this.backgroundColorHex = '#5C8262',
@@ -25,12 +28,6 @@ class OverlayConfig {
   /// Default Koru — palette primary (#5C8262), nessun messaggio custom,
   /// countdown 8s, bypass consentito a fine countdown.
   static const OverlayConfig defaults = OverlayConfig();
-
-  Color get backgroundColor {
-    final hex = backgroundColorHex.replaceFirst('#', '');
-    final value = int.parse(hex, radix: 16);
-    return Color(0xFF000000 | value);
-  }
 
   Map<String, dynamic> toJson() => {
     'backgroundColorHex': backgroundColorHex,

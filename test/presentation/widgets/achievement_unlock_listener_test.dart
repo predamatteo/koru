@@ -62,7 +62,7 @@ void main() {
         id: 'focus_first',
         title: 'First focus',
         description: 'Complete your first focus session.',
-        icon: Icons.self_improvement_outlined,
+        iconKey: 'self_improvement_outlined',
         category: AchievementCategory.focus,
         target: 1,
       ));

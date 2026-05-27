@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../domain/entities/achievement.dart';
 import '../../../providers/achievements_provider.dart';
+import 'achievement_style.dart';
 
 /// Grid compatta con i primi 6 achievement (mix di sbloccati e prossimi
 /// da sbloccare per invogliare). Tappando "View all" si va alla full list.
@@ -102,7 +103,7 @@ class _AchievementBadge extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(achievement.icon, color: iconColor, size: 28),
+          Icon(achievementIcon(achievement), color: iconColor, size: 28),
           const SizedBox(height: 6),
           Text(
             achievement.title,

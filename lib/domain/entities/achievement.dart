@@ -1,5 +1,3 @@
-import 'package:flutter/material.dart';
-
 /// Categoria di un [Achievement] — usata per raggruppamento in UI
 /// e colorazione del badge.
 enum AchievementCategory {
@@ -12,12 +10,17 @@ enum AchievementCategory {
 /// Definizione statica di un achievement. Il catalogo è immutabile e
 /// hard-coded in [kAchievementCatalog]; lo stato "sbloccato" è persistito
 /// in `achievements_unlocked` (solo id + timestamp).
+///
+/// Il layer domain resta puro (nessuna dipendenza da Flutter): l'icona è
+/// rappresentata da una chiave stabile [iconKey] (snake_case) che la
+/// presentation mappa a un `IconData` tramite `achievementIcon` in
+/// `presentation/screens/statistics/widgets/achievement_style.dart`.
 class Achievement {
   const Achievement({
     required this.id,
     required this.title,
     required this.description,
-    required this.icon,
+    required this.iconKey,
     required this.category,
     required this.target,
   });
@@ -31,7 +34,11 @@ class Achievement {
   /// Testo esteso (una frase, tono mindful).
   final String description;
 
-  final IconData icon;
+  /// Chiave stabile dell'icona (snake_case). La presentation la converte in
+  /// `IconData` — vedi `achievementIcon` nel mapper di presentation. Tenere
+  /// allineata con la mappa lì definita.
+  final String iconKey;
+
   final AchievementCategory category;
 
   /// Soglia numerica target (minuti, count, ecc). Serve per la progress
@@ -47,7 +54,7 @@ const kAchievementCatalog = <Achievement>[
     id: 'focus_first',
     title: 'First focus',
     description: 'Complete your first focus session.',
-    icon: Icons.self_improvement_outlined,
+    iconKey: 'self_improvement_outlined',
     category: AchievementCategory.focus,
     target: 1,
   ),
@@ -55,7 +62,7 @@ const kAchievementCatalog = <Achievement>[
     id: 'focus_hour',
     title: 'Focused hour',
     description: 'Reach 1 hour of total focus time.',
-    icon: Icons.hourglass_full_outlined,
+    iconKey: 'hourglass_full_outlined',
     category: AchievementCategory.focus,
     target: 60,
   ),
@@ -63,7 +70,7 @@ const kAchievementCatalog = <Achievement>[
     id: 'focus_day',
     title: 'Focused day',
     description: 'Log 4 hours of focus in a single day.',
-    icon: Icons.wb_sunny_outlined,
+    iconKey: 'wb_sunny_outlined',
     category: AchievementCategory.focus,
     target: 240,
   ),
@@ -71,7 +78,7 @@ const kAchievementCatalog = <Achievement>[
     id: 'focus_dedicated',
     title: 'Dedicated',
     description: '10 hours of lifetime focus time.',
-    icon: Icons.emoji_events_outlined,
+    iconKey: 'emoji_events_outlined',
     category: AchievementCategory.focus,
     target: 600,
   ),
@@ -79,7 +86,7 @@ const kAchievementCatalog = <Achievement>[
     id: 'focus_monk',
     title: 'Monk mode',
     description: '50 hours of lifetime focus time.',
-    icon: Icons.auto_awesome_outlined,
+    iconKey: 'auto_awesome_outlined',
     category: AchievementCategory.focus,
     target: 3000,
   ),
@@ -89,7 +96,7 @@ const kAchievementCatalog = <Achievement>[
     id: 'streak_focus_7',
     title: 'Weekling',
     description: 'Seven-day focus streak.',
-    icon: Icons.local_fire_department_outlined,
+    iconKey: 'local_fire_department_outlined',
     category: AchievementCategory.consistency,
     target: 7,
   ),
@@ -97,7 +104,7 @@ const kAchievementCatalog = <Achievement>[
     id: 'streak_focus_30',
     title: 'Rooted',
     description: 'Thirty-day focus streak.',
-    icon: Icons.park_outlined,
+    iconKey: 'park_outlined',
     category: AchievementCategory.consistency,
     target: 30,
   ),
@@ -105,7 +112,7 @@ const kAchievementCatalog = <Achievement>[
     id: 'streak_focus_100',
     title: 'Centennial',
     description: 'One hundred days of focus in a row.',
-    icon: Icons.forest_outlined,
+    iconKey: 'forest_outlined',
     category: AchievementCategory.consistency,
     target: 100,
   ),
@@ -115,7 +122,7 @@ const kAchievementCatalog = <Achievement>[
     id: 'clean_week',
     title: 'Clean week',
     description: 'Seven days without exceeding any daily limit.',
-    icon: Icons.verified_outlined,
+    iconKey: 'verified_outlined',
     category: AchievementCategory.discipline,
     target: 7,
   ),
@@ -123,7 +130,7 @@ const kAchievementCatalog = <Achievement>[
     id: 'intentions_50',
     title: 'Mindful chooser',
     description: 'Log an intention 50 times on the block overlay.',
-    icon: Icons.psychology_outlined,
+    iconKey: 'psychology_outlined',
     category: AchievementCategory.discipline,
     target: 50,
   ),
@@ -131,7 +138,7 @@ const kAchievementCatalog = <Achievement>[
     id: 'honest_block_100',
     title: 'Honest block',
     description: 'Respect a block (no bypass) 100 times.',
-    icon: Icons.shield_outlined,
+    iconKey: 'shield_outlined',
     category: AchievementCategory.discipline,
     target: 100,
   ),
@@ -141,7 +148,7 @@ const kAchievementCatalog = <Achievement>[
     id: 'setup_first_profile',
     title: 'First profile',
     description: 'Create your first blocking profile.',
-    icon: Icons.add_circle_outline,
+    iconKey: 'add_circle_outline',
     category: AchievementCategory.setup,
     target: 1,
   ),
@@ -149,7 +156,7 @@ const kAchievementCatalog = <Achievement>[
     id: 'setup_curated',
     title: 'Curated',
     description: 'Set daily limits on 3 or more apps.',
-    icon: Icons.tune_outlined,
+    iconKey: 'tune_outlined',
     category: AchievementCategory.setup,
     target: 3,
   ),
@@ -157,7 +164,7 @@ const kAchievementCatalog = <Achievement>[
     id: 'setup_lockdown',
     title: 'Lockdown',
     description: 'Enable strict mode at least once.',
-    icon: Icons.lock_outline,
+    iconKey: 'lock_outline',
     category: AchievementCategory.setup,
     target: 1,
   ),
@@ -165,7 +172,7 @@ const kAchievementCatalog = <Achievement>[
     id: 'setup_customized',
     title: 'Customized',
     description: 'Personalize the overlay for at least one app.',
-    icon: Icons.palette_outlined,
+    iconKey: 'palette_outlined',
     category: AchievementCategory.setup,
     target: 1,
   ),

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/koru_colors.dart';
 import '../../core/router/app_router.dart';
 import '../providers/achievements_provider.dart';
+import '../screens/statistics/widgets/achievement_style.dart';
 
 /// Listener discreto (silenzioso in idle) che mostra uno snackbar quando
 /// arriva un nuovo unlock dal [newAchievementUnlocksStreamProvider].
@@ -28,7 +29,7 @@ class AchievementUnlockListener extends ConsumerWidget {
           backgroundColor: KoruColors.surface,
           content: Row(
             children: [
-              Icon(a.icon, color: KoruColors.primary, size: 24),
+              Icon(achievementIcon(a), color: KoruColors.primary, size: 24),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(

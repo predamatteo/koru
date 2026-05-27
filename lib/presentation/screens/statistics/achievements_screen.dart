@@ -7,6 +7,7 @@ import '../../../domain/entities/achievement.dart';
 import '../../../domain/usecases/evaluate_achievements.dart';
 import '../../providers/achievements_provider.dart';
 import '../../widgets/koru_pull_to_refresh.dart';
+import 'widgets/achievement_style.dart';
 
 /// Schermata full list degli achievement, raggruppati per categoria,
 /// con progress bar "X / target" per ciascuno.
@@ -180,7 +181,7 @@ class _AchievementTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
-                achievement.icon,
+                achievementIcon(achievement),
                 color: unlocked ? tint : KoruColors.textSecondary,
                 size: 26,
               ),

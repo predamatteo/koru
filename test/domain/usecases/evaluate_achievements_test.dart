@@ -1,11 +1,9 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:koru/data/repositories/achievements_repository.dart';
 import 'package:koru/domain/entities/achievement.dart';
 import 'package:koru/domain/usecases/evaluate_achievements.dart';
 import 'package:mocktail/mocktail.dart';
 
-class MockAchievementsRepository extends Mock implements AchievementsRepository {}
+class MockAchievementsGateway extends Mock implements AchievementsGateway {}
 
 AchievementStats _baseStats({
   int totalFocusMinutes = 0,
@@ -41,10 +39,10 @@ void main() {
   });
 
   group('evaluateAchievements', () {
-    late MockAchievementsRepository repo;
+    late MockAchievementsGateway repo;
 
     setUp(() {
-      repo = MockAchievementsRepository();
+      repo = MockAchievementsGateway();
       when(() => repo.getUnlockedIds()).thenAnswer((_) async => <String>{});
       when(() => repo.unlock(any())).thenAnswer((_) async => true);
     });
@@ -375,7 +373,7 @@ void main() {
         id: 'totally_made_up_id',
         title: 'Fake',
         description: 'Fake',
-        icon: Icons.help_outline,
+        iconKey: 'help_outline',
         category: AchievementCategory.focus,
         target: 10,
       );

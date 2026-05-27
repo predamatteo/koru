@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koru/domain/entities/achievement.dart';
 import 'package:koru/presentation/providers/achievements_provider.dart';
@@ -55,7 +54,7 @@ void main() {
         id: 'focus_first',
         title: 'First focus',
         description: 'desc',
-        icon: Icons.self_improvement_outlined,
+        iconKey: 'self_improvement_outlined',
         category: AchievementCategory.focus,
         target: 1,
       );
@@ -79,7 +78,7 @@ void main() {
         id: 'focus_hour',
         title: 'Focused hour',
         description: 'd',
-        icon: Icons.hourglass_full_outlined,
+        iconKey: 'hourglass_full_outlined',
         category: AchievementCategory.focus,
         target: 60,
       );
@@ -116,7 +115,7 @@ void main() {
         id: 'streak_focus_7',
         title: 'Weekling',
         description: 'd',
-        icon: Icons.local_fire_department_outlined,
+        iconKey: 'local_fire_department_outlined',
         category: AchievementCategory.consistency,
         target: 7,
       );

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/koru_colors.dart';
 import '../../../domain/entities/overlay_config.dart';
 import '../../providers/intention_provider.dart';
+import 'overlay_config_style.dart';
 import 'widgets/countdown_button_widget.dart';
 import 'widgets/mindful_intention_prompt.dart';
 

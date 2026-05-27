@@ -1,5 +1,16 @@
-import '../../data/repositories/achievements_repository.dart';
 import '../entities/achievement.dart';
+
+/// Porta narrow di cui il valutatore ha bisogno per leggere/scrivere lo
+/// stato di unlock. Tiene il layer domain disaccoppiato dalla concreta
+/// `AchievementsRepository` di `data/` (inversione di dipendenza, ARCH-07):
+/// è `data/` a implementare questa interfaccia, non il contrario.
+abstract class AchievementsGateway {
+  /// Insieme degli id già sbloccati.
+  Future<Set<String>> getUnlockedIds();
+
+  /// Sblocca [id] (idempotente). Ritorna true se era un nuovo unlock.
+  Future<bool> unlock(String id);
+}
 
 /// Input per il valutatore: aggregati correnti che vengono confrontati
 /// con i target del catalogo.
@@ -73,7 +84,7 @@ bool _isSatisfied(Achievement a, AchievementStats s) {
 /// (per mostrare toast in UI).
 Future<List<Achievement>> evaluateAchievements({
   required AchievementStats stats,
-  required AchievementsRepository repo,
+  required AchievementsGateway repo,
 }) async {
   final unlocked = await repo.getUnlockedIds();
   final newly = <Achievement>[];
