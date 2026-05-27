@@ -17,7 +17,6 @@ import com.dev.koru.BuildConfig
 import com.dev.koru.browser.BrowserConfigLoader
 import com.dev.koru.browser.BrowserUrlDetector
 import com.dev.koru.browser.WebsiteMatcher
-import com.dev.koru.channels.ServiceEventChannel
 import com.dev.koru.contract.BlockingContract
 import com.dev.koru.content.InAppContentDetector
 import com.dev.koru.db.NativeAppRelation
@@ -29,7 +28,6 @@ import com.dev.koru.overlay.BlockReason
 import com.dev.koru.overlay.OverlayConfig
 import com.dev.koru.strictmode.StrictModeEnforcer
 import com.dev.koru.strictmode.StrictModeFailSafe
-import org.json.JSONObject
 import java.util.Calendar
 import java.util.concurrent.atomic.AtomicReference
 
@@ -380,15 +378,13 @@ class KoruAccessibilityService : AccessibilityService() {
                 // riconferma al primo evento; questo chiude la micro-finestra
                 // tra il grant e l'evento successivo.
                 lastBypassedActiveForeground = pkg
-                try {
-                    NativeDatabase.insertRestrictedAccessEvent(
-                        applicationContext,
-                        pkg,
-                        eventType = 1, // SKIPPED
-                        restrictionType = BlockingContract.RESTRICTION_TYPE_APP,
-                        timestamp = System.currentTimeMillis(),
-                    )
-                } catch (_: Exception) {}
+                BlockEventLogger.logRestrictedAccess(
+                    applicationContext,
+                    pkg,
+                    eventType = 1, // SKIPPED
+                    restrictionType = BlockingContract.RESTRICTION_TYPE_APP,
+                    timestamp = System.currentTimeMillis(),
+                )
                 // Progressive friction: incrementa il counter solo quando il
                 // bypass discende da un blocco USAGE_LIMIT (entry o expired)
                 // su un'app NON strict. Bypass su APP_BLOCKED/profili/sezioni
@@ -787,17 +783,15 @@ class KoruAccessibilityService : AccessibilityService() {
                 blockedDomain = domain,
             )
         }
-        try {
-            NativeDatabase.insertRestrictedAccessEvent(
-                applicationContext,
-                pkg,
-                eventType = 0, // TRIGGERED
-                // Dedicato BYPASS_EXPIRED: discrimina nel log analytics da un
-                // normale APP block (era loggato come restrictionType=0).
-                restrictionType = RESTRICTION_TYPE_BYPASS_EXPIRED,
-                timestamp = System.currentTimeMillis(),
-            )
-        } catch (_: Exception) {}
+        // Dedicato BYPASS_EXPIRED: discrimina nel log analytics da un normale
+        // APP block (era loggato come restrictionType=0).
+        BlockEventLogger.logRestrictedAccess(
+            applicationContext,
+            pkg,
+            eventType = 0, // TRIGGERED
+            restrictionType = RESTRICTION_TYPE_BYPASS_EXPIRED,
+            timestamp = System.currentTimeMillis(),
+        )
     }
 
     /**
@@ -919,16 +913,13 @@ class KoruAccessibilityService : AccessibilityService() {
                     // solo l'inner activity e l'app resterebbe in foreground.
                     performGoHomeForBlock(forceHome = true, blockedPackage = packageName)
                     val now = System.currentTimeMillis()
-                    try {
-                        NativeDatabase.insertBlockSession(applicationContext, packageName, now)
-                        NativeDatabase.insertRestrictedAccessEvent(
-                            applicationContext,
-                            packageName,
-                            eventType = 0,
-                            restrictionType = BlockingContract.RESTRICTION_TYPE_FOCUS_MODE,
-                            timestamp = now,
-                        )
-                    } catch (_: Exception) {}
+                    BlockEventLogger.logBlockSessionAndAccess(
+                        applicationContext,
+                        sessionName = packageName,
+                        packageName = packageName,
+                        restrictionType = BlockingContract.RESTRICTION_TYPE_FOCUS_MODE,
+                        timestamp = now,
+                    )
                     return true
                 }
 
@@ -964,15 +955,13 @@ class KoruAccessibilityService : AccessibilityService() {
                     }
                     performGoHomeForBlock(blockedPackage = packageName)
                     val now = System.currentTimeMillis()
-                    try {
-                        NativeDatabase.insertRestrictedAccessEvent(
-                            applicationContext,
-                            packageName,
-                            eventType = 0,
-                            restrictionType = BlockingContract.RESTRICTION_TYPE_USAGE_LIMIT,
-                            timestamp = now,
-                        )
-                    } catch (_: Exception) {}
+                    BlockEventLogger.logRestrictedAccess(
+                        applicationContext,
+                        packageName,
+                        eventType = 0,
+                        restrictionType = BlockingContract.RESTRICTION_TYPE_USAGE_LIMIT,
+                        timestamp = now,
+                    )
                     return true
                 }
 
@@ -994,17 +983,14 @@ class KoruAccessibilityService : AccessibilityService() {
                     }
                     performGoHomeForBlock(blockedPackage = packageName)
                     val now = System.currentTimeMillis()
-                    try {
-                        NativeDatabase.insertBlockSession(applicationContext, packageName, now)
-                        NativeDatabase.insertRestrictedAccessEvent(
-                            applicationContext,
-                            packageName,
-                            eventType = 0, // TRIGGERED
-                            restrictionType = BlockingContract.RESTRICTION_TYPE_APP,
-                            timestamp = now,
-                        )
-                    } catch (_: Exception) {}
-                    if (profile != null) sendBlockingStateEvent(true, packageName, profile)
+                    BlockEventLogger.logBlockSessionAndAccess(
+                        applicationContext,
+                        sessionName = packageName,
+                        packageName = packageName,
+                        restrictionType = BlockingContract.RESTRICTION_TYPE_APP,
+                        timestamp = now,
+                    )
+                    if (profile != null) BlockEventLogger.emitBlockingState(true, packageName, profile)
                     return true
                 }
             }
@@ -1039,7 +1025,7 @@ class KoruAccessibilityService : AccessibilityService() {
                 if (currentlyBlockingPackage != null) {
                     currentlyBlockingPackage = null
                     mainHandler.post { overlayManager?.dismiss() }
-                    sendBlockingStateEvent(false, "", null)
+                    BlockEventLogger.emitBlockingState(false, "", null)
                 }
                 return false
             }
@@ -1146,21 +1132,14 @@ class KoruAccessibilityService : AccessibilityService() {
         // sulla home dell'app, libero di tornare immediatamente
         // sulla sezione bloccata.
         performGoHomeForBlock(forceHome = true, blockedPackage = packageName)
-        try {
-            NativeDatabase.insertBlockSession(
-                applicationContext,
-                "$packageName/${detected.wireId}",
-                now,
-            )
-            NativeDatabase.insertRestrictedAccessEvent(
-                applicationContext,
-                packageName,
-                eventType = 0,
-                restrictionType = BlockingContract.RESTRICTION_TYPE_SECTION,
-                timestamp = now,
-            )
-        } catch (_: Exception) {}
-        if (profile != null) sendSectionEvent(packageName, detected.wireId, profile)
+        BlockEventLogger.logBlockSessionAndAccess(
+            applicationContext,
+            sessionName = "$packageName/${detected.wireId}",
+            packageName = packageName,
+            restrictionType = BlockingContract.RESTRICTION_TYPE_SECTION,
+            timestamp = now,
+        )
+        if (profile != null) BlockEventLogger.emitSection(packageName, detected.wireId, profile)
         return true
     }
 
@@ -1256,16 +1235,13 @@ class KoruAccessibilityService : AccessibilityService() {
             // a fuori — HOME è il fix per gli stessi pattern di IG/YT.
             performGoHomeForBlock(forceHome = true, blockedPackage = packageName)
             val now = System.currentTimeMillis()
-            try {
-                NativeDatabase.insertBlockSession(applicationContext, detected.domain, now)
-                NativeDatabase.insertRestrictedAccessEvent(
-                    applicationContext,
-                    packageName,
-                    eventType = 0,
-                    restrictionType = BlockingContract.RESTRICTION_TYPE_WEBSITE,
-                    timestamp = now,
-                )
-            } catch (_: Exception) {}
+            BlockEventLogger.logBlockSessionAndAccess(
+                applicationContext,
+                sessionName = detected.domain,
+                packageName = packageName,
+                restrictionType = BlockingContract.RESTRICTION_TYPE_WEBSITE,
+                timestamp = now,
+            )
             return
         }
     }
@@ -1398,32 +1374,6 @@ class KoruAccessibilityService : AccessibilityService() {
         pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
     } catch (_: Exception) {
         packageName
-    }
-
-    private fun sendBlockingStateEvent(
-        isBlocking: Boolean,
-        packageName: String,
-        profile: NativeProfile?,
-    ) {
-        val json = JSONObject().apply {
-            put("type", "BLOCKING_STATE")
-            put("isBlocking", isBlocking)
-            put("packageName", packageName)
-            put("profileId", profile?.id ?: -1)
-            put("profileTitle", profile?.title ?: "")
-        }
-        ServiceEventChannel.sendEvent(json.toString())
-    }
-
-    private fun sendSectionEvent(packageName: String, sectionWireId: String, profile: NativeProfile) {
-        val json = JSONObject().apply {
-            put("type", "IN_APP_SECTION_DETECTED")
-            put("packageName", packageName)
-            put("section", sectionWireId)
-            put("profileId", profile.id)
-            put("profileTitle", profile.title)
-        }
-        ServiceEventChannel.sendEvent(json.toString())
     }
 
     override fun onInterrupt() {
