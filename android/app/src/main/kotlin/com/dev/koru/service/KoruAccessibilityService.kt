@@ -1307,28 +1307,13 @@ class KoruAccessibilityService : AccessibilityService() {
             // bg-thread) sta leggendo causa SQLite IOError sul cursore in
             // corso. La connection rimane aperta per tutta la vita del
             // service e viene chiusa solo in onDestroy.
-            val newProfiles = NativeDatabase.getEnabledProfiles(applicationContext)
-            val newProfileApps = mutableMapOf<Int, List<NativeAppRelation>>()
-            val intervalsByProfile = mutableMapOf<Int, List<NativeInterval>>()
-            for (p in newProfiles) {
-                newProfileApps[p.id] = NativeDatabase.getAppRelationsForProfile(applicationContext, p.id)
-                intervalsByProfile[p.id] = NativeDatabase.getIntervalsForProfile(applicationContext, p.id)
-            }
-            val newRules = NativeDatabase.getAllWebsiteRulesForEnabledProfiles(applicationContext)
-            val newWifis = NativeDatabase.getWifiSsidsByProfile(applicationContext)
-
-            // Costruisco snapshot immutabile LOCALE e poi swap atomico.
-            // Cosi' eventuali letture concorrenti vedono o il vecchio o il
-            // nuovo snapshot, mai uno stato parziale (es. profili nuovi ma
-            // profileApps ancora del vecchio set, finestra esistente nel
-            // pattern precedente di clear()+put()).
-            val snapshot = ProfilesSnapshot(
-                profiles = newProfiles,
-                profileApps = newProfileApps.toMap(),
-                websiteRulesCache = newRules,
-                profileIntervals = intervalsByProfile.toMap(),
-                profileWifis = newWifis,
-            )
+            //
+            // Le query + l'assemblaggio dello snapshot vivono in
+            // [ProfileSnapshotLoader] (ARCH-05). Stesso ordine di fetch e stessa
+            // costruzione immutabile di prima → swap atomico qui sotto: letture
+            // concorrenti vedono o il vecchio o il nuovo snapshot, mai uno stato
+            // parziale (finestra esistente nel pattern precedente di clear()+put()).
+            val snapshot = ProfileSnapshotLoader.load(applicationContext)
             profilesSnapshot.set(snapshot)
             lastProfileLoadTime = System.currentTimeMillis()
             Log.d(TAG, "Loaded ${snapshot.profiles.size} profiles, ${snapshot.profileWifis.size} with wifi constraints, " +
