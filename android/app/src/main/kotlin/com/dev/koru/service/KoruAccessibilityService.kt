@@ -841,11 +841,17 @@ class KoruAccessibilityService : AccessibilityService() {
         // e in dubbio bloccare e' piu' sicuro che non bloccare (es. evento
         // di apertura legittimo subito dopo HOME, dove ACTIVITY_RESUMED
         // del pkg target non e' ancora stato indicizzato).
+        // Side-effect (lettura UsageStats) qui; la DECISIONE e' delegata alla
+        // funzione pura [GhostEventFilter.isGhostEvent] (ARCH-05). Stessa
+        // condizione di prima: foreground reale noto, diverso dal pkg e non-skip.
         val foregroundDetected = ForegroundDetector
             .detect(applicationContext)?.primaryPackage
-        if (foregroundDetected != null &&
-            foregroundDetected != packageName &&
-            !skipPackages.contains(foregroundDetected)
+        if (GhostEventFilter.isGhostEvent(
+                eventPackage = packageName,
+                realForegroundPackage = foregroundDetected,
+                isRealForegroundSkippable = foregroundDetected != null &&
+                    skipPackages.contains(foregroundDetected),
+            )
         ) {
             Log.d(
                 TAG,
