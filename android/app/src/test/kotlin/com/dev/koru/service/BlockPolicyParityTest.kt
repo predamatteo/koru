@@ -4,20 +4,28 @@ import com.google.common.truth.Truth.assertWithMessage
 import org.junit.Test
 
 /**
- * PARITÀ. Questo test esiste per UN motivo: i 4 decision site native
+ * Pinning della SEMANTICA CANONICA degli intervalli temporali.
+ *
+ * Cosa garantisce DAVVERO questo test (e nient'altro): che
+ * [BlockPolicyEvaluator.isNowInInterval] — l'unica implementazione condivisa
+ * da tutti i decision site native — rispetti la truth table calcolata a mano
+ * (`from==to ⇒ 24h`; `from<to ⇒ [from,to)` half-open; `from>to ⇒
+ * cross-midnight` con end escluso). Storicamente questa logica divergeva tra
+ * i path (chiuso vs half-open vs "from==to mai/sempre"); se qualcuno
+ * reintroduce una variante QUI (es. un `<=` al posto del `<`), la tabella
+ * fallisce. È un test PURO sulla funzione di intervallo, senza Android.
+ *
+ * Cosa NON garantisce: NON verifica che i 4 decision site
  * (checkAppBlocking, checkInAppContentBlocking, checkWebsiteBlocking,
- * LockRunnable.checkAndBlock) + il "active now" lato Dart devono condividere
- * ESATTAMENTE la stessa semantica degli intervalli temporali. Storicamente
- * divergevano (chiuso vs half-open vs "from==to mai/sempre"), e ogni
- * divergenza è un buco di enforcement.
+ * LockRunnable.checkAndBlock) chiamino effettivamente questo evaluator — è un
+ * test di valore, non struttura. La regola "OGNI nuovo decision site DEVE
+ * passare per [BlockPolicyEvaluator], niente copie della logica negli adapter"
+ * è un invariante di progetto fatto rispettare in REVIEW, non da questo test.
  *
- * Pinniamo qui una TRUTH TABLE calcolata a mano sulla semantica canonica
- * (`from==to ⇒ 24h`; `from<to ⇒ [from,to)`; `from>to ⇒ cross-midnight`).
- * Se qualcuno reintroduce una variante (es. intervalli chiusi nel backup, o
- * un `<=` al posto del `<`), questa tabella fallisce.
- *
- * REGOLA: OGNI nuovo decision site DEVE chiamare [BlockPolicyEvaluator] —
- * niente copie della logica di blocco negli adapter.
+ * Parità cross-runtime Kotlin↔Dart: il lato Dart pinna la stessa truth table
+ * canonica in `test/utils/schedule_utils_test.dart`
+ * (ScheduleUtils.isNowInRange), così una divergenza tra i due runtime fa
+ * fallire l'una o l'altra suite.
  */
 class BlockPolicyParityTest {
 
