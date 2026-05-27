@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import com.dev.koru.contract.BlockingContract
 import com.dev.koru.service.KoruAccessibilityService
 
 object StrictModeEnforcer {
@@ -23,22 +24,19 @@ object StrictModeEnforcer {
         }
     }
 
-    const val BLOCK_EDITING = 1
-    const val BLOCK_SETTINGS = 2
-    const val BLOCK_UNINSTALLING = 4
-    const val BLOCK_RECENT_APPS = 8
-    const val BLOCK_SPLIT_SCREEN = 16
+    // ARCH-06: i bit Strict Mode vivono ora in [BlockingContract] (single
+    // source). Questi restano `const val` PUBBLICI come alias per i call site
+    // che li importano da qui (es. il riferimento `mask and BLOCK_SETTINGS`
+    // sotto resta invariato), evitando un refactor a tappeto. Il valore è
+    // quello del contratto: niente più "DEVONO matchare" a mano.
+    const val BLOCK_EDITING = BlockingContract.BLOCK_EDITING
+    const val BLOCK_SETTINGS = BlockingContract.BLOCK_SETTINGS
+    const val BLOCK_UNINSTALLING = BlockingContract.BLOCK_UNINSTALLING
+    const val BLOCK_RECENT_APPS = BlockingContract.BLOCK_RECENT_APPS
+    const val BLOCK_SPLIT_SCREEN = BlockingContract.BLOCK_SPLIT_SCREEN
 
-    private val SETTINGS_PACKAGES = setOf(
-        "com.android.settings",
-        "com.samsung.android.app.routines",
-        "com.miui.securitycenter",
-        "com.coloros.safecenter",
-        "com.coloros.oplusphonemanager",
-        "com.huawei.systemmanager",
-        "com.oneplus.security",
-        "com.oplus.settings",
-    )
+    // ARCH-06: set condiviso con KoruAccessibilityService via [BlockingContract].
+    private val SETTINGS_PACKAGES = BlockingContract.SETTINGS_PACKAGES
 
     private val UNINSTALL_PACKAGES = setOf(
         "com.google.android.packageinstaller",

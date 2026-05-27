@@ -1,5 +1,6 @@
 package com.dev.koru.strictmode
 
+import com.dev.koru.contract.BlockingContract
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
@@ -37,6 +38,18 @@ class StrictModeEnforcerTest {
         assertThat(StrictModeEnforcer.BLOCK_UNINSTALLING).isEqualTo(StrictModeStore.BLOCK_UNINSTALLING)
         assertThat(StrictModeEnforcer.BLOCK_RECENT_APPS).isEqualTo(StrictModeStore.BLOCK_RECENT_APPS)
         assertThat(StrictModeEnforcer.BLOCK_SPLIT_SCREEN).isEqualTo(StrictModeStore.BLOCK_SPLIT_SCREEN)
+    }
+
+    @Test
+    fun bitConstants_deriveFromBlockingContract() {
+        // ARCH-06: enforcer e store sono ora alias di BlockingContract (single
+        // source). Dettaglio completo in BlockingContractTest; qui ancoriamo che
+        // i bit dell'enforcer provengono dal contratto.
+        assertThat(StrictModeEnforcer.BLOCK_EDITING).isEqualTo(BlockingContract.BLOCK_EDITING)
+        assertThat(StrictModeEnforcer.BLOCK_SETTINGS).isEqualTo(BlockingContract.BLOCK_SETTINGS)
+        assertThat(StrictModeEnforcer.BLOCK_UNINSTALLING).isEqualTo(BlockingContract.BLOCK_UNINSTALLING)
+        assertThat(StrictModeEnforcer.BLOCK_RECENT_APPS).isEqualTo(BlockingContract.BLOCK_RECENT_APPS)
+        assertThat(StrictModeEnforcer.BLOCK_SPLIT_SCREEN).isEqualTo(BlockingContract.BLOCK_SPLIT_SCREEN)
     }
 
     // -------- invalidateCache --------

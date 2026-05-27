@@ -272,7 +272,13 @@ object NativeDatabase {
 
     /**
      * Event type: 0 = BLOCK_TRIGGERED, 1 = BLOCK_SKIPPED.
-     * Restriction type: 0 = APP, 1 = SECTION, 2 = WEBSITE, 3 = USAGE_LIMIT, 4 = FOCUS_MODE.
+     *
+     * Restriction type: 0 = APP, 1 = SECTION, 2 = WEBSITE, 3 = USAGE_LIMIT,
+     * 4 = FOCUS_MODE, 5 = BYPASS_EXPIRED. ARCH-06: questi codici sono dichiarati
+     * UNA VOLTA SOLA in [com.dev.koru.contract.BlockingContract]
+     * (`RESTRICTION_TYPE_*`) e i call site li passano per nome invece che come
+     * literal grezzi. Restano `Int` qui perché vengono scritti in chiaro nella
+     * colonna `restriction_type` e letti dalle statistiche Dart.
      */
     fun insertRestrictedAccessEvent(
         context: Context,

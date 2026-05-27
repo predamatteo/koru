@@ -3,6 +3,7 @@ package com.dev.koru.service
 import android.content.Context
 import android.os.PowerManager
 import android.util.Log
+import com.dev.koru.contract.BlockingContract
 import com.dev.koru.db.NativeDatabase
 import com.dev.koru.db.NativeAppRelation
 import com.dev.koru.db.NativeInterval
@@ -270,7 +271,7 @@ class LockRunnable(
                                 context,
                                 pkg,
                                 eventType = 0, // TRIGGERED
-                                restrictionType = 4, // FOCUS_MODE
+                                restrictionType = BlockingContract.RESTRICTION_TYPE_FOCUS_MODE,
                                 timestamp = System.currentTimeMillis(),
                             )
                         } catch (_: Exception) {}
@@ -290,7 +291,7 @@ class LockRunnable(
                                 context,
                                 pkg,
                                 eventType = 0, // TRIGGERED
-                                restrictionType = 3, // USAGE_LIMIT
+                                restrictionType = BlockingContract.RESTRICTION_TYPE_USAGE_LIMIT,
                                 timestamp = System.currentTimeMillis(),
                             )
                         } catch (_: Exception) {}

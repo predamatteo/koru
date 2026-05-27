@@ -18,6 +18,7 @@ import com.dev.koru.browser.BrowserConfigLoader
 import com.dev.koru.browser.BrowserUrlDetector
 import com.dev.koru.browser.WebsiteMatcher
 import com.dev.koru.channels.ServiceEventChannel
+import com.dev.koru.contract.BlockingContract
 import com.dev.koru.content.InAppContentDetector
 import com.dev.koru.db.NativeAppRelation
 import com.dev.koru.db.NativeDatabase
@@ -80,12 +81,13 @@ class KoruAccessibilityService : AccessibilityService() {
         /// Allineato a [ProfileType.time] in lib/core/constants/profile_types.dart.
         const val PROFILE_TYPE_TIME = 1
 
-        /// Restriction type log su `restricted_access_events`: nuovo valore per
-        /// gli eventi BYPASS_EXPIRED (l'utente è stato ri-prompted dopo che il
-        /// TTL di un bypass è scaduto mentre era ancora dentro l'app).
-        /// Allineato ai valori usati altrove: 0=APP, 1=SECTION, 2=WEBSITE,
-        /// 3=USAGE_LIMIT, 4=FOCUS_MODE. Riserviamo 5 per BYPASS_EXPIRED.
-        const val RESTRICTION_TYPE_BYPASS_EXPIRED = 5
+        /// Restriction type log su `restricted_access_events`: valore per gli
+        /// eventi BYPASS_EXPIRED (l'utente è stato ri-prompted dopo che il TTL
+        /// di un bypass è scaduto mentre era ancora dentro l'app). ARCH-06: i
+        /// codici restrictionType (0=APP, 1=SECTION, 2=WEBSITE, 3=USAGE_LIMIT,
+        /// 4=FOCUS_MODE, 5=BYPASS_EXPIRED) vivono ora in [BlockingContract].
+        /// Alias mantenuto perché referenziato come costante in questo file.
+        const val RESTRICTION_TYPE_BYPASS_EXPIRED = BlockingContract.RESTRICTION_TYPE_BYPASS_EXPIRED
 
         /// Set di package "noti" come browser: usato per popolare
         /// dinamicamente `serviceInfo.packageNames` così l'AccessibilityService
@@ -112,19 +114,10 @@ class KoruAccessibilityService : AccessibilityService() {
         /// Set di package "settings" (system settings + OEM): usato sia da
         /// StrictModeEnforcer sia per popolare `serviceInfo.packageNames`
         /// così possiamo intercettare il blocco "settings" anche quando
-        /// l'utente apre l'app di sistema. Allineato (ma non condiviso
-        /// direttamente per evitare coupling) con
-        /// `StrictModeEnforcer.SETTINGS_PACKAGES`.
-        val SETTINGS_PACKAGES: Set<String> = setOf(
-            "com.android.settings",
-            "com.samsung.android.app.routines",
-            "com.miui.securitycenter",
-            "com.coloros.safecenter",
-            "com.coloros.oplusphonemanager",
-            "com.huawei.systemmanager",
-            "com.oneplus.security",
-            "com.oplus.settings",
-        )
+        /// l'utente apre l'app di sistema. ARCH-06: ora condiviso via
+        /// [BlockingContract.SETTINGS_PACKAGES] (era duplicato a mano con
+        /// `StrictModeEnforcer`, tenuto allineato solo da un commento).
+        val SETTINGS_PACKAGES: Set<String> = BlockingContract.SETTINGS_PACKAGES
 
         @Volatile
         var instance: KoruAccessibilityService? = null
@@ -392,7 +385,7 @@ class KoruAccessibilityService : AccessibilityService() {
                         applicationContext,
                         pkg,
                         eventType = 1, // SKIPPED
-                        restrictionType = 0, // APP
+                        restrictionType = BlockingContract.RESTRICTION_TYPE_APP,
                         timestamp = System.currentTimeMillis(),
                     )
                 } catch (_: Exception) {}
@@ -916,7 +909,7 @@ class KoruAccessibilityService : AccessibilityService() {
                             applicationContext,
                             packageName,
                             eventType = 0,
-                            restrictionType = 4, // FOCUS_MODE
+                            restrictionType = BlockingContract.RESTRICTION_TYPE_FOCUS_MODE,
                             timestamp = now,
                         )
                     } catch (_: Exception) {}
@@ -960,7 +953,7 @@ class KoruAccessibilityService : AccessibilityService() {
                             applicationContext,
                             packageName,
                             eventType = 0,
-                            restrictionType = 3, // USAGE_LIMIT
+                            restrictionType = BlockingContract.RESTRICTION_TYPE_USAGE_LIMIT,
                             timestamp = now,
                         )
                     } catch (_: Exception) {}
@@ -991,7 +984,7 @@ class KoruAccessibilityService : AccessibilityService() {
                             applicationContext,
                             packageName,
                             eventType = 0, // TRIGGERED
-                            restrictionType = 0, // APP
+                            restrictionType = BlockingContract.RESTRICTION_TYPE_APP,
                             timestamp = now,
                         )
                     } catch (_: Exception) {}
@@ -1147,7 +1140,7 @@ class KoruAccessibilityService : AccessibilityService() {
                 applicationContext,
                 packageName,
                 eventType = 0,
-                restrictionType = 1, // SECTION
+                restrictionType = BlockingContract.RESTRICTION_TYPE_SECTION,
                 timestamp = now,
             )
         } catch (_: Exception) {}
@@ -1253,7 +1246,7 @@ class KoruAccessibilityService : AccessibilityService() {
                     applicationContext,
                     packageName,
                     eventType = 0,
-                    restrictionType = 2, // WEBSITE
+                    restrictionType = BlockingContract.RESTRICTION_TYPE_WEBSITE,
                     timestamp = now,
                 )
             } catch (_: Exception) {}
