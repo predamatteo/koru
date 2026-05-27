@@ -122,10 +122,13 @@ object BackdoorCodeGenerator {
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
             )
         } catch (e: Exception) {
-            // Su Keystore corrotto (rara, succede dopo factory reset
-            // su alcuni device): degradiamo silentemente al codice
-            // deterministico. La sicurezza si abbassa ma l'utente non
-            // resta locked out dello strict mode.
+            // Keystore non disponibile (raro, puo' capitare dopo un factory
+            // reset su alcuni device): ritorniamo null. Il chiamante
+            // (getOrGenerateForWeek) fa FAIL-SECURE — nessun codice emesso
+            // (il vecchio fallback deterministico/indovinabile da ANDROID_ID
+            // e' stato rimosso con SEC-10) e validateCode rifiuta ogni input,
+            // quindi lo strict mode resta applicato; l'UI mostra "codice
+            // temporaneamente non disponibile, riprova".
             Log.e(TAG, "EncryptedSharedPreferences unavailable: ${e.message}")
             null
         }
