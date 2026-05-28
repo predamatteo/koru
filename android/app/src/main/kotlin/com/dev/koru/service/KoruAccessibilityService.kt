@@ -252,6 +252,46 @@ class KoruAccessibilityService : AccessibilityService() {
         mainHandler.postDelayed(r, 600L)
     }
 
+    /// Chiamato su Intent.ACTION_SCREEN_OFF (display off / lock).
+    /// L'overlay non e' utile a schermo spento e, peggio, se resta attaccato
+    /// crea il bug: al re-sblocco su un'app diversa (es. WhatsApp da notifica)
+    /// l'overlay stale sopra l'app innocente intercetterebbe il tap del
+    /// bottone "Don't open" e GLOBAL_ACTION_BACK colpirebbe WhatsApp invece
+    /// del target originale. Dismiss + reset del tracking + cancellazione
+    /// di tutti i runnable schedulati (timer di limit, expiry bypass,
+    /// fallback BACK→HOME): scattare a schermo off e' no-op nel migliore
+    /// dei casi e disturbo nel peggiore. checkAppBlocking li rischedula
+    /// al prossimo window-state-change utile.
+    private fun handleScreenOff() {
+        Log.d(TAG, "SCREEN_OFF: dismiss overlay + cancel pending runnables")
+        mainHandler.post {
+            overlayManager?.dismiss()
+            currentlyBlockingPackage = null
+            pendingBackFallbacks.values.forEach { mainHandler.removeCallbacks(it) }
+            pendingBackFallbacks.clear()
+            pendingBypassExpiryChecks.values.forEach { mainHandler.removeCallbacks(it) }
+            pendingBypassExpiryChecks.clear()
+            pendingLimitChecks.values.forEach { mainHandler.removeCallbacks(it) }
+            pendingLimitChecks.clear()
+        }
+    }
+
+    /// Chiamato su Intent.ACTION_USER_PRESENT (unlock attivo dell'utente).
+    /// Se l'utente sblocca direttamente su un'app limitata (es. resume di
+    /// Instagram che era in foreground al lock), Android puo' non emettere
+    /// un nuovo TYPE_WINDOW_STATE_CHANGED — l'app non e' "riaperta", e' gia'
+    /// resumed. Senza questo re-check l'overlay non comparirebbe finche'
+    /// l'utente non navigasse altrove e tornasse. Interroghiamo UsageStats
+    /// per il foreground reale e rilanciamo checkAppBlocking.
+    private fun handleUserPresent() {
+        val fg = ForegroundDetector.detect(applicationContext)?.primaryPackage
+        Log.d(TAG, "USER_PRESENT: foreground=$fg → re-check if blocked")
+        if (fg == null || skipPackages.contains(fg) || fg == packageName) return
+        mainHandler.post {
+            checkAppBlocking(fg, profilesSnapshot.get())
+        }
+    }
+
     /// Snapshot atomico letto da `onAccessibilityEvent` e dai check workflow.
     /// Sostituire il riferimento con un nuovo oggetto immutabile garantisce
     /// publish atomico fra thread (foreground service loop vs binder callback)
@@ -296,6 +336,8 @@ class KoruAccessibilityService : AccessibilityService() {
 
     @Volatile
     private var actionReceiver: BroadcastReceiver? = null
+    @Volatile
+    private var screenStateReceiver: BroadcastReceiver? = null
     @Volatile
     private var inAppDetector: InAppContentDetector? = null
     @Volatile
@@ -343,8 +385,33 @@ class KoruAccessibilityService : AccessibilityService() {
                 // sub-pagina launcher), BYPASS_EXPIRED/USAGE_LIMIT/SECTION
                 // → HOME forzato (l'utente vuole uscire univocamente
                 // dall'app con stack interno tipo Instagram-storia).
-                performGoHomeForBlock(forceHome = forceHome)
-                dismiss()
+                //
+                // Stale-guard: se il foreground reale non coincide col
+                // target dell'overlay (es. utente ha bloccato schermo +
+                // aperto WhatsApp da notification trampoline e l'overlay
+                // di Instagram e' rimasto stale sopra), BACK/HOME
+                // colpirebbe WhatsApp (innocente). Verifichiamo via
+                // ForegroundDetector (UsageStats authoritative) con
+                // fallback su lastForegroundPackage (Accessibility recente).
+                // Se entrambi unavailable: trust-the-system, procediamo.
+                val targetPkg = overlayManager?.currentPackageName ?: ""
+                val realFg = ForegroundDetector.detect(applicationContext)?.primaryPackage
+                val accFg = lastForegroundPackage
+                val stale = isStaleOverlayClick(targetPkg, realFg, accFg)
+                if (stale) {
+                    Log.w(TAG, "STALE overlay click: target=$targetPkg realFg=$realFg accFg=$accFg" +
+                        " — dismiss only, no BACK/HOME (foreground app is not the block target)")
+                    dismiss()
+                    currentlyBlockingPackage = null
+                    pendingBackFallbacks.remove(targetPkg)?.let { mainHandler.removeCallbacks(it) }
+                    pendingLimitChecks.remove(targetPkg)?.let { mainHandler.removeCallbacks(it) }
+                } else {
+                    performGoHomeForBlock(
+                        forceHome = forceHome,
+                        blockedPackage = targetPkg.ifEmpty { null },
+                    )
+                    dismiss()
+                }
             }
             onIntentionChosen = { pkg, intention ->
                 try {
@@ -463,6 +530,33 @@ class KoruAccessibilityService : AccessibilityService() {
             registerReceiver(actionReceiver, filter, RECEIVER_NOT_EXPORTED)
         } else {
             registerReceiver(actionReceiver, filter)
+        }
+
+        // Screen state observer: SCREEN_OFF → dismiss l'overlay (l'utente
+        // non lo sta vedendo comunque) + cancella runnable schedulati che
+        // scatterebbero sopra il keyguard senza senso. USER_PRESENT (unlock
+        // attivo) → re-check del foreground: se l'utente sblocca direttamente
+        // su un'app limitata, il resume potrebbe non emettere un nuovo
+        // TYPE_WINDOW_STATE_CHANGED e l'overlay non comparirebbe.
+        screenStateReceiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                when (intent?.action) {
+                    Intent.ACTION_SCREEN_OFF -> handleScreenOff()
+                    Intent.ACTION_USER_PRESENT -> handleUserPresent()
+                }
+            }
+        }
+        val screenFilter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        // SCREEN_OFF/USER_PRESENT sono broadcast di sistema: il flag
+        // RECEIVER_NOT_EXPORTED e' inoffensivo (il sistema le invia comunque)
+        // ma mantenerlo per parita' stilistica col blocco sopra.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(screenStateReceiver, screenFilter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(screenStateReceiver, screenFilter)
         }
 
         // SEC-02: all'avvio del processo di enforcement, se rileviamo la firma
@@ -1392,6 +1486,8 @@ class KoruAccessibilityService : AccessibilityService() {
         instance = null
         actionReceiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
         actionReceiver = null
+        screenStateReceiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
+        screenStateReceiver = null
         pendingBypassExpiryChecks.values.forEach { mainHandler.removeCallbacks(it) }
         pendingBypassExpiryChecks.clear()
         pendingLimitChecks.values.forEach { mainHandler.removeCallbacks(it) }
@@ -1404,4 +1500,30 @@ class KoruAccessibilityService : AccessibilityService() {
         NativeDatabase.close()
         super.onDestroy()
     }
+}
+
+/// True se l'app correntemente in foreground NON coincide col target dell'overlay,
+/// ossia il click su "Don't open" sta arrivando con l'overlay "stale" sopra un'app
+/// innocente. Usato dal callback onReturnHome per evitare di eseguire BACK/HOME su
+/// un foreground che non e' la app per cui l'overlay e' stato creato (caso classico:
+/// lock + apertura WhatsApp da notification trampoline lascia overlay stale di
+/// Instagram sopra WhatsApp).
+///
+/// Precedenza:
+///  1. realForegroundPackage (UsageStats authoritative quando disponibile).
+///  2. accessibilityForegroundPackage (ultimo TYPE_WINDOW_STATE_CHANGED visto).
+///  3. Entrambi null/unknown → trust-the-system (non-stale, procediamo col path
+///     normale). Una "mancata difesa" e' meno invasiva di una "falsa difesa" che
+///     ignora il click di un utente realmente sull'app bloccata.
+internal fun isStaleOverlayClick(
+    targetPackage: String,
+    realForegroundPackage: String?,
+    accessibilityForegroundPackage: String?,
+): Boolean {
+    if (targetPackage.isEmpty()) return false
+    if (realForegroundPackage != null) return realForegroundPackage != targetPackage
+    if (accessibilityForegroundPackage != null) {
+        return accessibilityForegroundPackage != targetPackage
+    }
+    return false
 }

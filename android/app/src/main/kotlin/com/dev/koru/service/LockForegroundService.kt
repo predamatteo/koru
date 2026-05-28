@@ -98,19 +98,28 @@ class LockForegroundService : Service() {
         createNotificationChannel()
         quickBlockManager.attachContext(applicationContext)
         overlayManager = OverlayManager(applicationContext)
-        overlayManager?.onReturnHome = { forceHome ->
+        overlayManager?.onReturnHome = { _ ->
             // Tap "Don't open" sull'overlay: l'utente vuole tornare alla
             // home del DISPOSITIVO (launcher di default), non a Koru.
             // performGoHome qui usa Intent(ACTION_MAIN, CATEGORY_HOME)
             // che il sistema dispatcha al default launcher — comportamento
             // corretto: se Koru non e' default, va sul launcher di stock.
             //
-            // forceHome: lo riceviamo ma per ora il behavior è identico
-            // (sempre HOME dura). Mantenuto il parametro per consistenza
-            // con KoruAccessibilityService che usa moveTaskToBack quando
-            // false e GLOBAL_ACTION_HOME quando true.
-            performGoHome()
-            overlayManager?.dismiss()
+            // Stale-guard: se il foreground reale non coincide col target
+            // dell'overlay (es. dialog di sistema ha rubato il focus, o
+            // un altro process ha portato avanti un'app non bloccata in
+            // una race rispetto al backup poller), NON lanciamo HOME —
+            // chiuderemmo l'app innocente. Solo dismiss dell'overlay.
+            val targetPkg = overlayManager?.currentPackageName ?: ""
+            val realFg = ForegroundDetector.detect(applicationContext)?.primaryPackage
+            val stale = targetPkg.isNotEmpty() && realFg != null && realFg != targetPkg
+            if (stale) {
+                Log.w(TAG, "STALE overlay click (backup path): target=$targetPkg realFg=$realFg — dismiss only")
+                overlayManager?.dismiss()
+            } else {
+                performGoHome()
+                overlayManager?.dismiss()
+            }
         }
         // O8: wiring del bypass timed. Quando l'utente sceglie una durata
         // dal duration picker, OverlayManager invoca questo callback
