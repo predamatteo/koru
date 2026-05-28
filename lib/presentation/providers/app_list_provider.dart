@@ -20,8 +20,10 @@ import 'app_personalization_provider.dart';
 /// finche' il fetch nativo non completava (PackageManager scan + decode
 /// icone PNG). Trade-off: ~200KB-1MB di icone decoded restano in memoria
 /// anche se nessuno guarda — costo trascurabile su qualunque device
-/// moderno, e su steady-state e' comunque sempre subscribed via
-/// HomeScreen pre-warm.
+/// moderno, e su steady-state e' comunque sempre subscribed via pre-warm
+/// in `HomeScreen` (tab Home dashboard) e `LauncherHomeScreen` (home del
+/// launcher quando Koru e' default), che insieme coprono entrambi i
+/// possibili entry-point cold-start dell'app.
 final installedAppsProvider = FutureProvider<List<InstalledAppInfo>>((ref) async {
   ref.keepAlive();
   final blocking = ref.watch(platformChannelServiceProvider).blocking;

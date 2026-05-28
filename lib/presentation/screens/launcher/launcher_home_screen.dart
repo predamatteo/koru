@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/router/app_router.dart';
+import '../../providers/app_list_provider.dart';
 import '../home/widgets/circle_clock_widget.dart';
 import '../home/widgets/favorites_list.dart';
 import 'widgets/launcher_shortcut_buttons.dart';
@@ -20,6 +21,19 @@ class LauncherHomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Pre-warm di [installedAppsProvider]: quando Koru e' launcher di
+    // default il cold start parte direttamente qui (defaultRouteName ==
+    // '/launcher') saltando [HomeScreen] che gia' pre-warmava. Senza
+    // questo subscribe il primo accesso a "All apps" dopo un process kill
+    // (frequente per un launcher tenuto in background) trova
+    // [installedAppsProvider] senza previous → ramo `loading()` di .when
+    // → spinner 1-3s (durata `getInstalledApps` nativo). Subscribed qui,
+    // il fetch parte mentre l'utente vede clock + favoriti, e al tap su
+    // "All apps" la lista e' gia' cached. Stesso pattern di
+    // home_screen.dart:34. Risolve di riflesso anche il bug analogo in
+    // [LauncherShortcutPickerScreen].
+    ref.watch(installedAppsProvider);
+
     return Scaffold(
       body: SafeArea(
         child: Column(
