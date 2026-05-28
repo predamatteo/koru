@@ -135,6 +135,7 @@ class _FavoritesListState extends ConsumerState<FavoritesList> {
               title: const Text('Rename folder'),
               onTap: () async {
                 Navigator.pop(ctx);
+                if (!context.mounted) return;
                 final newName =
                     await showFolderNameDialog(context, initial: folder.name);
                 if (newName != null) {

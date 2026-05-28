@@ -247,6 +247,7 @@ Future<void> showMoveToFolderSheet({
             title: const Text('New folder…'),
             onTap: () async {
               Navigator.pop(ctx);
+              if (!context.mounted) return;
               final name = await showFolderNameDialog(context);
               if (name == null) return;
               final id = await favoritesController.createFolder(name);
@@ -273,38 +274,71 @@ Future<void> _assignToFolder(
 
 /// Dialog per creare (`initial == null`) o rinominare una cartella. Ritorna il
 /// nome digitato (trimmed, non vuoto) o `null` se annullato/vuoto.
+///
+/// Il `TextEditingController` vive dentro un `StatefulWidget` interno
+/// ([_FolderNameDialog]) e viene disposto nel suo `dispose()`, durante la
+/// teardown del dialog gestita da Flutter. Pattern precedente: controller
+/// creato fuori e disposto dopo `await showDialog` causava
+/// `_dependents.isEmpty is not true` in `InheritedElement.debugDeactivated()`
+/// (framework.dart:6268) perché il TextField era ancora montato durante
+/// l'animazione di pop quando il controller veniva disposto.
 Future<String?> showFolderNameDialog(
   BuildContext context, {
   String? initial,
 }) async {
-  final controller = TextEditingController(text: initial ?? '');
   final result = await showDialog<String>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text(initial == null ? 'New folder' : 'Rename folder'),
+    builder: (ctx) => _FolderNameDialog(initial: initial),
+  );
+  if (result == null || result.isEmpty) return null;
+  return result;
+}
+
+class _FolderNameDialog extends StatefulWidget {
+  const _FolderNameDialog({this.initial});
+
+  final String? initial;
+
+  @override
+  State<_FolderNameDialog> createState() => _FolderNameDialogState();
+}
+
+class _FolderNameDialogState extends State<_FolderNameDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initial ?? '');
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.pop(context, _controller.text.trim());
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.initial == null ? 'New folder' : 'Rename folder'),
       content: TextField(
-        controller: controller,
+        controller: _controller,
         autofocus: true,
         textCapitalization: TextCapitalization.words,
         maxLength: 40,
         decoration: const InputDecoration(hintText: 'Folder name'),
-        onSubmitted: (_) => Navigator.pop(ctx, controller.text.trim()),
+        onSubmitted: (_) => _submit(),
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(ctx),
+          onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
         TextButton(
-          onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+          onPressed: _submit,
           child: const Text('OK'),
         ),
       ],
-    ),
-  );
-  controller.dispose();
-  if (result == null || result.isEmpty) return null;
-  return result;
+    );
+  }
 }
 
 class _SectionHeader extends StatelessWidget {
