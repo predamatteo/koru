@@ -62,6 +62,15 @@ class KoruRoutes {
 }
 
 final rootNavigatorKey = GlobalKey<NavigatorState>();
+
+/// Observer del navigator root: permette a [LauncherHomeScreen] di sapere
+/// quando è la route in cima (RouteAware) e attivare l'override delle gesture
+/// di sistema SOLO lì. Le sub-route del launcher (drawer/swipe/shortcut) e il
+/// push di `/home` (tasto "K") vivono tutte sul navigator root, quindi i
+/// callback didPushNext/didPopNext scattano correttamente quando il launcher
+/// viene coperto o riscoperto.
+final launcherRouteObserver = RouteObserver<PageRoute<dynamic>>();
+
 final shellNavigatorHomeKey = GlobalKey<NavigatorState>();
 final shellNavigatorProfilesKey = GlobalKey<NavigatorState>();
 final shellNavigatorFocusKey = GlobalKey<NavigatorState>();
@@ -83,6 +92,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
   return GoRouter(
     navigatorKey: rootNavigatorKey,
+    observers: [launcherRouteObserver],
     initialLocation: initialLocation,
     debugLogDiagnostics: false,
     redirect: (context, state) {

@@ -30,30 +30,62 @@ class LauncherHomeScreen extends ConsumerStatefulWidget {
 }
 
 class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, RouteAware {
+  ModalRoute<dynamic>? _subscribedRoute;
+
   @override
   void initState() {
     super.initState();
-    // Override delle gesture di sistema: attivo SOLO mentre il launcher è in
-    // primo piano, così sui telefoni con navigazione a gesture gli swipe dai
-    // bordi non vengono mangiati dal back/home di sistema. Rimosso in dispose
-    // → fuori dal launcher la navigazione di sistema torna normale.
     WidgetsBinding.instance.addObserver(this);
-    _setGestureExclusion(true);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Sottoscrizione (una sola volta per route) al RouteObserver del navigator
+    // root: `subscribe` chiama subito `didPush()` per la route corrente, quindi
+    // l'esclusione gesture si attiva al primo mount. Guardia su route diversa:
+    // un didChangeDependencies mentre il launcher è COPERTO (es. cambio tema
+    // con /home in cima) non deve ri-sottoscrivere e ri-attivare l'override.
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic> && route != _subscribedRoute) {
+      if (_subscribedRoute != null) launcherRouteObserver.unsubscribe(this);
+      launcherRouteObserver.subscribe(this, route);
+      _subscribedRoute = route;
+    }
   }
 
   @override
   void dispose() {
+    launcherRouteObserver.unsubscribe(this);
     _setGestureExclusion(false);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
+  // ─── RouteAware: l'override gesture vive SOLO quando il launcher è in cima ──
+  // Il tasto "K" fa push di /home SOPRA il launcher (che resta montato sotto):
+  // senza questo scoping l'esclusione resterebbe attiva dentro l'app, bloccando
+  // back e home di sistema. didPushNext (coperto) → off; didPopNext / didPush
+  // (riscoperto o primo mount) → on.
+  @override
+  void didPush() => _setGestureExclusion(true);
+
+  @override
+  void didPopNext() => _setGestureExclusion(true);
+
+  @override
+  void didPushNext() => _setGestureExclusion(false);
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Su resume ri-applichiamo: alcuni OEM resettano gli exclusion rects della
-    // decorView quando l'activity torna in foreground / dopo config changes.
-    if (state == AppLifecycleState.resumed) _setGestureExclusion(true);
+    // Su resume ri-applichiamo SOLO se il launcher è la route corrente: alcuni
+    // OEM resettano gli exclusion rects dopo background/config change, ma se
+    // l'utente è su un'altra route (es. /home) NON dobbiamo riattivare.
+    if (state == AppLifecycleState.resumed &&
+        (ModalRoute.of(context)?.isCurrent ?? false)) {
+      _setGestureExclusion(true);
+    }
   }
 
   void _setGestureExclusion(bool enabled) {
