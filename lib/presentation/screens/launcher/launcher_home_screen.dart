@@ -22,11 +22,49 @@ const double _kSwipeVelocityThreshold = 320;
 /// Mostrata SOLO quando Koru è lanciato via HOME intent (cioè è stato
 /// scelto come launcher di default). Accessibile sulla route `/launcher`,
 /// che vive FUORI dallo shell con bottom navigation.
-class LauncherHomeScreen extends ConsumerWidget {
+class LauncherHomeScreen extends ConsumerStatefulWidget {
   const LauncherHomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LauncherHomeScreen> createState() => _LauncherHomeScreenState();
+}
+
+class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    // Override delle gesture di sistema: attivo SOLO mentre il launcher è in
+    // primo piano, così sui telefoni con navigazione a gesture gli swipe dai
+    // bordi non vengono mangiati dal back/home di sistema. Rimosso in dispose
+    // → fuori dal launcher la navigazione di sistema torna normale.
+    WidgetsBinding.instance.addObserver(this);
+    _setGestureExclusion(true);
+  }
+
+  @override
+  void dispose() {
+    _setGestureExclusion(false);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Su resume ri-applichiamo: alcuni OEM resettano gli exclusion rects della
+    // decorView quando l'activity torna in foreground / dopo config changes.
+    if (state == AppLifecycleState.resumed) _setGestureExclusion(true);
+  }
+
+  void _setGestureExclusion(bool enabled) {
+    ref
+        .read(platformChannelServiceProvider)
+        .permission
+        .setLauncherGestureExclusion(enabled);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     // Pre-warm di [installedAppsProvider]: quando Koru e' launcher di
     // default il cold start parte direttamente qui (defaultRouteName ==
     // '/launcher') saltando [HomeScreen] che gia' pre-warmava. Senza
@@ -52,8 +90,8 @@ class LauncherHomeScreen extends ConsumerWidget {
         // sopra la lista, è la lista a scrollare (comportamento atteso).
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onHorizontalDragEnd: (d) => _onHorizontalDrag(context, ref, d),
-          onVerticalDragEnd: (d) => _onVerticalDrag(context, ref, d),
+          onHorizontalDragEnd: _onHorizontalDrag,
+          onVerticalDragEnd: _onVerticalDrag,
           child: Column(
             children: [
             // Top bar con "K" logo-shortcut (rimpiazzabile con icona vera).
@@ -100,30 +138,26 @@ class LauncherHomeScreen extends ConsumerWidget {
     );
   }
 
-  void _onHorizontalDrag(
-      BuildContext context, WidgetRef ref, DragEndDetails d) {
+  void _onHorizontalDrag(DragEndDetails d) {
     final v = d.primaryVelocity ?? 0;
     if (v.abs() < _kSwipeVelocityThreshold) return;
     // primaryVelocity > 0 = movimento verso destra.
     _handleSwipe(
-      context,
-      ref,
       v > 0 ? LauncherSwipeDirection.right : LauncherSwipeDirection.left,
     );
   }
 
-  void _onVerticalDrag(BuildContext context, WidgetRef ref, DragEndDetails d) {
+  void _onVerticalDrag(DragEndDetails d) {
     final v = d.primaryVelocity ?? 0;
     // Solo swipe verso l'alto (velocity negativa). Lo swipe verso il basso non
     // è mappato (3 direzioni: su / sinistra / destra).
     if (v >= -_kSwipeVelocityThreshold) return;
-    _handleSwipe(context, ref, LauncherSwipeDirection.up);
+    _handleSwipe(LauncherSwipeDirection.up);
   }
 
-  void _handleSwipe(
-      BuildContext context, WidgetRef ref, LauncherSwipeDirection dir) {
-    final action = ref.read(launcherSwipeActionsProvider)[dir] ??
-        LauncherSwipeAction.none;
+  void _handleSwipe(LauncherSwipeDirection dir) {
+    final action =
+        ref.read(launcherSwipeActionsProvider)[dir] ?? LauncherSwipeAction.none;
     switch (action.type) {
       case LauncherSwipeActionType.none:
         return;

@@ -81,6 +81,16 @@ class PermissionChannel {
   Future<bool> isLauncherModeEnabled() async =>
       (await _channel.invokeMethod<bool>('isLauncherModeEnabled')) ?? false;
 
+  /// Attiva/disattiva l'override delle gesture di sistema sul launcher (so the
+  /// edge swipes aren't eaten by the system back/home gesture navigation).
+  /// Da chiamare SOLO mentre la LauncherHomeScreen è montata. Android limita
+  /// l'esclusione del back a 200dp/bordo e non consente di escludere la home
+  /// gesture dal basso: vedi nota nel channel nativo. No-op < API 29.
+  Future<void> setLauncherGestureExclusion(bool enabled) =>
+      _channel.invokeMethod<void>('setLauncherGestureExclusion', {
+        'enabled': enabled,
+      });
+
   Future<KoruPermissionStatus> checkAllPermissions() async {
     final raw = await _channel.invokeMethod<Map<dynamic, dynamic>>('checkAllPermissions');
     return KoruPermissionStatus.fromMap(raw ?? const {});

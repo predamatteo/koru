@@ -6,6 +6,7 @@ import android.app.AppOpsManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
@@ -79,6 +80,11 @@ activity.startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
                         // "Enabled" = Koru è effettivamente il default launcher.
                         result.success(isDefaultLauncher(activity))
                     }
+                    "setLauncherGestureExclusion" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        setLauncherGestureExclusion(activity, enabled)
+                        result.success(null)
+                    }
                     "checkAllPermissions" -> {
                         val pm = activity.getSystemService(Context.POWER_SERVICE) as PowerManager
                         result.success(
@@ -95,6 +101,41 @@ activity.startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    /**
+     * Override delle gesture di sistema sul launcher (richiesto SOLO mentre
+     * [com.dev.koru.MainActivity] mostra la LauncherHomeScreen; il lato Dart la
+     * attiva on-mount e la rimuove on-dispose).
+     *
+     * Quando i telefoni hanno la navigazione a gesture attiva, il sistema
+     * intercetta gli swipe dai bordi (sinistro/destro = indietro) prima che
+     * arrivino all'app, rendendo inutilizzabili gli swipe personalizzati del
+     * launcher. [android.view.View.setSystemGestureExclusionRects] dichiara le
+     * zone in cui è l'app a gestire le gesture.
+     *
+     * Limiti di Android (non aggirabili da un'app):
+     * - back gesture (bordi sx/dx): l'esclusione è limitata a 200dp per bordo
+     *   (il sistema tiene i 200dp più in basso);
+     * - home gesture (dal basso): la striscia mandatory è riservata e NON
+     *   escludibile — lo swipe-su funziona solo se parte sopra la pillola.
+     *
+     * API 29+ (Q): no-op su versioni precedenti (lì la nav a 3 tasti non
+     * confligge con gli swipe). Rect impostati via [View.post] perché servono
+     * width/height dopo il layout pass.
+     */
+    private fun setLauncherGestureExclusion(activity: Activity, enabled: Boolean) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val root = activity.window?.decorView ?: return
+        root.post {
+            val w = root.width
+            val h = root.height
+            root.systemGestureExclusionRects = if (enabled && w > 0 && h > 0) {
+                listOf(Rect(0, 0, w, h))
+            } else {
+                emptyList()
+            }
+        }
     }
 
     private fun isAccessibilityEnabled(context: Context): Boolean {
