@@ -8,7 +8,11 @@ import 'widgets/app_search_bar.dart';
 import 'widgets/fast_scroller.dart';
 
 class AllAppsScreen extends ConsumerStatefulWidget {
-  const AllAppsScreen({super.key});
+  const AllAppsScreen({super.key, this.autofocusSearch = false});
+
+  /// Quando true apre il drawer con la barra di ricerca già in focus. Usato
+  /// dall'azione swipe "Ricerca app" del launcher (`/launcher/drawer?focus=search`).
+  final bool autofocusSearch;
 
   @override
   ConsumerState<AllAppsScreen> createState() => _AllAppsScreenState();
@@ -112,7 +116,7 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
       body: SafeArea(
         child: Column(
           children: [
-            const AppSearchBar(),
+            AppSearchBar(autofocus: widget.autofocusSearch),
             Expanded(
               child: appsAsync.when(
                 skipLoadingOnRefresh: true,

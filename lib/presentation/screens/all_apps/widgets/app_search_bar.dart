@@ -5,7 +5,11 @@ import '../../../../core/constants/koru_colors.dart';
 import '../../../providers/app_list_provider.dart';
 
 class AppSearchBar extends ConsumerStatefulWidget {
-  const AppSearchBar({super.key});
+  const AppSearchBar({super.key, this.autofocus = false});
+
+  /// Quando true il campo prende il focus all'apertura (apre la tastiera).
+  /// Usato dall'azione swipe "Ricerca app" che apre il drawer già in ricerca.
+  final bool autofocus;
 
   @override
   ConsumerState<AppSearchBar> createState() => _AppSearchBarState();
@@ -46,7 +50,7 @@ class _AppSearchBarState extends ConsumerState<AppSearchBar> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: TextField(
         controller: _controller,
-        autofocus: false,
+        autofocus: widget.autofocus,
         decoration: InputDecoration(
           hintText: 'Search apps',
           prefixIcon: const Icon(Icons.search, color: KoruColors.textSecondary),

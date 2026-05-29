@@ -13,8 +13,10 @@ import '../../presentation/providers/focus_whitelist_provider.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/launcher/launcher_home_screen.dart';
 import '../../presentation/screens/launcher/launcher_shortcut_picker_screen.dart';
+import '../../presentation/screens/launcher/launcher_swipe_picker_screen.dart';
 import '../../presentation/screens/mood/journal_screen.dart';
 import '../../presentation/providers/launcher_shortcuts_provider.dart';
+import '../../presentation/providers/launcher_swipe_actions_provider.dart';
 import '../../presentation/screens/launcher_shell/launcher_shell.dart';
 import '../../presentation/screens/onboarding/onboarding_screen.dart';
 import '../../presentation/screens/profiles/profile_editor_screen.dart';
@@ -48,6 +50,7 @@ class KoruRoutes {
   static const String launcher = '/launcher';
   static const String launcherDrawer = '/launcher/drawer';
   static const String launcherShortcuts = '/launcher/shortcut';
+  static const String launcherSwipe = '/launcher/swipe';
 
   /// Tab Home dentro lo shell (dashboard).
   static const String home = '/home';
@@ -109,7 +112,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: 'drawer',
-            builder: (context, state) => const AllAppsScreen(),
+            builder: (context, state) => AllAppsScreen(
+              // `?focus=search` → apre il drawer con la ricerca già in focus
+              // (azione swipe "Ricerca app"). Senza il param resta off.
+              autofocusSearch:
+                  state.uri.queryParameters['focus'] == 'search',
+            ),
           ),
           GoRoute(
             path: 'shortcut',
@@ -119,6 +127,17 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                       ? LauncherShortcutSlot.right
                       : LauncherShortcutSlot.left;
               return LauncherShortcutPickerScreen(slot: slot);
+            },
+          ),
+          GoRoute(
+            path: 'swipe',
+            builder: (context, state) {
+              final dir = switch (state.uri.queryParameters['dir']) {
+                'left' => LauncherSwipeDirection.left,
+                'right' => LauncherSwipeDirection.right,
+                _ => LauncherSwipeDirection.up,
+              };
+              return LauncherSwipePickerScreen(direction: dir);
             },
           ),
         ],

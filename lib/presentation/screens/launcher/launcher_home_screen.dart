@@ -3,11 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/koru_colors.dart';
+import '../../../core/di/providers.dart';
 import '../../../core/router/app_router.dart';
 import '../../providers/app_list_provider.dart';
+import '../../providers/launcher_swipe_actions_provider.dart';
 import '../home/widgets/circle_clock_widget.dart';
 import '../home/widgets/favorites_list.dart';
 import 'widgets/launcher_shortcut_buttons.dart';
+
+/// Velocità minima (px/s) perché un drag conti come swipe intenzionale: filtra
+/// i micro-movimenti senza richiedere flick troppo aggressivi.
+const double _kSwipeVelocityThreshold = 320;
 
 /// Schermata launcher: clock minimalista + favoriti + 2 shortcut
 /// personalizzabili (phone / camera di default) + link "All apps" e "K"
@@ -36,8 +42,20 @@ class LauncherHomeScreen extends ConsumerWidget {
 
     return Scaffold(
       body: SafeArea(
-        child: Column(
-          children: [
+        // GestureDetector a livello schermo per le swipe personalizzabili.
+        // `opaque` così riceve i drag anche sulle zone "vuote" del layout.
+        // Gli swipe ORIZZONTALI non confliggono con la FavoritesList (che
+        // gestisce solo drag verticali + long-press reorder). Lo swipe
+        // VERTICALE verso l'alto vince l'arena nelle zone non scrollabili
+        // (clock in alto, area bottoni in basso): partendo "dal basso" come
+        // da design il gesto parte fuori dalla lista e funziona; se parte
+        // sopra la lista, è la lista a scrollare (comportamento atteso).
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onHorizontalDragEnd: (d) => _onHorizontalDrag(context, ref, d),
+          onVerticalDragEnd: (d) => _onVerticalDrag(context, ref, d),
+          child: Column(
+            children: [
             // Top bar con "K" logo-shortcut (rimpiazzabile con icona vera).
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
@@ -75,10 +93,50 @@ class LauncherHomeScreen extends ConsumerWidget {
             ),
             const LauncherShortcutButtons(),
             const SizedBox(height: 8),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  void _onHorizontalDrag(
+      BuildContext context, WidgetRef ref, DragEndDetails d) {
+    final v = d.primaryVelocity ?? 0;
+    if (v.abs() < _kSwipeVelocityThreshold) return;
+    // primaryVelocity > 0 = movimento verso destra.
+    _handleSwipe(
+      context,
+      ref,
+      v > 0 ? LauncherSwipeDirection.right : LauncherSwipeDirection.left,
+    );
+  }
+
+  void _onVerticalDrag(BuildContext context, WidgetRef ref, DragEndDetails d) {
+    final v = d.primaryVelocity ?? 0;
+    // Solo swipe verso l'alto (velocity negativa). Lo swipe verso il basso non
+    // è mappato (3 direzioni: su / sinistra / destra).
+    if (v >= -_kSwipeVelocityThreshold) return;
+    _handleSwipe(context, ref, LauncherSwipeDirection.up);
+  }
+
+  void _handleSwipe(
+      BuildContext context, WidgetRef ref, LauncherSwipeDirection dir) {
+    final action = ref.read(launcherSwipeActionsProvider)[dir] ??
+        LauncherSwipeAction.none;
+    switch (action.type) {
+      case LauncherSwipeActionType.none:
+        return;
+      case LauncherSwipeActionType.allApps:
+        context.push(KoruRoutes.launcherDrawer);
+      case LauncherSwipeActionType.appSearch:
+        context.push('${KoruRoutes.launcherDrawer}?focus=search');
+      case LauncherSwipeActionType.openApp:
+        final pkg = action.packageName;
+        if (pkg != null && pkg.isNotEmpty) {
+          ref.read(platformChannelServiceProvider).blocking.launchApp(pkg);
+        }
+    }
   }
 }
 

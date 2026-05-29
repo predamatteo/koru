@@ -43,6 +43,13 @@ class HiveKeys {
   static const String launcherLeftShortcut = 'LAUNCHER_LEFT_SHORTCUT';
   /// Package scelto per shortcut destro del launcher (default: camera).
   static const String launcherRightShortcut = 'LAUNCHER_RIGHT_SHORTCUT';
+  /// Azione swipe del launcher (formato serializzato `LauncherSwipeAction`).
+  /// Swipe verso l'alto (dal basso) — default: apre "All apps".
+  static const String launcherSwipeUp = 'LAUNCHER_SWIPE_UP';
+  /// Swipe verso sinistra — default: nessuna azione.
+  static const String launcherSwipeLeft = 'LAUNCHER_SWIPE_LEFT';
+  /// Swipe verso destra — default: nessuna azione.
+  static const String launcherSwipeRight = 'LAUNCHER_SWIPE_RIGHT';
 
   // ─── cache box keys ────────────────────────────────────────────────────────
   /// Mappa packageName → icon base64, invalidata su install/uninstall events.
