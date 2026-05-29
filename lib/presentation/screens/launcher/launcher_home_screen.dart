@@ -114,26 +114,71 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
             // l'altezza limitata che serve perché ReorderableListView non
             // può vivere senza vincoli verticali.
             const Expanded(child: FavoritesList()),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                TextButton.icon(
-                  onPressed: () => context.push(KoruRoutes.launcherDrawer),
-                  icon: const Icon(Icons.apps_outlined,
-                      color: KoruColors.textSecondary),
-                  label: const Text(
-                    'All apps',
-                    style: TextStyle(
-                        color: KoruColors.textSecondary, letterSpacing: 1),
-                  ),
-                ),
-              ],
-            ),
+            _buildSwipeHints(),
             const LauncherShortcutButtons(),
             const SizedBox(height: 8),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Hint per gli swipe valorizzati (azione ≠ none), al posto del vecchio
+  /// bottone "All apps". Tappabili: eseguono la stessa azione dello swipe, così
+  /// l'accesso resta possibile anche dove la gesture di sistema interferisce.
+  /// Nessuno swipe valorizzato → spazio minimo (niente riga vuota).
+  Widget _buildSwipeHints() {
+    final actions = ref.watch(launcherSwipeActionsProvider);
+    final apps = ref.watch(installedAppsProvider).valueOrNull ?? const [];
+
+    String labelFor(LauncherSwipeAction action) {
+      switch (action.type) {
+        case LauncherSwipeActionType.none:
+          return '';
+        case LauncherSwipeActionType.allApps:
+          return 'All apps';
+        case LauncherSwipeActionType.appSearch:
+          return 'Search';
+        case LauncherSwipeActionType.openApp:
+          final pkg = action.packageName;
+          for (final a in apps) {
+            if (a.packageName == pkg) return a.label;
+          }
+          return pkg ?? 'App';
+      }
+    }
+
+    const order = [
+      LauncherSwipeDirection.up,
+      LauncherSwipeDirection.left,
+      LauncherSwipeDirection.right,
+    ];
+    const icons = {
+      LauncherSwipeDirection.up: Icons.keyboard_arrow_up,
+      LauncherSwipeDirection.left: Icons.keyboard_arrow_left,
+      LauncherSwipeDirection.right: Icons.keyboard_arrow_right,
+    };
+
+    final hints = <Widget>[
+      for (final dir in order)
+        if ((actions[dir] ?? LauncherSwipeAction.none).type !=
+            LauncherSwipeActionType.none)
+          _SwipeHint(
+            icon: icons[dir]!,
+            label: labelFor(actions[dir]!),
+            onTap: () => _handleSwipe(dir),
+          ),
+    ];
+
+    if (hints.isEmpty) return const SizedBox(height: 8);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 4,
+        runSpacing: 2,
+        children: hints,
       ),
     );
   }
@@ -171,6 +216,46 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
           ref.read(platformChannelServiceProvider).blocking.launchApp(pkg);
         }
     }
+  }
+}
+
+/// Hint minimale per uno swipe: freccia direzionale + label dell'azione.
+/// Tappabile (esegue l'azione). Stile sobrio coerente col launcher.
+class _SwipeHint extends StatelessWidget {
+  const _SwipeHint({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: KoruColors.textSecondary),
+            const SizedBox(width: 2),
+            Text(
+              label,
+              style: const TextStyle(
+                color: KoruColors.textSecondary,
+                fontSize: 13,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
