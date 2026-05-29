@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/koru_colors.dart';
@@ -185,13 +186,46 @@ Future<void> showAppContextMenu({
           ListTile(
             leading: const Icon(Icons.delete_outline, color: KoruColors.danger),
             title: const Text('Uninstall'),
-            onTap: () {
+            onTap: () async {
               Navigator.pop(ctx);
-              blocking.uninstallApp(app.packageName);
+              try {
+                await blocking.uninstallApp(app.packageName);
+              } on PlatformException catch (e) {
+                // Strict mode con BLOCK_UNINSTALLING attivo: il native
+                // rifiuta prima di lanciare l'intent. Invece di lasciare
+                // l'utente con "non succede niente", spieghiamo perché.
+                if (e.code == 'BLOCK_UNINSTALLING' && context.mounted) {
+                  await _showUninstallBlockedDialog(context);
+                }
+              }
             },
           ),
         ],
       ),
+    ),
+  );
+}
+
+/// Alert mostrato quando la disinstallazione viene rifiutata dal native perché
+/// la modalità rigida (BLOCK_UNINSTALLING) è attiva. Senza questo, il tap su
+/// "Uninstall" sembrava non fare nulla (il package installer veniva rimandato
+/// indietro dallo StrictModeEnforcer).
+Future<void> _showUninstallBlockedDialog(BuildContext context) {
+  return showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Strict mode active'),
+      content: const Text(
+        'Uninstalling apps is blocked while strict mode protects '
+        'uninstalling. Disable that option in Strict mode settings to '
+        'uninstall apps.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('OK'),
+        ),
+      ],
     ),
   );
 }
