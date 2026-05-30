@@ -46,14 +46,12 @@ void main() {
   });
 
   group('LauncherSwipeActionsNotifier', () {
-    test('defaults: up=allApps, left/right=none when nothing stored', () {
+    test('defaults: left/right=none when nothing stored', () {
       final h = buildTestContainer();
       addTearDown(h.dispose);
       when(() => h.hive.get<String>(any(), any())).thenReturn(null);
 
       final actions = h.container.read(launcherSwipeActionsProvider);
-      expect(actions[LauncherSwipeDirection.up]!.type,
-          LauncherSwipeActionType.allApps);
       expect(actions[LauncherSwipeDirection.left], LauncherSwipeAction.none);
       expect(actions[LauncherSwipeDirection.right], LauncherSwipeAction.none);
     });
@@ -96,7 +94,7 @@ void main() {
           )).called(1);
     });
 
-    test('clear deletes the key and resets to the direction default',
+    test('clear deletes the key and resets to the lateral default (none)',
         () async {
       final h = buildTestContainer();
       addTearDown(h.dispose);
@@ -104,29 +102,29 @@ void main() {
       // l'ultimo `when` che matcha vince, quindi lo specifico deve venire dopo.
       when(() => h.hive.get<String>(any(), any())).thenReturn(null);
       when(() => h.hive
-              .get<String>(HiveKeys.uiStateBox, HiveKeys.launcherSwipeUp))
-          .thenReturn('none');
+              .get<String>(HiveKeys.uiStateBox, HiveKeys.launcherSwipeLeft))
+          .thenReturn('appSearch');
       when(() => h.hive.delete(any(), any())).thenAnswer((_) async {});
 
-      // Stored "none" overrides the up=allApps default.
+      // Stored "appSearch" is reflected in state.
       expect(
-        h.container.read(launcherSwipeActionsProvider)[
-            LauncherSwipeDirection.up],
-        LauncherSwipeAction.none,
+        h.container
+            .read(launcherSwipeActionsProvider)[LauncherSwipeDirection.left]!
+            .type,
+        LauncherSwipeActionType.appSearch,
       );
 
       final notifier = h.container.read(launcherSwipeActionsProvider.notifier);
-      await notifier.clear(LauncherSwipeDirection.up);
+      await notifier.clear(LauncherSwipeDirection.left);
 
-      // Back to the up default (allApps).
+      // Back to the lateral default (none).
       expect(
         h.container
-            .read(launcherSwipeActionsProvider)[LauncherSwipeDirection.up]!
-            .type,
-        LauncherSwipeActionType.allApps,
+            .read(launcherSwipeActionsProvider)[LauncherSwipeDirection.left],
+        LauncherSwipeAction.none,
       );
       verify(() => h.hive
-          .delete(HiveKeys.uiStateBox, HiveKeys.launcherSwipeUp)).called(1);
+          .delete(HiveKeys.uiStateBox, HiveKeys.launcherSwipeLeft)).called(1);
     });
   });
 

@@ -6,14 +6,18 @@ import '../../core/di/providers.dart';
 import 'app_limits_provider.dart';
 import 'profile_providers.dart';
 
-/// Tre swipe configurabili sulla home del launcher: verso l'alto (dal basso),
-/// sinistra, destra. Ogni direzione esegue una [LauncherSwipeAction]
-/// personalizzabile da Settings → Launcher.
+/// Due swipe LATERALI configurabili sulla home del launcher: sinistra e destra.
+/// Ogni direzione esegue una [LauncherSwipeAction] personalizzabile da
+/// Settings → Launcher.
+///
+/// Lo swipe verso l'alto (dal basso) NON è qui: è una gesture FISSA cablata su
+/// "All apps" e non configurabile (vedi `LauncherHomeScreen._openAllApps`), così
+/// l'accesso al drawer resta un gesto core garantito.
 ///
 /// Stesso pattern di persistenza degli shortcut left/right del launcher
 /// (vedi launcher_shortcuts_provider.dart): Hive `uiStateBox`, una chiave per
 /// direzione, valore = [LauncherSwipeAction] serializzato a stringa.
-enum LauncherSwipeDirection { up, left, right }
+enum LauncherSwipeDirection { left, right }
 
 /// Tipo di azione assegnabile a uno swipe. Le app distraenti (profili
 /// blocklist + limiti giornalieri) NON sono selezionabili come [openApp]
@@ -71,17 +75,9 @@ class LauncherSwipeAction {
 }
 
 String _hiveKeyFor(LauncherSwipeDirection dir) => switch (dir) {
-      LauncherSwipeDirection.up => HiveKeys.launcherSwipeUp,
       LauncherSwipeDirection.left => HiveKeys.launcherSwipeLeft,
       LauncherSwipeDirection.right => HiveKeys.launcherSwipeRight,
     };
-
-/// Default sensati per un launcher minimal: swipe-su (dal basso) apre tutte le
-/// app, gli swipe laterali partono disattivati finché l'utente non li imposta.
-LauncherSwipeAction _defaultFor(LauncherSwipeDirection dir) =>
-    dir == LauncherSwipeDirection.up
-        ? const LauncherSwipeAction(LauncherSwipeActionType.allApps)
-        : LauncherSwipeAction.none;
 
 class LauncherSwipeActionsNotifier
     extends Notifier<Map<LauncherSwipeDirection, LauncherSwipeAction>> {
@@ -92,10 +88,11 @@ class LauncherSwipeActionsNotifier
       for (final dir in LauncherSwipeDirection.values)
         dir: () {
           final stored = hive.get<String>(HiveKeys.uiStateBox, _hiveKeyFor(dir));
-          // Nessuna chiave salvata → default per la direzione. Una volta che
-          // l'utente imposta qualcosa (anche `none`) la chiave esiste e vince.
+          // Gli swipe laterali partono disattivati (`none`) finché l'utente non
+          // li imposta. Una volta impostato qualcosa (anche `none`) la chiave
+          // esiste e il valore decodificato vince.
           return stored == null
-              ? _defaultFor(dir)
+              ? LauncherSwipeAction.none
               : LauncherSwipeAction.decode(stored);
         }(),
     };
@@ -110,11 +107,12 @@ class LauncherSwipeActionsNotifier
     state = {...state, dir: action};
   }
 
-  /// Ripristina il default della direzione cancellando l'override utente.
+  /// Ripristina il default della direzione (`none`) cancellando l'override
+  /// utente.
   Future<void> clear(LauncherSwipeDirection dir) async {
     final hive = ref.read(hiveSettingsServiceProvider);
     await hive.delete(HiveKeys.uiStateBox, _hiveKeyFor(dir));
-    state = {...state, dir: _defaultFor(dir)};
+    state = {...state, dir: LauncherSwipeAction.none};
   }
 }
 
@@ -127,7 +125,7 @@ final launcherSwipeActionsProvider = NotifierProvider<
 /// Azione corrente per una singola direzione (comodità per UI/launcher).
 final swipeActionForProvider =
     Provider.family<LauncherSwipeAction, LauncherSwipeDirection>((ref, dir) {
-  return ref.watch(launcherSwipeActionsProvider)[dir] ?? _defaultFor(dir);
+  return ref.watch(launcherSwipeActionsProvider)[dir] ?? LauncherSwipeAction.none;
 });
 
 /// Insieme dei package "distraenti" da escludere dal picker degli swipe:

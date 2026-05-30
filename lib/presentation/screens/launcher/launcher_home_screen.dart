@@ -199,43 +199,19 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
     );
   }
 
-  /// Hint per lo swipe verso l'alto (di norma "All apps"), al posto del vecchio
-  /// bottone "All apps". Le direzioni sx/dx sono ora rese come frecce laterali
-  /// (vedi [_buildSideArrow]). Tappabile: esegue la stessa azione dello swipe,
-  /// così l'accesso resta possibile anche dove la gesture di sistema
-  /// interferisce. Swipe-su disattivato → spazio minimo (niente riga vuota).
+  /// Hint per lo swipe verso l'alto: apre sempre "All apps". È una gesture FISSA
+  /// del launcher (non configurabile, a differenza di sx/dx rese come frecce
+  /// laterali — vedi [_buildSideArrow]), quindi l'hint è sempre presente.
+  /// Tappabile: stessa azione dello swipe, così l'accesso al drawer resta
+  /// possibile anche dove la gesture di sistema interferisce.
   Widget _buildSwipeHints() {
-    final actions = ref.watch(launcherSwipeActionsProvider);
-    final apps = ref.watch(installedAppsProvider).valueOrNull ?? const [];
-
-    String labelFor(LauncherSwipeAction action) {
-      switch (action.type) {
-        case LauncherSwipeActionType.none:
-          return '';
-        case LauncherSwipeActionType.allApps:
-          return 'All apps';
-        case LauncherSwipeActionType.appSearch:
-          return 'Search';
-        case LauncherSwipeActionType.openApp:
-          final pkg = action.packageName;
-          for (final a in apps) {
-            if (a.packageName == pkg) return a.label;
-          }
-          return pkg ?? 'App';
-      }
-    }
-
-    final up = actions[LauncherSwipeDirection.up] ?? LauncherSwipeAction.none;
-    if (up.type == LauncherSwipeActionType.none) {
-      return const SizedBox(height: 8);
-    }
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Center(
         child: _SwipeHint(
           icon: Icons.keyboard_arrow_up,
-          label: labelFor(up),
-          onTap: () => _handleSwipe(LauncherSwipeDirection.up),
+          label: 'All apps',
+          onTap: _openAllApps,
         ),
       ),
     );
@@ -252,11 +228,16 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
 
   void _onVerticalDrag(DragEndDetails d) {
     final v = d.primaryVelocity ?? 0;
-    // Solo swipe verso l'alto (velocity negativa). Lo swipe verso il basso non
-    // è mappato (3 direzioni: su / sinistra / destra).
+    // Solo swipe verso l'alto (velocity negativa) → "All apps" (gesture fissa,
+    // non configurabile). Lo swipe verso il basso non è mappato.
     if (v >= -_kSwipeVelocityThreshold) return;
-    _handleSwipe(LauncherSwipeDirection.up);
+    _openAllApps();
   }
+
+  /// Lo swipe verso l'alto (dal basso) è una gesture FISSA del launcher: apre
+  /// sempre il drawer "All apps". Non è configurabile (a differenza di sx/dx),
+  /// così l'accesso a tutte le app resta un gesto core garantito.
+  void _openAllApps() => context.push(KoruRoutes.launcherDrawer);
 
   void _handleSwipe(LauncherSwipeDirection dir) {
     final action =

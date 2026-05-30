@@ -143,9 +143,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: 'swipe',
             builder: (context, state) {
               final dir = switch (state.uri.queryParameters['dir']) {
-                'left' => LauncherSwipeDirection.left,
                 'right' => LauncherSwipeDirection.right,
-                _ => LauncherSwipeDirection.up,
+                // Lo swipe verso l'alto è fisso (nessun picker): il drawer di
+                // configurazione gestisce solo gli swipe laterali. Fallback a
+                // sinistra per qualsiasi valore non riconosciuto.
+                _ => LauncherSwipeDirection.left,
               };
               return LauncherSwipePickerScreen(direction: dir);
             },

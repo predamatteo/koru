@@ -129,9 +129,10 @@ class _LauncherSettingsScreenState extends ConsumerState<LauncherSettingsScreen>
     );
   }
 
-  /// Sezione "Swipe gestures": assegna un'azione a swipe su / sinistra /
-  /// destra sulla home del launcher. Le azioni si applicano solo quando Koru
-  /// è il launcher di default (la home con le gesture è la `LauncherHomeScreen`).
+  /// Sezione "Swipe gestures": assegna un'azione agli swipe laterali (sinistra
+  /// / destra) sulla home del launcher. Lo swipe verso l'alto è fisso su "All
+  /// apps" e NON è configurabile. Le azioni si applicano solo quando Koru è il
+  /// launcher di default (la home con le gesture è la `LauncherHomeScreen`).
   Widget _buildSwipeSection() {
     final actions = ref.watch(launcherSwipeActionsProvider);
     final apps = ref.watch(installedAppsProvider).valueOrNull ?? const [];
@@ -176,12 +177,12 @@ class _LauncherSettingsScreenState extends ConsumerState<LauncherSettingsScreen>
         ),
         const SizedBox(height: 4),
         const Text(
-          'Assign an action to home-screen swipes. Distracting apps '
-          '(blocked or limited) are not selectable.',
+          'Swipe up always opens All apps. Assign an action to the left and '
+          'right home-screen swipes. Distracting apps (blocked or limited) '
+          'are not selectable.',
           style: TextStyle(color: KoruColors.textSecondary),
         ),
         const SizedBox(height: 8),
-        tile('Swipe up', LauncherSwipeDirection.up, Icons.keyboard_arrow_up),
         tile('Swipe left', LauncherSwipeDirection.left,
             Icons.keyboard_arrow_left),
         tile('Swipe right', LauncherSwipeDirection.right,

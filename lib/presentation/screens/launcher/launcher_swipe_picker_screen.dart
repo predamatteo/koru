@@ -50,7 +50,6 @@ class _LauncherSwipePickerScreenState
   }
 
   String _title() => switch (widget.direction) {
-        LauncherSwipeDirection.up => 'Swipe up',
         LauncherSwipeDirection.left => 'Swipe left',
         LauncherSwipeDirection.right => 'Swipe right',
       };
