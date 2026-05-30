@@ -1,11 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/constants/hive_keys.dart';
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
 
 class LauncherPage extends ConsumerWidget {
   const LauncherPage({super.key});
+
+  /// Apre le impostazioni di sistema per scegliere il launcher di default.
+  ///
+  /// Marca l'onboarding come completato PRIMA di aprire il dialog: quando
+  /// l'utente seleziona Koru, Android riavvia l'app da zero lanciandola via
+  /// HOME intent. Se `isOnboardingPassed` non fosse già `true`, al cold start
+  /// il redirect del router rimanderebbe a `/onboarding` facendo ripartire
+  /// tutto il flusso anche se permessi e step sono già fatti.
+  Future<void> _setAsDefaultLauncher(WidgetRef ref) async {
+    final hive = ref.read(hiveSettingsServiceProvider);
+    await hive.put(HiveKeys.onboardingBox, HiveKeys.isOnboardingPassed, true);
+    await ref
+        .read(platformChannelServiceProvider)
+        .permission
+        .openDefaultLauncherSettings();
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -30,8 +47,7 @@ class LauncherPage extends ConsumerWidget {
           ),
           const SizedBox(height: 32),
           OutlinedButton(
-            onPressed: () =>
-                ref.read(platformChannelServiceProvider).permission.openDefaultLauncherSettings(),
+            onPressed: () => _setAsDefaultLauncher(ref),
             child: const Text('Set Koru as default launcher'),
           ),
           const SizedBox(height: 8),
