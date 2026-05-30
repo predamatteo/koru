@@ -141,11 +141,35 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
             const SizedBox(height: 16),
             const CircleClockWidget(),
             const SizedBox(height: 16),
-            // FavoritesList gestisce ora il proprio scroll (richiesto per
-            // l'auto-scroll durante il drag-reorder). L'Expanded le dà
-            // l'altezza limitata che serve perché ReorderableListView non
-            // può vivere senza vincoli verticali.
-            const Expanded(child: FavoritesList()),
+            // Area centrale: lista favoriti (testo centrato) affiancata dalle
+            // frecce di navigazione laterali. Le frecce sostituiscono gli hint
+            // testuali sx/dx: stessa azione dello swipe, senza label. La
+            // FavoritesList gestisce il proprio scroll (richiesto per
+            // l'auto-scroll durante il drag-reorder); l'Expanded esterno le dà
+            // l'altezza limitata che serve perché ReorderableListView non può
+            // vivere senza vincoli verticali. Gli slot freccia hanno larghezza
+            // fissa (anche quando vuoti) così la lista resta centrata simmetrica.
+            Expanded(
+              child: Row(
+                children: [
+                  // La freccia segue il VERSO DEL DITO, non punta verso il
+                  // bordo. Lo swipe-RIGHT (dito sx→dx) parte dal bordo SINISTRO
+                  // e l'icona punta a destra `›` (verso del movimento); lo
+                  // swipe-LEFT (dito dx→sx) parte dal bordo DESTRO e punta a
+                  // sinistra `‹`. Entrambe le frecce puntano quindi verso il
+                  // centro, seguendo la direzione del gesto.
+                  _buildSideArrow(
+                    LauncherSwipeDirection.right,
+                    Icons.chevron_right,
+                  ),
+                  const Expanded(child: FavoritesList()),
+                  _buildSideArrow(
+                    LauncherSwipeDirection.left,
+                    Icons.chevron_left,
+                  ),
+                ],
+              ),
+            ),
             _buildSwipeHints(),
             const LauncherShortcutButtons(),
             const SizedBox(height: 8),
@@ -156,10 +180,30 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
     );
   }
 
-  /// Hint per gli swipe valorizzati (azione ≠ none), al posto del vecchio
-  /// bottone "All apps". Tappabili: eseguono la stessa azione dello swipe, così
-  /// l'accesso resta possibile anche dove la gesture di sistema interferisce.
-  /// Nessuno swipe valorizzato → spazio minimo (niente riga vuota).
+  /// Freccia di navigazione laterale per gli swipe sx/dx. Slot a larghezza
+  /// fissa: se la direzione non ha azione assegnata resta uno spazio vuoto
+  /// (così la lista al centro non si sposta quando una sola freccia è attiva).
+  /// Tappabile: esegue la stessa azione dello swipe, così l'accesso resta
+  /// possibile anche dove la gesture di sistema interferisce. Nessuna label —
+  /// solo l'icona freccia.
+  Widget _buildSideArrow(LauncherSwipeDirection dir, IconData icon) {
+    const slotWidth = 44.0;
+    final action =
+        ref.watch(launcherSwipeActionsProvider)[dir] ?? LauncherSwipeAction.none;
+    if (action.type == LauncherSwipeActionType.none) {
+      return const SizedBox(width: slotWidth);
+    }
+    return SizedBox(
+      width: slotWidth,
+      child: _SideNavArrow(icon: icon, onTap: () => _handleSwipe(dir)),
+    );
+  }
+
+  /// Hint per lo swipe verso l'alto (di norma "All apps"), al posto del vecchio
+  /// bottone "All apps". Le direzioni sx/dx sono ora rese come frecce laterali
+  /// (vedi [_buildSideArrow]). Tappabile: esegue la stessa azione dello swipe,
+  /// così l'accesso resta possibile anche dove la gesture di sistema
+  /// interferisce. Swipe-su disattivato → spazio minimo (niente riga vuota).
   Widget _buildSwipeHints() {
     final actions = ref.watch(launcherSwipeActionsProvider);
     final apps = ref.watch(installedAppsProvider).valueOrNull ?? const [];
@@ -181,36 +225,18 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
       }
     }
 
-    const order = [
-      LauncherSwipeDirection.up,
-      LauncherSwipeDirection.left,
-      LauncherSwipeDirection.right,
-    ];
-    const icons = {
-      LauncherSwipeDirection.up: Icons.keyboard_arrow_up,
-      LauncherSwipeDirection.left: Icons.keyboard_arrow_left,
-      LauncherSwipeDirection.right: Icons.keyboard_arrow_right,
-    };
-
-    final hints = <Widget>[
-      for (final dir in order)
-        if ((actions[dir] ?? LauncherSwipeAction.none).type !=
-            LauncherSwipeActionType.none)
-          _SwipeHint(
-            icon: icons[dir]!,
-            label: labelFor(actions[dir]!),
-            onTap: () => _handleSwipe(dir),
-          ),
-    ];
-
-    if (hints.isEmpty) return const SizedBox(height: 8);
+    final up = actions[LauncherSwipeDirection.up] ?? LauncherSwipeAction.none;
+    if (up.type == LauncherSwipeActionType.none) {
+      return const SizedBox(height: 8);
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        spacing: 4,
-        runSpacing: 2,
-        children: hints,
+      child: Center(
+        child: _SwipeHint(
+          icon: Icons.keyboard_arrow_up,
+          label: labelFor(up),
+          onTap: () => _handleSwipe(LauncherSwipeDirection.up),
+        ),
       ),
     );
   }
@@ -248,6 +274,30 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
           ref.read(platformChannelServiceProvider).blocking.launchApp(pkg);
         }
     }
+  }
+}
+
+/// Freccia di navigazione laterale (sx/dx): icona chevron centrata in uno slot
+/// alto e tappabile, senza label. Stile sobrio coerente con [_SwipeHint].
+class _SideNavArrow extends StatelessWidget {
+  const _SideNavArrow({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      customBorder: const CircleBorder(),
+      child: Center(
+        child: Icon(
+          icon,
+          size: 32,
+          color: KoruColors.textSecondary,
+        ),
+      ),
+    );
   }
 }
 

@@ -207,6 +207,7 @@ class _LooseAppTile extends StatelessWidget {
               Expanded(
                 child: Text(
                   app.label,
+                  textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
@@ -256,20 +257,26 @@ class _FolderTile extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
               child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Expanded(
-                    child: Text(folder.name, style: theme.textTheme.titleMedium),
-                  ),
-                  Icon(
-                    expanded ? Icons.expand_more : Icons.chevron_right,
-                    size: 22,
-                    color: KoruColors.textSecondary,
+                  Flexible(
+                    child: Text(
+                      folder.name,
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium,
+                    ),
                   ),
                   const SizedBox(width: 6),
                   Text(
                     '${folder.count}',
                     style: theme.textTheme.bodyMedium
                         ?.copyWith(color: KoruColors.textSecondary),
+                  ),
+                  Icon(
+                    expanded ? Icons.expand_more : Icons.chevron_right,
+                    size: 22,
+                    color: KoruColors.textSecondary,
                   ),
                 ],
               ),
@@ -279,13 +286,11 @@ class _FolderTile extends StatelessWidget {
         if (expanded)
           if (folder.apps.isEmpty)
             const Padding(
-              padding: EdgeInsets.only(left: 40, right: 24, bottom: 12),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Empty folder',
-                  style: TextStyle(color: KoruColors.textSecondary),
-                ),
+              padding: EdgeInsets.only(left: 24, right: 24, bottom: 12),
+              child: Text(
+                'Empty folder',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: KoruColors.textSecondary),
               ),
             )
           else
@@ -305,14 +310,17 @@ class _FolderTile extends StatelessWidget {
                   blocking: blocking,
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.only(
-                      left: 40, right: 24, top: 12, bottom: 12),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 24, vertical: 12),
                   child: Row(
                     children: [
                       Expanded(
                         child: Text(
                           app.label,
-                          style: theme.textTheme.titleMedium,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: KoruColors.textSecondary,
+                          ),
                         ),
                       ),
                     ],
