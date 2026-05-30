@@ -82,127 +82,108 @@ Future<void> showAppContextMenu({
   required BlockingChannel blocking,
   int? currentFolderId,
 }) {
-  return showModalBottomSheet<void>(
+  return showStyledSheet(
     context: context,
-    builder: (ctx) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    app.label,
-                    style: Theme.of(ctx).textTheme.titleMedium,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          ListTile(
-            leading: Icon(
-              isFavorite ? Icons.star_border : Icons.star,
-              color: KoruColors.primary,
-            ),
-            title: Text(
-              isFavorite ? 'Remove from favorites' : 'Add to favorites',
-            ),
-            onTap: () async {
-              final messenger = ScaffoldMessenger.maybeOf(context);
-              Navigator.pop(ctx);
-              try {
-                if (isFavorite) {
-                  await favoritesController.remove(app.packageName);
-                } else {
-                  await favoritesController.add(
-                    app.packageName,
-                    label: app.label,
-                  );
-                }
-                messenger?.hideCurrentSnackBar();
-                messenger?.showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      isFavorite
-                          ? 'Removed ${app.label} from favorites'
-                          : 'Added ${app.label} to favorites',
-                    ),
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
-              } catch (e) {
-                messenger?.showSnackBar(
-                  SnackBar(
-                    content: Text('Favorites update failed: $e'),
-                    duration: const Duration(seconds: 3),
-                  ),
-                );
-              }
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.drive_file_move_outline),
-            title: const Text('Move to folder…'),
-            onTap: () {
-              Navigator.pop(ctx);
-              showMoveToFolderSheet(
-                context: context,
-                app: app,
-                isFavorite: isFavorite,
-                currentFolderId: currentFolderId,
-                folders: folders,
-                favoritesController: favoritesController,
+    title: app.label,
+    subtitle: 'App options',
+    builder: (ctx) => [
+      SheetActionTile(
+        icon: isFavorite ? Icons.star_border : Icons.star,
+        label: isFavorite ? 'Remove from favorites' : 'Add to favorites',
+        accent: KoruColors.primary,
+        onTap: () async {
+          final messenger = ScaffoldMessenger.maybeOf(context);
+          Navigator.pop(ctx);
+          try {
+            if (isFavorite) {
+              await favoritesController.remove(app.packageName);
+            } else {
+              await favoritesController.add(
+                app.packageName,
+                label: app.label,
               );
-            },
-          ),
-          if (currentFolderId != null)
-            ListTile(
-              leading: const Icon(Icons.folder_off_outlined),
-              title: const Text('Remove from folder'),
-              onTap: () async {
-                final messenger = ScaffoldMessenger.maybeOf(context);
-                Navigator.pop(ctx);
-                await favoritesController.moveToFolder(app.packageName, null);
-                messenger?.hideCurrentSnackBar();
-                messenger?.showSnackBar(
-                  SnackBar(
-                    content: Text('Moved ${app.label} back to home'),
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
-              },
-            ),
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('App info'),
-            onTap: () {
-              Navigator.pop(ctx);
-              blocking.openAppInfo(app.packageName);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.delete_outline, color: KoruColors.danger),
-            title: const Text('Uninstall'),
-            onTap: () async {
-              Navigator.pop(ctx);
-              try {
-                await blocking.uninstallApp(app.packageName);
-              } on PlatformException catch (e) {
-                // Strict mode con BLOCK_UNINSTALLING attivo: il native
-                // rifiuta prima di lanciare l'intent. Invece di lasciare
-                // l'utente con "non succede niente", spieghiamo perché.
-                if (e.code == 'BLOCK_UNINSTALLING' && context.mounted) {
-                  await _showUninstallBlockedDialog(context);
-                }
-              }
-            },
-          ),
-        ],
+            }
+            messenger?.hideCurrentSnackBar();
+            messenger?.showSnackBar(
+              SnackBar(
+                content: Text(
+                  isFavorite
+                      ? 'Removed ${app.label} from favorites'
+                      : 'Added ${app.label} to favorites',
+                ),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          } catch (e) {
+            messenger?.showSnackBar(
+              SnackBar(
+                content: Text('Favorites update failed: $e'),
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        },
       ),
-    ),
+      SheetActionTile(
+        icon: Icons.drive_file_move_outline,
+        label: 'Move to folder…',
+        onTap: () {
+          Navigator.pop(ctx);
+          showMoveToFolderSheet(
+            context: context,
+            app: app,
+            isFavorite: isFavorite,
+            currentFolderId: currentFolderId,
+            folders: folders,
+            favoritesController: favoritesController,
+          );
+        },
+      ),
+      if (currentFolderId != null)
+        SheetActionTile(
+          icon: Icons.folder_off_outlined,
+          label: 'Remove from folder',
+          onTap: () async {
+            final messenger = ScaffoldMessenger.maybeOf(context);
+            Navigator.pop(ctx);
+            await favoritesController.moveToFolder(app.packageName, null);
+            messenger?.hideCurrentSnackBar();
+            messenger?.showSnackBar(
+              SnackBar(
+                content: Text('Moved ${app.label} back to home'),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          },
+        ),
+      SheetActionTile(
+        icon: Icons.info_outline,
+        label: 'App info',
+        onTap: () {
+          Navigator.pop(ctx);
+          blocking.openAppInfo(app.packageName);
+        },
+      ),
+      const _SheetDivider(),
+      SheetActionTile(
+        icon: Icons.delete_outline,
+        label: 'Uninstall',
+        danger: true,
+        onTap: () async {
+          Navigator.pop(ctx);
+          try {
+            await blocking.uninstallApp(app.packageName);
+          } on PlatformException catch (e) {
+            // Strict mode con BLOCK_UNINSTALLING attivo: il native
+            // rifiuta prima di lanciare l'intent. Invece di lasciare
+            // l'utente con "non succede niente", spieghiamo perché.
+            if (e.code == 'BLOCK_UNINSTALLING' && context.mounted) {
+              await _showUninstallBlockedDialog(context);
+            }
+          }
+        },
+      ),
+    ],
   );
 }
 
@@ -243,54 +224,34 @@ Future<void> showMoveToFolderSheet({
 }) {
   final targets =
       folders.where((f) => f.id != currentFolderId).toList(growable: false);
-  return showModalBottomSheet<void>(
+  return showStyledSheet(
     context: context,
-    builder: (ctx) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Move "${app.label}" to…',
-                    style: Theme.of(ctx).textTheme.titleMedium,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          for (final f in targets)
-            ListTile(
-              leading: const Icon(Icons.folder_outlined),
-              title: Text(f.name, overflow: TextOverflow.ellipsis),
-              onTap: () async {
-                Navigator.pop(ctx);
-                await _assignToFolder(
-                    favoritesController, app, isFavorite, f.id);
-              },
-            ),
-          ListTile(
-            leading: const Icon(
-              Icons.create_new_folder_outlined,
-              color: KoruColors.primary,
-            ),
-            title: const Text('New folder…'),
-            onTap: () async {
-              Navigator.pop(ctx);
-              if (!context.mounted) return;
-              final name = await showFolderNameDialog(context);
-              if (name == null) return;
-              final id = await favoritesController.createFolder(name);
-              await _assignToFolder(favoritesController, app, isFavorite, id);
-            },
-          ),
-        ],
+    title: 'Move "${app.label}"',
+    subtitle: 'Choose a destination folder',
+    builder: (ctx) => [
+      for (final f in targets)
+        SheetActionTile(
+          icon: Icons.folder_outlined,
+          label: f.name,
+          onTap: () async {
+            Navigator.pop(ctx);
+            await _assignToFolder(favoritesController, app, isFavorite, f.id);
+          },
+        ),
+      SheetActionTile(
+        icon: Icons.create_new_folder_outlined,
+        label: 'New folder…',
+        accent: KoruColors.primary,
+        onTap: () async {
+          Navigator.pop(ctx);
+          if (!context.mounted) return;
+          final name = await showFolderNameDialog(context);
+          if (name == null) return;
+          final id = await favoritesController.createFolder(name);
+          await _assignToFolder(favoritesController, app, isFavorite, id);
+        },
       ),
-    ),
+    ],
   );
 }
 
@@ -304,6 +265,189 @@ Future<void> _assignToFolder(
     return controller.moveToFolder(app.packageName, folderId);
   }
   return controller.add(app.packageName, label: app.label, folderId: folderId);
+}
+
+/// Apre un bottom sheet contestuale con lo stile Koru condiviso: superficie
+/// elevata, angoli arrotondati, drag handle e header (titolo + sottotitolo).
+/// Il [builder] restituisce le righe d'azione ([SheetActionTile]) renderizzate
+/// sotto l'header.
+Future<void> showStyledSheet({
+  required BuildContext context,
+  required String title,
+  String? subtitle,
+  required List<Widget> Function(BuildContext ctx) builder,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: KoruColors.surfaceElevated,
+    clipBehavior: Clip.antiAlias,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    builder: (ctx) => _ContextSheet(
+      title: title,
+      subtitle: subtitle,
+      children: builder(ctx),
+    ),
+  );
+}
+
+/// Layout del bottom sheet contestuale: drag handle, intestazione e le righe
+/// d'azione passate in [children].
+class _ContextSheet extends StatelessWidget {
+  const _ContextSheet({
+    required this.title,
+    required this.children,
+    this.subtitle,
+  });
+
+  final String title;
+  final String? subtitle;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 12),
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: KoruColors.textSecondary.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(24, 18, 24, subtitle == null ? 14 : 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: KoruColors.textSecondary,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          ...children,
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+}
+
+/// Riga d'azione di un bottom sheet contestuale: icona in un chip arrotondato
+/// più etichetta. [accent] tinge l'icona/il chip per le azioni primarie (es.
+/// preferiti); [danger] usa la palette di pericolo per le azioni distruttive.
+class SheetActionTile extends StatelessWidget {
+  const SheetActionTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.subtitle,
+    this.accent,
+    this.danger = false,
+    super.key,
+  });
+
+  final IconData icon;
+  final String label;
+  final String? subtitle;
+  final VoidCallback onTap;
+  final Color? accent;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color foreground =
+        danger ? KoruColors.danger : KoruColors.textPrimary;
+    final Color iconColor =
+        danger ? KoruColors.danger : (accent ?? KoruColors.textPrimary);
+    final Color chipColor = danger
+        ? KoruColors.dangerContainer
+        : (accent != null ? KoruColors.primaryContainer : KoruColors.surface);
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: chipColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, size: 20, color: iconColor),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyLarge
+                        ?.copyWith(color: foreground),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (subtitle != null)
+                    Text(
+                      subtitle!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: KoruColors.textSecondary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Separatore sottile usato per isolare visivamente le azioni distruttive dal
+/// resto delle voci del bottom sheet.
+class _SheetDivider extends StatelessWidget {
+  const _SheetDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(20, 6, 20, 6),
+      child: Divider(height: 1),
+    );
+  }
 }
 
 /// Dialog per creare (`initial == null`) o rinominare una cartella. Ritorna il

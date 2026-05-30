@@ -110,60 +110,43 @@ class _FavoritesListState extends ConsumerState<FavoritesList> {
     LauncherFolderItem folder,
     FavoritesController controller,
   ) {
-    return showModalBottomSheet<void>(
+    return showStyledSheet(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      folder.name,
-                      style: Theme.of(ctx).textTheme.titleMedium,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.drive_file_rename_outline),
-              title: const Text('Rename folder'),
-              onTap: () async {
-                Navigator.pop(ctx);
-                if (!context.mounted) return;
-                final newName =
-                    await showFolderNameDialog(context, initial: folder.name);
-                if (newName != null) {
-                  await controller.renameFolder(folder.id, newName);
-                }
-              },
-            ),
-            ListTile(
-              leading:
-                  const Icon(Icons.folder_delete_outlined, color: KoruColors.danger),
-              title: const Text('Delete folder'),
-              subtitle: const Text('Its apps return to the home'),
-              onTap: () async {
-                final messenger = ScaffoldMessenger.maybeOf(context);
-                Navigator.pop(ctx);
-                await controller.deleteFolder(folder.id);
-                messenger?.hideCurrentSnackBar();
-                messenger?.showSnackBar(
-                  SnackBar(
-                    content: Text('Deleted folder "${folder.name}"'),
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
-              },
-            ),
-          ],
+      title: folder.name,
+      subtitle: 'Folder options',
+      builder: (ctx) => [
+        SheetActionTile(
+          icon: Icons.drive_file_rename_outline,
+          label: 'Rename folder',
+          onTap: () async {
+            Navigator.pop(ctx);
+            if (!context.mounted) return;
+            final newName =
+                await showFolderNameDialog(context, initial: folder.name);
+            if (newName != null) {
+              await controller.renameFolder(folder.id, newName);
+            }
+          },
         ),
-      ),
+        SheetActionTile(
+          icon: Icons.folder_delete_outlined,
+          label: 'Delete folder',
+          subtitle: 'Its apps return to the home',
+          danger: true,
+          onTap: () async {
+            final messenger = ScaffoldMessenger.maybeOf(context);
+            Navigator.pop(ctx);
+            await controller.deleteFolder(folder.id);
+            messenger?.hideCurrentSnackBar();
+            messenger?.showSnackBar(
+              SnackBar(
+                content: Text('Deleted folder "${folder.name}"'),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 }
