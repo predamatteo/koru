@@ -21,6 +21,17 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
   bool _deviceAdminActive = false;
   bool _loaded = false;
 
+  // Posseduto dallo State (non creato/distrutto per ogni apertura del dialog):
+  // disporlo subito dopo `await showDialog` lo distruggeva mentre il TextField
+  // era ancora montato durante l'animazione di uscita → "used after disposed".
+  final TextEditingController _backdoorController = TextEditingController();
+
+  @override
+  void dispose() {
+    _backdoorController.dispose();
+    super.dispose();
+  }
+
   StrictModeChannel get _channel =>
       ref.read(platformChannelServiceProvider).strictMode;
 
@@ -49,7 +60,7 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
   /// monouso che ritorniamo qui e il caller passa a setStrictModeOptions per
   /// autorizzare il downgrade della mask.
   Future<String?> _requireBackdoorAuth({required String purpose}) async {
-    final controller = TextEditingController();
+    final controller = _backdoorController..clear();
     var attemptsLeft = await _channel.getRemainingAttempts();
     final lockoutMs = await _channel.getLockoutRemainingMs();
     if (!mounted) return null;
@@ -69,6 +80,10 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
         return StatefulBuilder(
           builder: (ctx, setLocal) {
             return AlertDialog(
+              // scrollable: il content contiene un TextField; senza questo
+              // l'AlertDialog forza il calcolo dell'altezza intrinseca e va in
+              // overflow su schermi piccoli o quando appare la tastiera.
+              scrollable: true,
               title: const Text('Conferma con backdoor code'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -105,7 +120,11 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(false),
+                  // pop() con null: il dialog è Route<String>, ritornare un
+                  // bool farebbe `false as String?` → TypeError dentro il
+                  // Navigator e ne corromperebbe lo stato (freeze dopo 2-3
+                  // annullamenti). null = annullato, come da contratto sotto.
+                  onPressed: () => Navigator.of(ctx).pop(),
                   child: const Text('Annulla'),
                 ),
                 FilledButton(
@@ -130,7 +149,8 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
                               'Codice già usato — aspetta la rotazione settimanale.',
                         );
                       case BackdoorLocked(:final remainingMs):
-                        Navigator.of(ctx).pop(false);
+                        // Stesso motivo dell'Annulla: pop() con null, non false.
+                        Navigator.of(ctx).pop();
                         await _showLockoutDialog(remainingMs);
                     }
                   },
@@ -143,7 +163,8 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
       },
     );
 
-    controller.dispose();
+    // Il controller è posseduto dallo State e viene riusato/clearato alla
+    // prossima apertura; lo disponiamo in dispose(), non qui (vedi sopra).
     // `granted` è: null = annullato/dismissed; '' = validato ma il native non
     // ha emesso token (fallback); altrimenti il token monouso. Distinguere
     // null da '' permette ai caller di sapere se procedere col downgrade.
