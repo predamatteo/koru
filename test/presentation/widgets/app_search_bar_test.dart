@@ -42,7 +42,8 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byType(TextField), 'spotify');
-      await tester.pump();
+      // Il provider è aggiornato con debounce (~180ms): avanza oltre la finestra.
+      await tester.pump(const Duration(milliseconds: 250));
 
       expect(container.read(appSearchQueryProvider), 'spotify');
     });
@@ -78,7 +79,8 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byType(TextField), 'instagram');
-      await tester.pump();
+      // Attendi il debounce prima di leggere il provider.
+      await tester.pump(const Duration(milliseconds: 250));
 
       expect(container.read(appSearchQueryProvider), 'instagram');
 

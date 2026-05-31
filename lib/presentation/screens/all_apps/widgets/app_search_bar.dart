@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -18,6 +20,13 @@ class AppSearchBar extends ConsumerStatefulWidget {
 class _AppSearchBarState extends ConsumerState<AppSearchBar> {
   final _controller = TextEditingController();
 
+  /// PERF: debounce della query. Senza, ogni carattere scriveva
+  /// `appSearchQueryProvider`, ricomputando `filteredAppsProvider` +
+  /// `groupedAppsProvider` e riconciliando l'intera lista del drawer a ogni
+  /// keystroke. Coalesciamo le digitazioni rapide in un solo aggiornamento.
+  Timer? _debounce;
+  static const _debounceDuration = Duration(milliseconds: 180);
+
   @override
   void initState() {
     super.initState();
@@ -32,8 +41,26 @@ class _AppSearchBarState extends ConsumerState<AppSearchBar> {
     if (mounted) setState(() {});
   }
 
+  /// Scrive la query nel provider DOPO il debounce, annullando il timer
+  /// pendente a ogni nuovo carattere.
+  void _onQueryChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(_debounceDuration, () {
+      if (!mounted) return;
+      ref.read(appSearchQueryProvider.notifier).state = value;
+    });
+  }
+
+  /// Aggiornamento immediato (bypassa il debounce): usato dal pulsante clear,
+  /// che non deve attendere né essere sovrascritto da un debounce pendente.
+  void _setQueryNow(String value) {
+    _debounce?.cancel();
+    ref.read(appSearchQueryProvider.notifier).state = value;
+  }
+
   @override
   void dispose() {
+    _debounce?.cancel();
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
     super.dispose();
@@ -41,10 +68,15 @@ class _AppSearchBarState extends ConsumerState<AppSearchBar> {
 
   @override
   Widget build(BuildContext context) {
-    // Sync esterno: se qualcuno (es. tap su una app) resetta la query,
-    // svuota anche il TextField senza causare loop (controllo testo attuale).
+    // Sync esterno: se qualcuno (es. tap su una app, reset su resume) resetta
+    // la query, svuota anche il TextField senza causare loop (controllo testo
+    // attuale) e annulla un eventuale debounce pendente così la digitazione
+    // precedente non riscrive la query appena resettata.
     ref.listen<String>(appSearchQueryProvider, (prev, next) {
-      if (_controller.text != next) _controller.text = next;
+      if (_controller.text != next) {
+        _debounce?.cancel();
+        _controller.text = next;
+      }
     });
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -63,7 +95,7 @@ class _AppSearchBarState extends ConsumerState<AppSearchBar> {
                   ),
                   onPressed: () {
                     _controller.clear();
-                    ref.read(appSearchQueryProvider.notifier).state = '';
+                    _setQueryNow('');
                   },
                 ),
           filled: true,
@@ -73,8 +105,7 @@ class _AppSearchBarState extends ConsumerState<AppSearchBar> {
             borderSide: BorderSide.none,
           ),
         ),
-        onChanged: (value) =>
-            ref.read(appSearchQueryProvider.notifier).state = value,
+        onChanged: _onQueryChanged,
       ),
     );
   }
