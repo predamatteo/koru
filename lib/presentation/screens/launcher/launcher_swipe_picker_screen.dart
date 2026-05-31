@@ -8,6 +8,7 @@ import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
 import '../../providers/app_list_provider.dart';
 import '../../providers/launcher_swipe_actions_provider.dart';
+import '../../widgets/app_icon.dart';
 
 /// Picker per assegnare un'azione a una direzione di swipe del launcher.
 /// In cima le azioni "speciali" (nessuna / tutte le app / ricerca), sotto la
@@ -146,9 +147,7 @@ class _LauncherSwipePickerScreenState
                     current.type == LauncherSwipeActionType.openApp &&
                         current.packageName == app.packageName;
                 return ListTile(
-                  leading: app.iconBytes != null
-                      ? Image.memory(app.iconBytes!, width: 40, height: 40)
-                      : const SizedBox(width: 40),
+                  leading: AppIcon(packageName: app.packageName),
                   title: Text(app.label,
                       maxLines: 1, overflow: TextOverflow.ellipsis),
                   subtitle: Text(app.packageName,

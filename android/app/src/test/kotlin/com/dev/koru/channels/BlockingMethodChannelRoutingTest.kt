@@ -19,8 +19,8 @@ import org.junit.Test
  *
  * [BlockingMethodChannel.routingTable] è la mappa autoritativa `method ->
  * handler` che il router consulta a runtime. Qui asseriamo:
- *  - il set ESATTO dei 29 method name pre-refactor è presente (nessuno
- *    droppato, nessuno aggiunto / rinominato per sbaglio);
+ *  - il set ESATTO dei method name attesi è presente (nessuno droppato,
+ *    nessuno aggiunto / rinominato per sbaglio);
  *  - ogni metodo è instradato all'handler del concern corretto (vecchio `when`
  *    case → nuovo handler);
  *  - nessuna collisione (la `check` in `routingTable` fallirebbe già a build —
@@ -31,10 +31,11 @@ import org.junit.Test
  */
 class BlockingMethodChannelRoutingTest {
 
-    /// I 29 method name che il canale `com.koru/blocking` esponeva PRIMA della
-    /// decomposizione (snapshot del `when` storico). È il contratto di wire:
-    /// se cambia, il Dart-side / un altro runtime si rompe con
-    /// MissingPluginException o notImplemented.
+    /// I method name che il canale `com.koru/blocking` espone: i 29 storici
+    /// (snapshot del `when` pre-decomposizione) + `getAppIcon`, aggiunto in
+    /// Fase 2 per il decode lazy delle icone. È il contratto di wire: se cambia,
+    /// il Dart-side / un altro runtime si rompe con MissingPluginException o
+    /// notImplemented.
     private val expectedWireMethods = setOf(
         // service lifecycle
         "startBlockingService",
@@ -44,6 +45,7 @@ class BlockingMethodChannelRoutingTest {
         "getInstalledApps",
         "getInstalledPackageNames",
         "getLauncherPackageNames",
+        "getAppIcon",
         // usage stats
         "getUsageStats",
         "getUsageStatsByDay",
@@ -83,11 +85,12 @@ class BlockingMethodChannelRoutingTest {
     }
 
     @Test
-    fun routingTable_hasExactly29Methods() {
+    fun routingTable_hasExactly30Methods() {
         // Sentinella sul numero: se un futuro metodo viene aggiunto senza
         // aggiornare questo test, il count diverge e il test fallisce,
         // forzando una rivisitazione consapevole del wire-contract.
-        assertThat(BlockingMethodChannel.routingTable).hasSize(29)
+        // 30 = 29 storici + `getAppIcon` (Fase 2: decode lazy delle icone).
+        assertThat(BlockingMethodChannel.routingTable).hasSize(30)
     }
 
     @Test
@@ -103,6 +106,7 @@ class BlockingMethodChannelRoutingTest {
         assertThat(table["getInstalledApps"]).isEqualTo(AppInventoryCallHandler)
         assertThat(table["getInstalledPackageNames"]).isEqualTo(AppInventoryCallHandler)
         assertThat(table["getLauncherPackageNames"]).isEqualTo(AppInventoryCallHandler)
+        assertThat(table["getAppIcon"]).isEqualTo(AppInventoryCallHandler)
 
         // usage stats
         assertThat(table["getUsageStats"]).isEqualTo(UsageStatsCallHandler)

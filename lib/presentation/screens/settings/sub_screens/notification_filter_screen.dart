@@ -6,6 +6,7 @@ import '../../../../core/constants/layout.dart';
 import '../../../../core/di/providers.dart';
 import '../../../providers/app_list_provider.dart';
 import '../../../providers/notification_filter_provider.dart';
+import '../../../widgets/app_icon.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
 
 /// Permette di silenziare le notifiche da app specifiche: quando una
@@ -173,9 +174,7 @@ class _NotificationFilterScreenState
                   onChanged: (_) => ref
                       .read(notificationFilterProvider.notifier)
                       .toggle(app.packageName),
-                  secondary: app.iconBytes != null
-                      ? Image.memory(app.iconBytes!, width: 40, height: 40)
-                      : const SizedBox(width: 40),
+                  secondary: AppIcon(packageName: app.packageName),
                   title: Text(
                     app.label,
                     maxLines: 1,

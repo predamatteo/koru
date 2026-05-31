@@ -6,6 +6,7 @@ import '../../../../core/constants/koru_colors.dart';
 import '../../../../platform/blocking_channel.dart';
 import '../../../providers/app_list_provider.dart';
 import '../../../providers/profile_providers.dart';
+import '../../../widgets/app_icon.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
 
 /// Seleziona le app da bloccare (blocklist) o consentire (allowlist) per un profilo.
@@ -169,9 +170,7 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
                     color: KoruColors.textSecondary,
                     width: 1.5,
                   ),
-                  secondary: app.iconBytes != null
-                      ? Image.memory(app.iconBytes!, width: 40, height: 40)
-                      : const SizedBox(width: 40),
+                  secondary: AppIcon(packageName: app.packageName),
                   title: Text(
                     app.label,
                     maxLines: 1,

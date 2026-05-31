@@ -78,6 +78,19 @@ final launcherPackagesProvider = FutureProvider<Set<String>>((ref) async {
   }
 });
 
+/// Icona di una singola app, caricata on-demand dal nativo (decode su thread
+/// di background, vedi [BlockingChannel.getAppIcon]). `autoDispose` + `family`:
+/// l'icona si carica solo per i package effettivamente mostrati (picker e
+/// settings) e viene rilasciata quando la schermata si chiude — niente più
+/// decode di TUTTE le icone al cold start né bytes residenti per app mai viste.
+final appIconProvider =
+    FutureProvider.autoDispose.family<Uint8List?, String>((ref, packageName) {
+  return ref
+      .watch(platformChannelServiceProvider)
+      .blocking
+      .getAppIcon(packageName);
+});
+
 /// Query di ricerca corrente nella drawer bar.
 final appSearchQueryProvider = StateProvider<String>((_) => '');
 
@@ -90,52 +103,61 @@ final appSearchQueryProvider = StateProvider<String>((_) => '');
 /// l'utente da nessuna parte (Android NON apre un launcher come app
 /// normale, lo tratta solo come candidato HOME). Koru stessa NON viene
 /// filtrata (anche se ha CATEGORY_HOME): l'utente la cerca esplicitamente.
-final filteredAppsProvider = Provider<List<InstalledAppInfo>>((ref) {
-  // Stale-while-revalidate: mostra la lista cached anche durante un reload
-  // (invalidate da PACKAGE_*/smart-refresh). `.valueOrNull` ritorna per
-  // contratto il valore precedente durante l'AsyncLoading.copyWithPrevious,
-  // quindi il drawer "All apps" e i downstream (grouped, favorite) restano
-  // pieni mentre `getInstalledApps` rifa lo scan PackageManager (1-3s) —
-  // niente blink/sfarfallio al rientro home. NON usare `unwrapPrevious()`:
-  // scarterebbe il previous → lista vuota per tutto il reload (era questo
-  // l'errore di 73d174c/e3c930d). Sul cold start (no previous) resta vuota.
+/// Lista BASE del drawer: app visibili (no hidden, no altri launcher), con
+/// rename applicato, ordinate alfabeticamente. NON dipende dalla query →
+/// ricomputata solo quando cambia l'inventario / la personalizzazione / il set
+/// dei launcher, NON a ogni keystroke di ricerca (vedi [filteredAppsProvider]).
+///
+/// Stale-while-revalidate: legge `installedAppsProvider` con `.valueOrNull`,
+/// che per contratto ritorna il valore precedente durante
+/// l'AsyncLoading.copyWithPrevious → il drawer resta pieno mentre
+/// `getInstalledApps` rifà lo scan PackageManager. NON usare `unwrapPrevious()`:
+/// scarterebbe il previous → lista vuota per tutto il reload (errore storico di
+/// 73d174c/e3c930d). Sul cold start (no previous) resta vuota.
+final visibleAppsProvider = Provider<List<InstalledAppInfo>>((ref) {
   final apps = ref.watch(installedAppsProvider).valueOrNull ?? const [];
-  final query = ref.watch(appSearchQueryProvider).trim().toLowerCase();
   final personalization = ref.watch(appPersonalizationProvider);
   final launcherPkgs =
       ref.watch(launcherPackagesProvider).valueOrNull ?? const <String>{};
-  // Hardcoded: il package di Koru stessa. Volutamente NON filtrato dal
-  // drawer anche se compare nel set launcher (l'utente vuole poterla
-  // aprire da lì se ha cambiato launcher di default).
+  // Hardcoded: il package di Koru stessa. Volutamente NON filtrato dal drawer
+  // anche se compare nel set launcher (l'utente vuole poterla aprire da lì se
+  // ha cambiato launcher di default).
   const koruPkg = 'com.dev.koru';
 
-  final visible = apps.where((a) =>
-      !personalization.isHidden(a.packageName) &&
-      (a.packageName == koruPkg || !launcherPkgs.contains(a.packageName)));
-
-  // Applica rename: produciamo nuovi InstalledAppInfo con label custom
-  // mantenendo packageName/iconBytes, così tutto il resto della UI usa
-  // la label corretta.
-  final withNames = visible.map((a) {
+  // Applica rename: produciamo nuovi InstalledAppInfo con label custom (stesso
+  // packageName) così tutto il resto della UI usa la label corretta.
+  final withNames = <InstalledAppInfo>[];
+  for (final a in apps) {
+    if (personalization.isHidden(a.packageName)) continue;
+    if (a.packageName != koruPkg && launcherPkgs.contains(a.packageName)) {
+      continue;
+    }
     final custom = personalization.customName(a.packageName);
-    if (custom == null) return a;
-    return InstalledAppInfo(
-      packageName: a.packageName,
-      label: custom,
-      iconBytes: a.iconBytes,
+    withNames.add(
+      custom == null
+          ? a
+          : InstalledAppInfo(packageName: a.packageName, label: custom),
     );
-  }).toList();
-
-  if (query.isEmpty) {
-    withNames.sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
-    return withNames;
   }
-  final filtered = withNames
+  withNames.sort(
+    (a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()),
+  );
+  return withNames;
+});
+
+/// App filtrate per la query corrente. Query vuota → ritorna la lista base già
+/// ordinata; altrimenti applica SOLO il filtro (per label o package). È l'unico
+/// provider che dipende da [appSearchQueryProvider]: typing ricomputa il
+/// filtro, non più map+sort dell'intera lista (la base è memoizzata sopra).
+final filteredAppsProvider = Provider<List<InstalledAppInfo>>((ref) {
+  final base = ref.watch(visibleAppsProvider);
+  final query = ref.watch(appSearchQueryProvider).trim().toLowerCase();
+  if (query.isEmpty) return base;
+  return base
       .where((a) =>
           a.label.toLowerCase().contains(query) ||
           a.packageName.toLowerCase().contains(query))
       .toList(growable: false);
-  return filtered;
 });
 
 /// App raggruppate per lettera iniziale (A-Z, # per non-alfabetiche).

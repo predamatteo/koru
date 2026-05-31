@@ -28,6 +28,7 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
         "getInstalledApps",
         "getInstalledPackageNames",
         "getLauncherPackageNames",
+        "getAppIcon",
     )
 
     override fun handle(call: MethodCall, result: MethodChannel.Result, activity: Activity) {
@@ -92,6 +93,24 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
                     resolveLauncherPackages(activity.packageManager).toList()
                 )
             }
+            "getAppIcon" -> {
+                val pkg = call.argument<String>("packageName")
+                if (pkg == null) {
+                    result.error("ARG_ERROR", "packageName required", null)
+                    return
+                }
+                // Decode su background thread: getApplicationIcon decodifica il
+                // drawable dall'APK + compress PNG (~ms per icona). Off dal
+                // Platform main thread; null se l'app non ha icona / fallisce.
+                Thread {
+                    val bytes = try {
+                        getAppIcon(activity, pkg)
+                    } catch (e: Exception) {
+                        null
+                    }
+                    activity.runOnUiThread { result.success(bytes) }
+                }.start()
+            }
         }
     }
 
@@ -111,10 +130,13 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
             // hardcoded da mantenere quando Google ne aggiunge altri.
             .filter { launchablePkgs.contains(it.packageName) }
             .map { app ->
+                // PERF: niente icona qui. Decodificare + comprimere un PNG per
+                // OGNI app (1-3s al cold start su set realistici) era il costo
+                // dominante dell'inventario. Le icone si caricano on-demand per
+                // package via `getAppIcon`, solo dove servono.
                 mapOf(
                     "packageName" to app.packageName,
                     "label" to (pm.getApplicationLabel(app)?.toString() ?: app.packageName),
-                    "icon" to try { drawableToBytes(pm.getApplicationIcon(app)) } catch (_: Exception) { null },
                     "isLauncher" to launcherPkgs.contains(app.packageName),
                 )
             }
@@ -173,6 +195,17 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
             .filter { launchablePkgs.contains(it.packageName) }
             .map { it.packageName }
             .sorted()
+    }
+
+    /// Icona PNG di una singola app, decodificata on-demand. Speculare al
+    /// vecchio campo `icon` di [getInstalledApps], rimosso dall'inventario bulk
+    /// per non pagare il decode di tutte le icone al cold start.
+    private fun getAppIcon(context: Context, packageName: String): ByteArray? {
+        return try {
+            drawableToBytes(context.packageManager.getApplicationIcon(packageName))
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun drawableToBytes(drawable: Drawable): ByteArray {

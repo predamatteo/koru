@@ -4,21 +4,19 @@ class InstalledAppInfo {
   InstalledAppInfo({
     required this.packageName,
     required this.label,
-    this.iconBytes,
   });
 
   final String packageName;
   final String label;
-  final Uint8List? iconBytes;
 
+  /// `getInstalledApps` NON trasporta più le icone (decodificare un PNG per
+  /// OGNI app costava 1-3s al cold start): l'inventario è label-only. Le icone
+  /// si caricano on-demand per package via [BlockingChannel.getAppIcon] /
+  /// `appIconProvider`, solo dove servono (picker e settings).
   factory InstalledAppInfo.fromMap(Map<dynamic, dynamic> map) {
-    final iconRaw = map['icon'];
     return InstalledAppInfo(
       packageName: map['packageName'] as String,
       label: map['label'] as String,
-      iconBytes: iconRaw is List<dynamic>
-          ? Uint8List.fromList(iconRaw.cast<int>())
-          : (iconRaw as Uint8List?),
     );
   }
 }
@@ -161,6 +159,16 @@ class BlockingChannel {
         await _channel.invokeListMethod<String>('getInstalledPackageNames');
     return raw ?? const [];
   }
+
+  /// Icona PNG di una SINGOLA app, decodificata on-demand lato nativo (thread
+  /// di background). Sostituisce il trasporto delle icone in [getInstalledApps]
+  /// (che decodava un PNG per ogni app al cold start). I picker/le settings che
+  /// mostrano l'icona la richiedono per package via `appIconProvider`. Ritorna
+  /// null se l'app non ha icona o il decode fallisce.
+  Future<Uint8List?> getAppIcon(String packageName) =>
+      _channel.invokeMethod<Uint8List>('getAppIcon', {
+        'packageName': packageName,
+      });
 
   // =========================================================================
   // Concern: usage-stats foreground (finestra, per-giorno, totale "oggi").

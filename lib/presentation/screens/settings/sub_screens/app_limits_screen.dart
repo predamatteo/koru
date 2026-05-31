@@ -6,6 +6,7 @@ import '../../../../core/constants/layout.dart';
 import '../../../../platform/blocking_channel.dart';
 import '../../../providers/app_limits_provider.dart';
 import '../../../providers/app_list_provider.dart';
+import '../../../widgets/app_icon.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
 
 /// Imposta un limite giornaliero (minuti/giorno) per app specifiche, con
@@ -133,7 +134,6 @@ class _AppLimitsScreenState extends ConsumerState<AppLimitsScreen> {
                 final app = sorted[i - 1];
                 final cfg = limits[app.packageName];
                 return _AppLimitRow(
-                  iconBytes: app.iconBytes,
                   label: app.label,
                   packageName: app.packageName,
                   limit: cfg,
@@ -152,14 +152,12 @@ class _AppLimitsScreenState extends ConsumerState<AppLimitsScreen> {
 /// + badge minuti + (eventuale) icona lock se strict.
 class _AppLimitRow extends ConsumerWidget {
   const _AppLimitRow({
-    required this.iconBytes,
     required this.label,
     required this.packageName,
     required this.limit,
     required this.onTap,
   });
 
-  final dynamic iconBytes;
   final String label;
   final String packageName;
   final AppLimitConfig? limit;
@@ -186,9 +184,7 @@ class _AppLimitRow extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
           children: [
-            iconBytes != null
-                ? Image.memory(iconBytes, width: 40, height: 40)
-                : const SizedBox(width: 40),
+            AppIcon(packageName: packageName),
             const SizedBox(width: 12),
             Expanded(
               child: Column(

@@ -72,20 +72,18 @@ void main() {
   });
 
   group('BlockingChannel - installed apps', () {
-    test('getInstalledApps parses list of maps', () async {
+    test('getInstalledApps parses list of maps (label only, no icon)',
+        () async {
       setMockHandler((_) async => [
             {
               'packageName': 'com.a',
               'label': 'A',
-              'icon': <int>[1, 2, 3],
             },
           ]);
       final result = await BlockingChannel().getInstalledApps();
       expect(result, hasLength(1));
       expect(result.first.packageName, 'com.a');
       expect(result.first.label, 'A');
-      expect(result.first.iconBytes, isA<Uint8List>());
-      expect(result.first.iconBytes, equals(Uint8List.fromList([1, 2, 3])));
       expect(calls.first.method, 'getInstalledApps');
     });
 
@@ -100,6 +98,20 @@ void main() {
       final result = await BlockingChannel().getInstalledPackageNames();
       expect(result, ['com.a', 'com.b']);
       expect(calls.first.method, 'getInstalledPackageNames');
+    });
+
+    test('getAppIcon returns the icon bytes for a package', () async {
+      final raw = Uint8List.fromList(const [1, 2, 3]);
+      setMockHandler((_) async => raw);
+      final result = await BlockingChannel().getAppIcon('com.a');
+      expect(result, equals(raw));
+      expect(calls.first.method, 'getAppIcon');
+      expect(calls.first.arguments, {'packageName': 'com.a'});
+    });
+
+    test('getAppIcon returns null when native returns null', () async {
+      setMockHandler((_) async => null);
+      expect(await BlockingChannel().getAppIcon('com.x'), isNull);
     });
 
     test('getInstalledPackageNames returns const [] when null', () async {
@@ -490,36 +502,27 @@ void main() {
   });
 
   group('InstalledAppInfo.fromMap', () {
-    test('parses icon as List<int>', () {
+    test('parses packageName and label', () {
       final info = InstalledAppInfo.fromMap(<dynamic, dynamic>{
         'packageName': 'com.a',
         'label': 'A',
-        'icon': <int>[1, 2, 3],
       });
       expect(info.packageName, 'com.a');
       expect(info.label, 'A');
-      expect(info.iconBytes, isA<Uint8List>());
-      expect(info.iconBytes, equals(Uint8List.fromList([1, 2, 3])));
     });
 
-    test('parses icon as Uint8List', () {
-      final raw = Uint8List.fromList(const [9, 8, 7]);
+    test('tolerates extra fields (icon no longer part of the contract)', () {
+      // getInstalledApps non trasporta più le icone (decode lazy via
+      // getAppIcon): fromMap deve restare tollerante a eventuali campi extra
+      // senza rompersi.
       final info = InstalledAppInfo.fromMap(<dynamic, dynamic>{
         'packageName': 'com.b',
         'label': 'B',
-        'icon': raw,
+        'icon': <int>[9, 8, 7],
+        'isLauncher': false,
       });
-      expect(info.iconBytes, isA<Uint8List>());
-      expect(info.iconBytes, equals(raw));
-    });
-
-    test('handles icon=null', () {
-      final info = InstalledAppInfo.fromMap(<dynamic, dynamic>{
-        'packageName': 'com.c',
-        'label': 'C',
-        'icon': null,
-      });
-      expect(info.iconBytes, isNull);
+      expect(info.packageName, 'com.b');
+      expect(info.label, 'B');
     });
   });
 

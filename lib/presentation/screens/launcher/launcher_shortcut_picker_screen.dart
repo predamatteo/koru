@@ -8,6 +8,7 @@ import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
 import '../../providers/app_list_provider.dart';
 import '../../providers/launcher_shortcuts_provider.dart';
+import '../../widgets/app_icon.dart';
 
 /// Picker per sostituire la app collegata a uno shortcut del launcher.
 /// Ricevuta `slot` via query param ("left" | "right") della route.
@@ -121,9 +122,7 @@ class _LauncherShortcutPickerScreenState
               final app = filtered[i];
               final isCurrent = app.packageName == currentPkg;
               return ListTile(
-                leading: app.iconBytes != null
-                    ? Image.memory(app.iconBytes!, width: 40, height: 40)
-                    : const SizedBox(width: 40),
+                leading: AppIcon(packageName: app.packageName),
                 title: Text(app.label,
                     maxLines: 1, overflow: TextOverflow.ellipsis),
                 subtitle: Text(app.packageName,

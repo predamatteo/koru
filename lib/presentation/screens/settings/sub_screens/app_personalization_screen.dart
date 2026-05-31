@@ -5,6 +5,7 @@ import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/constants/layout.dart';
 import '../../../providers/app_list_provider.dart';
 import '../../../providers/app_personalization_provider.dart';
+import '../../../widgets/app_icon.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
 
 /// Schermata per nascondere o rinominare le app nel drawer del launcher.
@@ -184,16 +185,10 @@ class _AppPersonalizationScreenState
                 final hidden = personalization.isHidden(app.packageName);
                 final custom = personalization.customName(app.packageName);
                 return ListTile(
-                  leading: app.iconBytes != null
-                      ? Opacity(
-                          opacity: hidden ? 0.4 : 1.0,
-                          child: Image.memory(
-                            app.iconBytes!,
-                            width: 40,
-                            height: 40,
-                          ),
-                        )
-                      : const SizedBox(width: 40),
+                  leading: Opacity(
+                    opacity: hidden ? 0.4 : 1.0,
+                    child: AppIcon(packageName: app.packageName),
+                  ),
                   title: Text(
                     custom ?? app.label,
                     maxLines: 1,
