@@ -9,7 +9,6 @@ import '../../platform/service_event_channel.dart';
 import 'app_limits_provider.dart';
 import 'app_list_provider.dart';
 import 'mood_provider.dart';
-import 'profile_providers.dart';
 import 'statistics_providers.dart';
 
 void _invalidateStats(Ref ref) {
@@ -19,7 +18,14 @@ void _invalidateStats(Ref ref) {
   ref.invalidate(topIntentionsProvider);
   ref.invalidate(focusTimeMsProvider);
   ref.invalidate(todayMoodProvider);
-  ref.invalidate(profilesProvider);
+  // PERF: `profilesProvider` RIMOSSO da questo set. I profili sono scritti SOLO
+  // dall'UI Dart (ProfileRepository → notifyProfileChanged verso il native, mai
+  // il contrario): `Drift.watch` è già reattivo, quindi né un evento di blocking
+  // né un resume possono averli cambiati. Era l'unico provider qui che ricomputa
+  // eagerly anche quando Koru è launcher (ha listener vivi via activeProfiles/
+  // launcherSwipeActions) → re-query `watchAllProfiles` (loop N+1) sprecata ad
+  // alta frequenza. Resta invalidato dal pull-to-refresh manuale (global_refresh)
+  // e dalle proprie mutazioni Dart.
 }
 
 void _invalidateInstalledApps(Ref ref) {
@@ -171,7 +177,21 @@ final blockingEventsRefresherProvider = Provider<void>((ref) {
 ///    e all-apps drawer sono sempre coerenti col PackageManager.
 final appLifecycleInvalidatorProvider = Provider<void>((ref) {
   final binding = WidgetsBinding.instance;
+  // PERF: throttle del handler di resume. Con Koru launcher di default
+  // `resumed` scatta a ogni ritorno home / pull della notification shade /
+  // dismissal di un overlay di blocco — anche decine di volte al minuto. Senza
+  // throttle ogni resume rilancia l'invalidazione delle stats + una scansione
+  // PackageManager nativa. Gli eventi di blocking emessi mentre l'app era in
+  // background arrivano comunque al rientro via il singolo upstream affidabile
+  // dell'EventChannel (service_event_channel.dart), quindi l'invalidate-su-resume
+  // resta solo un catch-up periodico: 1 ogni 45s è più che sufficiente.
+  const minResumeGap = Duration(seconds: 45);
+  DateTime? lastHandledResume;
   final observer = _LifecycleObserver(() {
+    final now = DateTime.now();
+    final last = lastHandledResume;
+    if (last != null && now.difference(last) < minResumeGap) return;
+    lastHandledResume = now;
     _invalidateStats(ref);
     // Fire-and-forget: il diff-based refresh è async e non deve bloccare
     // il frame di rientro nell'app.
