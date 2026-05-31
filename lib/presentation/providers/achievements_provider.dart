@@ -50,32 +50,55 @@ Future<AchievementStats> buildAchievementStats(Ref ref) async {
   final streaksRepo = ref.read(streaksRepositoryProvider);
   final platform = ref.read(platformChannelServiceProvider);
 
-  final lifetimeMs = await focusDao.getLifetimeFocusMs();
   final now = DateTime.now();
   final today = dayKeyFor(now);
-  final todayMs = await focusDao.watchFocusTimeUsage(today, today).first;
 
-  final intentionsCount = await intentionsDao.getLifetimeIntentionsCount();
-  final honestBlocks = await raeDao.getLifetimeHonestBlockCount();
+  // PERF (F2.5): metriche indipendenti lanciate in parallelo invece che in
+  // sequenza. `Future.wait` (eagerError:false di default) attende TUTTE le
+  // future anche se una fallisce, poi rilancia il primo errore → nessuna
+  // rejection orfana; i singoli `await` successivi sono già completi e quindi
+  // restano TIPIZZATI (nessun cast).
+  final lifetimeMsF = focusDao.getLifetimeFocusMs();
+  final todayMsF = focusDao.watchFocusTimeUsage(today, today).first;
+  final intentionsCountF = intentionsDao.getLifetimeIntentionsCount();
+  final honestBlocksF = raeDao.getLifetimeHonestBlockCount();
+  final focusStreakF = streaksRepo.current(StreakId.focus);
+  final cleanStreakF = streaksRepo.current(StreakId.clean);
+  final profilesF = db.getAllProfiles();
+  final limitsF = platform.blocking.getAppDailyLimits();
+  final customOverlayF = db.customSelect(
+    "SELECT COUNT(*) AS c FROM app_profile_relations "
+    "WHERE overlay_config_json IS NOT NULL "
+    "AND TRIM(overlay_config_json) != ''",
+  ).getSingle();
+  final strictMaskF = platform.strictMode.getStrictModeOptions();
 
-  final focusStreak = await streaksRepo.current(StreakId.focus);
-  final cleanStreak = await streaksRepo.current(StreakId.clean);
+  await Future.wait<Object?>([
+    lifetimeMsF,
+    todayMsF,
+    intentionsCountF,
+    honestBlocksF,
+    focusStreakF,
+    cleanStreakF,
+    profilesF,
+    limitsF,
+    customOverlayF,
+    strictMaskF,
+  ]);
 
-  final profiles = await db.getAllProfiles();
+  final lifetimeMs = await lifetimeMsF;
+  final todayMs = await todayMsF;
+  final intentionsCount = await intentionsCountF;
+  final honestBlocks = await honestBlocksF;
+  final focusStreak = await focusStreakF;
+  final cleanStreak = await cleanStreakF;
+  final profiles = await profilesF;
+  final limits = await limitsF;
+  final customOverlayRows = await customOverlayF;
+  final strictMask = await strictMaskF;
 
-  final limits = await platform.blocking.getAppDailyLimits();
   final appsWithLimits = limits.values.where((v) => v.minutes > 0).length;
-
-  final customOverlayRows = await db
-      .customSelect(
-        "SELECT COUNT(*) AS c FROM app_profile_relations "
-        "WHERE overlay_config_json IS NOT NULL "
-        "AND TRIM(overlay_config_json) != ''",
-      )
-      .getSingle();
   final customOverlayCount = customOverlayRows.read<int>('c');
-
-  final strictMask = await platform.strictMode.getStrictModeOptions();
   final strictMode = strictMask > 0;
 
   return AchievementStats(

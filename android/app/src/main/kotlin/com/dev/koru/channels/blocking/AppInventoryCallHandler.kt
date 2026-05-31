@@ -3,11 +3,14 @@ package com.dev.koru.channels.blocking
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.util.Log
+import com.dev.koru.BuildConfig
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
@@ -19,8 +22,9 @@ import java.io.ByteArrayOutputStream
  * comportamento e wire-contract invariati.
  *
  * `getInstalledApps` resta offloadato su un [Thread] di background: scansiona
- * tutti i package, decodifica l'icona da APK e fa un compress PNG per ciascuno
- * (1-3s su set realistici) — sul Platform main thread freezerebbe la UI Flutter.
+ * tutti i package launchable lato PackageManager. NON decodifica più le icone
+ * (ora on-demand via `getAppIcon`), ma la scansione resta abbastanza onerosa da
+ * non volerla sul Platform main thread.
  */
 internal object AppInventoryCallHandler : BlockingCallHandler {
 
@@ -45,7 +49,15 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
                 // per `result.success`/`result.error`.
                 Thread {
                     try {
+                        val t0 = System.currentTimeMillis()
                         val data = getInstalledApps(activity)
+                        if (BuildConfig.DEBUG) {
+                            Log.d(
+                                "KoruPerf",
+                                "getInstalledApps: ${data.size} app in " +
+                                    "${System.currentTimeMillis() - t0}ms (label-only, no icon)",
+                            )
+                        }
                         activity.runOnUiThread { result.success(data) }
                     } catch (e: Exception) {
                         activity.runOnUiThread {
@@ -103,10 +115,18 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
                 // drawable dall'APK + compress PNG (~ms per icona). Off dal
                 // Platform main thread; null se l'app non ha icona / fallisce.
                 Thread {
+                    val t0 = System.currentTimeMillis()
                     val bytes = try {
                         getAppIcon(activity, pkg)
                     } catch (e: Exception) {
                         null
+                    }
+                    if (BuildConfig.DEBUG) {
+                        Log.d(
+                            "KoruPerf",
+                            "getAppIcon($pkg): ${bytes?.size ?: 0}B in " +
+                                "${System.currentTimeMillis() - t0}ms",
+                        )
                     }
                     activity.runOnUiThread { result.success(bytes) }
                 }.start()
@@ -117,18 +137,7 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
     private fun getInstalledApps(context: Context): List<Map<String, Any?>> {
         val pm = context.packageManager
         val launcherPkgs = resolveLauncherPackages(pm)
-        val launchablePkgs = resolveLaunchablePackages(pm)
-        return pm.getInstalledApplications(PackageManager.GET_META_DATA)
-            // Solo app con un'activity lanciabile (MAIN + CATEGORY_LAUNCHER),
-            // come ogni launcher stock. Il vecchio criterio
-            // `FLAG_SYSTEM == 0 || hasLaunchIntent` lasciava passare i
-            // componenti Google distribuiti via Play Store (Android System
-            // SafetyCore, Key Verifier, ...) e le tastiere/IME: NON sono di
-            // sistema (FLAG_SYSTEM == 0) ma non hanno front-door → comparivano
-            // nel drawer pur non essendo apribili (tap = niente). Gating per
-            // membership nel set launchable li esclude tutti, senza denylist
-            // hardcoded da mantenere quando Google ne aggiunge altri.
-            .filter { launchablePkgs.contains(it.packageName) }
+        return launchableApplications(pm)
             .map { app ->
                 // PERF: niente icona qui. Decodificare + comprimere un PNG per
                 // OGNI app (1-3s al cold start su set realistici) era il costo
@@ -141,6 +150,24 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
                 )
             }
             .sortedBy { (it["label"] as String).lowercase() }
+    }
+
+    /// PARITÀ (F2.4): sorgente UNICA dei package "launchable", condivisa da
+    /// [getInstalledApps] e [getInstalledPackageNames]. I due endpoint DEVONO
+    /// ritornare lo stesso set (TodayLimitsCard/favoriti incrociano la lista col
+    /// drawer): centralizzare il filtro qui garantisce per costruzione che non
+    /// possano divergere, invece di affidarsi a due query allineate a mano.
+    ///
+    /// Criterio: app con un'activity MAIN + CATEGORY_LAUNCHER (front-door). Il
+    /// vecchio criterio `FLAG_SYSTEM == 0 || hasLaunchIntent` lasciava passare i
+    /// componenti Google distribuiti via Play (SafetyCore, Key Verifier, ...) e
+    /// le tastiere/IME — non di sistema ma non apribili → comparivano nel drawer
+    /// senza fare nulla al tap. Il gating per membership nel set launchable li
+    /// esclude tutti, senza denylist hardcoded da mantenere.
+    private fun launchableApplications(pm: PackageManager): List<ApplicationInfo> {
+        val launchablePkgs = resolveLaunchablePackages(pm)
+        return pm.getInstalledApplications(PackageManager.GET_META_DATA)
+            .filter { launchablePkgs.contains(it.packageName) }
     }
 
     /// Set di package che dichiarano almeno un'activity con
@@ -179,20 +206,11 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
     }
 
     /// Variante "cheap" usata dal lifecycle observer Dart per il diff-based
-    /// refresh: ritorna solo i package names launchable, senza label e
-    /// senza icone, evitando il decode delle bitmap (operazione costosa
-    /// che — se eseguita ad ogni resume — causa un freeze visibile della UI).
+    /// refresh: ritorna solo i package names launchable, senza label e senza
+    /// icone. Stesso set di [getInstalledApps] per COSTRUZIONE (entrambi via
+    /// [launchableApplications]) — vedi nota di parità lì.
     private fun getInstalledPackageNames(context: Context): List<String> {
-        val pm = context.packageManager
-        // Stesso criterio di [getInstalledApps] — i due endpoint DEVONO
-        // ritornare lo stesso set di package: sono fotografie consistenti
-        // dello stesso PackageManager (TodayLimitsCard incrocia questa lista
-        // col drawer per filtrare le entries fantasma di app disinstallate).
-        // Una sola queryIntentActivities invece di N getLaunchIntentForPackage:
-        // questo è il path "cheap" invocato a ogni resume.
-        val launchablePkgs = resolveLaunchablePackages(pm)
-        return pm.getInstalledApplications(0)
-            .filter { launchablePkgs.contains(it.packageName) }
+        return launchableApplications(context.packageManager)
             .map { it.packageName }
             .sorted()
     }
