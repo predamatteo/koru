@@ -18,7 +18,10 @@ class AppListView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final grouped = ref.watch(groupedAppsProvider);
     final blocking = ref.watch(platformChannelServiceProvider).blocking;
-    final favs = ref.watch(favoritesProvider).valueOrNull ?? const <String>[];
+    // PERF: Set per lookup O(1). `favs.contains` veniva chiamato 2 volte per
+    // ogni tile (isFavorite + menu contestuale) su una List → O(n) per tile.
+    final favs =
+        (ref.watch(favoritesProvider).valueOrNull ?? const <String>[]).toSet();
     final favoritesController = ref.watch(favoritesControllerProvider);
     final folders =
         ref.watch(foldersProvider).valueOrNull ?? const <LauncherFolder>[];

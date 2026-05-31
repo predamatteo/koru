@@ -143,8 +143,21 @@ final groupedAppsProvider = Provider<Map<String, List<InstalledAppInfo>>>((ref) 
   final apps = ref.watch(filteredAppsProvider);
   final groups = <String, List<InstalledAppInfo>>{};
   for (final app in apps) {
-    final first = app.label.isEmpty ? '#' : app.label[0].toUpperCase();
-    final key = RegExp(r'^[A-Z]$').hasMatch(first) ? first : '#';
+    // PERF: check su code-unit invece di `RegExp(r'^[A-Z]$')` compilata per
+    // OGNI app (Dart non interna i pattern → un'alloc/compile a voce, ripetuta
+    // a ogni keystroke nella ricerca). Comportamento invariato: solo A-Z ASCII
+    // fanno sezione propria; tutto il resto (cifre, simboli, lettere accentate,
+    // grapheme multi-unit) finisce in '#'.
+    final label = app.label;
+    var key = '#';
+    if (label.isNotEmpty) {
+      final c = label.codeUnitAt(0);
+      if (c >= 0x41 && c <= 0x5A) {
+        key = label[0]; // già maiuscola A-Z
+      } else if (c >= 0x61 && c <= 0x7A) {
+        key = String.fromCharCode(c - 0x20); // minuscola a-z → maiuscola
+      }
+    }
     groups.putIfAbsent(key, () => []).add(app);
   }
   final orderedKeys = groups.keys.toList()
