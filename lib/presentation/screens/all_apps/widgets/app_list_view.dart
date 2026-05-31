@@ -37,34 +37,43 @@ class AppListView extends ConsumerWidget {
       );
     }
 
-    final items = <Widget>[const SizedBox(height: 4)];
+    // PERF: appiattiamo i gruppi in un'unica lista [header | app] e usiamo
+    // ListView.builder, così solo le righe visibili vengono costruite. Prima
+    // `ListView(children:)` materializzava il Widget di OGNI app a ogni rebuild
+    // (es. a ogni keystroke di ricerca). Le altezze restano fisse (header 40 /
+    // tile 50): coerenti con `_computeSectionOffsets` della FastScroller, e il
+    // `padding: top: 4` sostituisce il vecchio SizedBox(height: 4) iniziale,
+    // preservando gli offset di scroll.
+    final rows = <Object>[];
     for (final entry in grouped.entries) {
-      items.add(_SectionHeader(letter: entry.key));
-      items.addAll(
-        entry.value.map(
-          (app) => _AppTile(
-            app: app,
-            isFavorite: favs.contains(app.packageName),
-            onTap: () => blocking.launchApp(app.packageName),
-            onLongPress: () => showAppContextMenu(
-              context: context,
-              app: app,
-              isFavorite: favs.contains(app.packageName),
-              currentFolderId: null,
-              folders: folders,
-              favoritesController: favoritesController,
-              blocking: blocking,
-            ),
-          ),
-        ),
-      );
+      rows.add(entry.key); // String → header di sezione
+      rows.addAll(entry.value); // InstalledAppInfo → riga app
     }
 
-    return ListView(
+    return ListView.builder(
       controller: scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(right: 42),
-      children: items,
+      padding: const EdgeInsets.only(top: 4, right: 42),
+      itemCount: rows.length,
+      itemBuilder: (context, i) {
+        final row = rows[i];
+        if (row is String) return _SectionHeader(letter: row);
+        final app = row as InstalledAppInfo;
+        return _AppTile(
+          app: app,
+          isFavorite: favs.contains(app.packageName),
+          onTap: () => blocking.launchApp(app.packageName),
+          onLongPress: () => showAppContextMenu(
+            context: context,
+            app: app,
+            isFavorite: favs.contains(app.packageName),
+            currentFolderId: null,
+            folders: folders,
+            favoritesController: favoritesController,
+            blocking: blocking,
+          ),
+        );
+      },
     );
   }
 }
