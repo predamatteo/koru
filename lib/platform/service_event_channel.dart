@@ -90,13 +90,49 @@ class ServiceEventChannel {
 
   static const EventChannel _channel = EventChannel('com.koru/service_events');
 
-  Stream<KoruServiceEvent> events() => _channel.receiveBroadcastStream().map((raw) {
-        if (raw is String) {
-          final decoded = jsonDecode(raw);
-          if (decoded is Map<String, dynamic>) {
-            return KoruServiceEvent.fromJson(decoded);
-          }
-        }
-        return UnknownServiceEvent(raw: {'raw': raw});
-      });
+  // PERF/correttezza: un SOLO upstream condiviso verso l'EventChannel.
+  //
+  // `receiveBroadcastStream()` registra il proprio handler keyed sul SOLO nome
+  // del canale: l'engine Flutter (e il lato Kotlin con un unico `eventSink`)
+  // tiene UN solo listener per canale, e impostare un nuovo listener cancella
+  // il precedente. Con più subscriber (blocking refresher, package refresher,
+  // achievement evaluator, quick-block tick) ognuno che chiamava
+  // `receiveBroadcastStream()` clobberava la registrazione degli altri: solo
+  // l'ultimo riceveva gli eventi e lo smontaggio di uno chiudeva il canale per
+  // tutti → eventi persi/duplicati e "reload casuali" dei provider.
+  //
+  // Soluzione: una sola subscription upstream (mai cancellata per la vita
+  // dell'app — `PlatformChannelService` è un singleton non-autoDispose) che fa
+  // fan-out via un [StreamController.broadcast]. I subscriber si attaccano al
+  // broadcast; cancellare la propria subscription NON tocca l'upstream.
+  StreamController<KoruServiceEvent>? _controller;
+  StreamSubscription<dynamic>? _upstream;
+
+  Stream<KoruServiceEvent> events() {
+    final existing = _controller;
+    if (existing != null && !existing.isClosed) return existing.stream;
+    final controller = StreamController<KoruServiceEvent>.broadcast();
+    _controller = controller;
+    _upstream = _channel.receiveBroadcastStream().listen(
+      (raw) => controller.add(_decode(raw)),
+      onError: controller.addError,
+      // L'EventChannel reale non termina mai; onDone serve ai test
+      // (MockStreamHandler.endOfStream) per far completare `events().toList()`.
+      onDone: () {
+        _upstream = null;
+        if (!controller.isClosed) controller.close();
+      },
+    );
+    return controller.stream;
+  }
+
+  static KoruServiceEvent _decode(dynamic raw) {
+    if (raw is String) {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        return KoruServiceEvent.fromJson(decoded);
+      }
+    }
+    return UnknownServiceEvent(raw: {'raw': raw});
+  }
 }
