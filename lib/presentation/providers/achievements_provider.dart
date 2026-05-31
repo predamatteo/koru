@@ -143,17 +143,34 @@ class AchievementEvaluationNotifier extends Notifier<void> {
   void build() {}
 
   Future<void>? _inFlight;
+  bool _dirty = false;
 
   /// Coalescing: boot catch-up, resume e gli eventi (focus-end, block) possono
   /// chiamare [trigger] ravvicinati, ognuno dei quali rieseguirebbe l'intero
   /// [buildAchievementStats] (molte query DB + 2 platform call). Se una
   /// valutazione è già in corso ne riusiamo il Future invece di lanciarne
-  /// un'altra in parallelo: gli achievement sono idempotenti, quindi la
-  /// valutazione in volo copre comunque lo stato più recente al completamento.
+  /// un'altra in parallelo.
+  ///
+  /// `_dirty`: una valutazione in volo ha già fatto il suo snapshot DB, quindi
+  /// NON vede le write arrivate dopo (es. `markToday` del focus appena chiuso
+  /// in achievement_evaluator, eseguita prima di trigger()). Se arriva un nuovo
+  /// trigger mentre siamo in volo lo marchiamo "sporco" e, al completamento,
+  /// lanciamo UNA valutazione fresca che vede lo stato aggiornato — così lo
+  /// sblocco non viene solo posticipato al prossimo evento. Gli unlock sono
+  /// idempotenti, quindi una eval in più è innocua.
   Future<void> trigger() {
     final existing = _inFlight;
-    if (existing != null) return existing;
-    final run = _evaluate().whenComplete(() => _inFlight = null);
+    if (existing != null) {
+      _dirty = true;
+      return existing;
+    }
+    final run = _evaluate().whenComplete(() {
+      _inFlight = null;
+      if (_dirty) {
+        _dirty = false;
+        trigger(); // re-coalesce: riassegna _inFlight; un terzo trigger ricoalesce
+      }
+    });
     _inFlight = run;
     return run;
   }

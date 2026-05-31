@@ -14,6 +14,8 @@ import com.dev.koru.BuildConfig
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * Concern: inventario delle app installate per il drawer/launcher e per i
@@ -27,6 +29,11 @@ import java.io.ByteArrayOutputStream
  * non volerla sul Platform main thread.
  */
 internal object AppInventoryCallHandler : BlockingCallHandler {
+
+    /// Pool bounded condiviso per il decode on-demand delle icone (getAppIcon):
+    /// limita i thread effimeri quando molte righe di un picker entrano/escono
+    /// dal viewport in fretta. 2 worker bastano (decode ~ms, icone non urgenti).
+    private val iconExecutor: ExecutorService = Executors.newFixedThreadPool(2)
 
     override val methods = setOf(
         "getInstalledApps",
@@ -111,10 +118,13 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
                     result.error("ARG_ERROR", "packageName required", null)
                     return
                 }
-                // Decode su background thread: getApplicationIcon decodifica il
-                // drawable dall'APK + compress PNG (~ms per icona). Off dal
+                // Decode su pool bounded (non Thread raw): getApplicationIcon
+                // decodifica il drawable dall'APK + compress PNG (~ms per icona).
+                // Su fling di una lista picker/settings molte righe invocano
+                // getAppIcon: il pool limita a 2 decode paralleli e accoda il
+                // resto, evitando decine di thread effimeri concorrenti. Off dal
                 // Platform main thread; null se l'app non ha icona / fallisce.
-                Thread {
+                iconExecutor.execute {
                     val t0 = System.currentTimeMillis()
                     val bytes = try {
                         getAppIcon(activity, pkg)
@@ -129,7 +139,7 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
                         )
                     }
                     activity.runOnUiThread { result.success(bytes) }
-                }.start()
+                }
             }
         }
     }

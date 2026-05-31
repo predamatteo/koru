@@ -165,11 +165,13 @@ final groupedAppsProvider = Provider<Map<String, List<InstalledAppInfo>>>((ref) 
   final apps = ref.watch(filteredAppsProvider);
   final groups = <String, List<InstalledAppInfo>>{};
   for (final app in apps) {
-    // PERF: check su code-unit invece di `RegExp(r'^[A-Z]$')` compilata per
-    // OGNI app (Dart non interna i pattern → un'alloc/compile a voce, ripetuta
-    // a ogni keystroke nella ricerca). Comportamento invariato: solo A-Z ASCII
-    // fanno sezione propria; tutto il resto (cifre, simboli, lettere accentate,
-    // grapheme multi-unit) finisce in '#'.
+    // PERF: fast-path su code-unit ASCII, per evitare `RegExp(r'^[A-Z]$')`
+    // compilata per OGNI app (Dart non interna i pattern → un'alloc/compile a
+    // voce, ripetuta a ogni keystroke nella ricerca). Per i (rari) primi
+    // caratteri non-ASCII si ricade sul case-mapping Unicode + check A-Z, così
+    // la classificazione resta IDENTICA al vecchio `RegExp(r'^[A-Z]$')` su
+    // `toUpperCase()` — inclusi casi limite come 'ı'→I, 'ſ'→S, 'ß'→# (perché
+    // 'ß'.toUpperCase()=='SS', due caratteri, non matchava ^[A-Z]$).
     final label = app.label;
     var key = '#';
     if (label.isNotEmpty) {
@@ -178,6 +180,13 @@ final groupedAppsProvider = Provider<Map<String, List<InstalledAppInfo>>>((ref) 
         key = label[0]; // già maiuscola A-Z
       } else if (c >= 0x61 && c <= 0x7A) {
         key = String.fromCharCode(c - 0x20); // minuscola a-z → maiuscola
+      } else {
+        // Non-ASCII: replica esatta della vecchia logica, senza RegExp.
+        final up = label[0].toUpperCase();
+        if (up.length == 1) {
+          final uc = up.codeUnitAt(0);
+          if (uc >= 0x41 && uc <= 0x5A) key = up;
+        }
       }
     }
     groups.putIfAbsent(key, () => []).add(app);
