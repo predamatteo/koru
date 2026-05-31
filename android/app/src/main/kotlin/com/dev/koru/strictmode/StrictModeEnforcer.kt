@@ -99,14 +99,25 @@ object StrictModeEnforcer {
         }
     }
 
-    /// Cache della mask. Era 3 secondi → ridotta a 0 per garantire che
-    /// dopo una write da [StrictModeMethodChannel.setStrictModeOptions]
-    /// l'enforcer veda subito il nuovo valore, senza affidarsi al call
-    /// esplicito di [invalidateCache] su tutti i write path. EncryptedSharedPreferences
-    /// fa caching interno comunque, quindi la read è O(1) in memoria.
+    /// Cache della mask con TTL breve. `handleEvent` gira sul main thread del
+    /// processo del service (MAIN process: l'AndroidManifest NON dichiara
+    /// `android:process` per [KoruAccessibilityService]) ed è invocato a OGNI
+    /// window-state-change. `StrictModeStore.readMask` NON è O(1): su un record
+    /// esistente calcola un HMAC keyed dall'Android Keystore (round-trip IPC)
+    /// per la tamper-evidence. Farlo a ogni evento compete col main thread →
+    /// jank/ANR ai cambi app. Era stata azzerata (CACHE_MS=0) temendo staleness
+    /// cross-process, ma quel timore è infondato: vedi sotto.
+    ///
+    /// La correttezza NON dipende dal TTL: ogni write path invalida
+    /// ESPLICITAMENTE la cache ([StrictModeMethodChannel.setStrictModeOptions]
+    /// e `performEmergencyUnblock`, [KoruDeviceAdminReceiver], [StrictModeFailSafe]
+    /// → [invalidateCache]). Poiché service e writer condividono lo STESSO
+    /// processo, `invalidateCache` azzera esattamente questa cache in-memory:
+    /// nessuna staleness cross-process. Il TTL è solo un backstop che limita la
+    /// frequenza delle read costose fra una write e l'altra.
     private var cachedMask: Int = -1
     private var lastReadTime = 0L
-    private const val CACHE_MS = 0L
+    private const val CACHE_MS = 1_500L
 
     private fun getMask(context: Context): Int {
         if (CACHE_MS > 0L) {
@@ -116,8 +127,6 @@ object StrictModeEnforcer {
             lastReadTime = now
             return cachedMask
         }
-        // Zero-cache path: leggi sempre fresco. La EncryptedSharedPreferences
-        // tiene un caching interno per cui questo non è un I/O cost.
         return StrictModeStore.readMask(context)
     }
 
