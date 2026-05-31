@@ -131,6 +131,17 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
                 data: (_) => Stack(
                   children: [
                     KoruPullToRefresh(
+                      // PERF: il drawer rinfresca SOLO l'inventario app (già
+                      // auto-rinfrescato da PACKAGE_*/resume) invece di
+                      // invalidare ~28 provider via il refresh globale.
+                      refreshOverride: (ref) async {
+                        ref.invalidate(installedAppsProvider);
+                        ref.invalidate(installedPackageNamesProvider);
+                        ref.invalidate(launcherPackagesProvider);
+                        await Future<void>.delayed(
+                          const Duration(milliseconds: 450),
+                        );
+                      },
                       child: AppListView(scrollController: _scrollController),
                     ),
                     Positioned(

@@ -20,10 +20,21 @@ import '../providers/global_refresh.dart';
 /// schermate che devono anche rinfrescare uno stato locale, es. un re-check
 /// di permesso fatto via platform channel diretto).
 class KoruPullToRefresh extends ConsumerWidget {
-  const KoruPullToRefresh({required this.child, this.onRefresh, super.key});
+  const KoruPullToRefresh({
+    required this.child,
+    this.onRefresh,
+    this.refreshOverride,
+    super.key,
+  });
 
   final Widget child;
   final Future<void> Function()? onRefresh;
+
+  /// Se fornito, SOSTITUISCE il refresh globale [refreshAllKoruData]: solo i
+  /// provider scelti dal chiamante vengono rinfrescati. Usato dal drawer "All
+  /// apps", che deve rinfrescare SOLO l'inventario app (già auto-rinfrescato da
+  /// PACKAGE_*/resume) invece di invalidare ~28 provider a ogni pull.
+  final Future<void> Function(WidgetRef ref)? refreshOverride;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -32,7 +43,12 @@ class KoruPullToRefresh extends ConsumerWidget {
       backgroundColor: KoruColors.surfaceElevated,
       onRefresh: () async {
         await onRefresh?.call();
-        await refreshAllKoruData(ref);
+        final override = refreshOverride;
+        if (override != null) {
+          await override(ref);
+        } else {
+          await refreshAllKoruData(ref);
+        }
       },
       child: child,
     );

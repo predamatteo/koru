@@ -35,9 +35,17 @@ final achievementEvaluatorProvider = Provider<void>((ref) {
     } catch (_) {}
   });
 
-  // Resume catch-up: ogni volta che l'app torna foreground, rivaluta
-  // (idempotente: insertOrIgnore, no-op se già sbloccato).
+  // Resume catch-up: al rientro in foreground rivaluta (idempotente).
+  // PERF (F2.6): con Koru launcher `resumed` scatta di continuo; throttliamo a
+  // max 1 valutazione ogni 45s. Gli achievement cambiano di rado e i trigger
+  // event-driven sotto (focus-end, block) NON sono throttlati.
+  const minResumeGap = Duration(seconds: 45);
+  DateTime? lastResumeEval;
   final observer = _ResumeObserver(() {
+    final now = DateTime.now();
+    final last = lastResumeEval;
+    if (last != null && now.difference(last) < minResumeGap) return;
+    lastResumeEval = now;
     try {
       ref.read(achievementEvaluationProvider.notifier).trigger();
     } catch (_) {}

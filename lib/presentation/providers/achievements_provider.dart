@@ -119,7 +119,23 @@ class AchievementEvaluationNotifier extends Notifier<void> {
   @override
   void build() {}
 
-  Future<void> trigger() async {
+  Future<void>? _inFlight;
+
+  /// Coalescing: boot catch-up, resume e gli eventi (focus-end, block) possono
+  /// chiamare [trigger] ravvicinati, ognuno dei quali rieseguirebbe l'intero
+  /// [buildAchievementStats] (molte query DB + 2 platform call). Se una
+  /// valutazione è già in corso ne riusiamo il Future invece di lanciarne
+  /// un'altra in parallelo: gli achievement sono idempotenti, quindi la
+  /// valutazione in volo copre comunque lo stato più recente al completamento.
+  Future<void> trigger() {
+    final existing = _inFlight;
+    if (existing != null) return existing;
+    final run = _evaluate().whenComplete(() => _inFlight = null);
+    _inFlight = run;
+    return run;
+  }
+
+  Future<void> _evaluate() async {
     try {
       final stats = await buildAchievementStats(ref);
       developer.log(
