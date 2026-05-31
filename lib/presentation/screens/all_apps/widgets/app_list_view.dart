@@ -182,6 +182,7 @@ Future<void> showAppContextMenu({
         label: 'Uninstall',
         danger: true,
         onTap: () async {
+          final messenger = ScaffoldMessenger.maybeOf(context);
           Navigator.pop(ctx);
           try {
             await blocking.uninstallApp(app.packageName);
@@ -189,8 +190,23 @@ Future<void> showAppContextMenu({
             // Strict mode con BLOCK_UNINSTALLING attivo: il native
             // rifiuta prima di lanciare l'intent. Invece di lasciare
             // l'utente con "non succede niente", spieghiamo perché.
-            if (e.code == 'BLOCK_UNINSTALLING' && context.mounted) {
-              await _showUninstallBlockedDialog(context);
+            if (e.code == 'BLOCK_UNINSTALLING') {
+              if (context.mounted) await _showUninstallBlockedDialog(context);
+            } else if (messenger != null) {
+              // Qualsiasi ALTRO fallimento del native (es. nessuna activity
+              // di sistema gestisce la disinstallazione su certi ROM OEM →
+              // UNINSTALL_FAILED): prima veniva ingoiato qui e l'utente
+              // vedeva "non succede niente". Diamo un feedback esplicito.
+              messenger.hideCurrentSnackBar();
+              messenger.showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Impossibile disinstallare ${app.label}: '
+                    '${e.message ?? e.code}',
+                  ),
+                  duration: const Duration(seconds: 4),
+                ),
+              );
             }
           }
         },
