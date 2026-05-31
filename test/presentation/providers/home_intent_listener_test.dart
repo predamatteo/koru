@@ -13,7 +13,6 @@ import 'package:koru/presentation/providers/home_intent_listener.dart';
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
   const channelName = 'com.koru/navigation';
-  const backdoorRoute = '${KoruRoutes.settings}/backdoor';
 
   // Risposta che il mock dà a `consumePendingBackdoorPrompt` (pull cold-start).
   bool pendingOnPull = false;
