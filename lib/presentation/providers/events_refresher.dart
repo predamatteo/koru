@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -187,11 +188,27 @@ final appLifecycleInvalidatorProvider = Provider<void>((ref) {
   // resta solo un catch-up periodico: 1 ogni 45s è più che sufficiente.
   const minResumeGap = Duration(seconds: 45);
   DateTime? lastHandledResume;
+  var resumeCount = 0; // diagnostica Fase 3 (solo debug)
   final observer = _LifecycleObserver(() {
+    resumeCount++;
     final now = DateTime.now();
     final last = lastHandledResume;
-    if (last != null && now.difference(last) < minResumeGap) return;
+    if (last != null && now.difference(last) < minResumeGap) {
+      if (kDebugMode) {
+        developer.log(
+          'resume #$resumeCount THROTTLED (gap<45s, nessuna invalidazione)',
+          name: 'KoruPerf.resume',
+        );
+      }
+      return;
+    }
     lastHandledResume = now;
+    if (kDebugMode) {
+      developer.log(
+        'resume #$resumeCount HANDLED → invalidate stats + smart refresh',
+        name: 'KoruPerf.resume',
+      );
+    }
     _invalidateStats(ref);
     // Fire-and-forget: il diff-based refresh è async e non deve bloccare
     // il frame di rientro nell'app.

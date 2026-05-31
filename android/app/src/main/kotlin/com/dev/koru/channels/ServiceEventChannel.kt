@@ -3,6 +3,7 @@ package com.dev.koru.channels
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.dev.koru.BuildConfig
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 
@@ -17,10 +18,12 @@ object ServiceEventChannel {
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    if (BuildConfig.DEBUG) Log.d("KoruPerf", "ServiceEventChannel.onListen (sink set)")
                     eventSink = events
                 }
 
                 override fun onCancel(arguments: Any?) {
+                    if (BuildConfig.DEBUG) Log.d("KoruPerf", "ServiceEventChannel.onCancel (sink cleared)")
                     eventSink = null
                 }
             })

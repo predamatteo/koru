@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import com.dev.koru.BuildConfig
 import com.dev.koru.contract.BlockingContract
 import com.dev.koru.service.KoruAccessibilityService
 
@@ -122,7 +123,11 @@ object StrictModeEnforcer {
     private fun getMask(context: Context): Int {
         if (CACHE_MS > 0L) {
             val now = System.currentTimeMillis()
-            if (cachedMask >= 0 && now - lastReadTime < CACHE_MS) return cachedMask
+            if (cachedMask >= 0 && now - lastReadTime < CACHE_MS) {
+                if (BuildConfig.DEBUG) Log.d("KoruPerf", "getMask HIT (cache, no Keystore)")
+                return cachedMask
+            }
+            if (BuildConfig.DEBUG) Log.d("KoruPerf", "getMask MISS -> readMask (Keystore HMAC)")
             cachedMask = StrictModeStore.readMask(context)
             lastReadTime = now
             return cachedMask
