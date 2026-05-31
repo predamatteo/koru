@@ -106,20 +106,21 @@ class ServiceEventChannel {
   // fan-out via un [StreamController.broadcast]. I subscriber si attaccano al
   // broadcast; cancellare la propria subscription NON tocca l'upstream.
   StreamController<KoruServiceEvent>? _controller;
-  StreamSubscription<dynamic>? _upstream;
 
   Stream<KoruServiceEvent> events() {
     final existing = _controller;
     if (existing != null && !existing.isClosed) return existing.stream;
     final controller = StreamController<KoruServiceEvent>.broadcast();
     _controller = controller;
-    _upstream = _channel.receiveBroadcastStream().listen(
+    // Una sola subscription upstream per la vita dell'app. Non la teniamo in un
+    // campo: una subscription attiva resta viva finché lo stream broadcast del
+    // canale è vivo (non viene GC-ata) e non la cancelliamo mai di proposito.
+    _channel.receiveBroadcastStream().listen(
       (raw) => controller.add(_decode(raw)),
       onError: controller.addError,
       // L'EventChannel reale non termina mai; onDone serve ai test
       // (MockStreamHandler.endOfStream) per far completare `events().toList()`.
       onDone: () {
-        _upstream = null;
         if (!controller.isClosed) controller.close();
       },
     );
