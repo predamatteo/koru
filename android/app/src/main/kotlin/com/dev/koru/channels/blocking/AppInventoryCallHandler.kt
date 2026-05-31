@@ -57,8 +57,30 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
                     }
                 }.start()
             }
-            "getInstalledPackageNames" ->
-                result.success(getInstalledPackageNames(activity))
+            "getInstalledPackageNames" -> {
+                // PERF: stesso offload di `getInstalledApps`. Anche senza decode
+                // delle icone, fa `getInstalledApplications(0)` +
+                // `queryIntentActivities` + filter + sort: una scansione via
+                // binder verso system_server. È invocato dal lifecycle observer
+                // Dart a ogni resume (con Koru launcher = molto spesso): sul
+                // Platform main thread aggiunge latenza di input al rientro.
+                // Eseguiamo su Thread() e torniamo alla UI thread solo per il
+                // result.
+                Thread {
+                    try {
+                        val names = getInstalledPackageNames(activity)
+                        activity.runOnUiThread { result.success(names) }
+                    } catch (e: Exception) {
+                        activity.runOnUiThread {
+                            result.error(
+                                "INSTALLED_PACKAGE_NAMES_ERROR",
+                                e.message,
+                                null,
+                            )
+                        }
+                    }
+                }.start()
+            }
             "getLauncherPackageNames" -> {
                 // Set di package che dichiarano un'activity HOME
                 // (sono altri launcher installati: Nova, Pixel
