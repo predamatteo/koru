@@ -195,18 +195,16 @@ final appLifecycleInvalidatorProvider = Provider<void>((ref) {
     final last = lastHandledResume;
     if (last != null && now.difference(last) < minResumeGap) {
       if (kDebugMode) {
-        developer.log(
-          'resume #$resumeCount THROTTLED (gap<45s, nessuna invalidazione)',
-          name: 'KoruPerf.resume',
+        debugPrint(
+          'KoruPerf.resume #$resumeCount THROTTLED (gap<45s, nessuna invalidazione)',
         );
       }
       return;
     }
     lastHandledResume = now;
     if (kDebugMode) {
-      developer.log(
-        'resume #$resumeCount HANDLED → invalidate stats + smart refresh',
-        name: 'KoruPerf.resume',
+      debugPrint(
+        'KoruPerf.resume #$resumeCount HANDLED -> invalidate stats + smart refresh',
       );
     }
     _invalidateStats(ref);

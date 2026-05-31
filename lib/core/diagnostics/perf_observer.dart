@@ -1,18 +1,17 @@
-import 'dart:developer' as developer;
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Diagnostica di performance (Fase 3) — montata in [main] SOLO in debug
 /// (`kDebugMode`), quindi zero overhead in profile/release.
 ///
 /// Logga ogni ricomputo (`didUpdateProvider`) e dispose di provider con nome e
-/// timestamp, sul tag `KoruPerf.provider`. Serve a "leggere" quante e quali
-/// invalidazioni partono davvero — in particolare:
+/// tag `KoruPerf.provider`, via [debugPrint] così è leggibile direttamente con
+/// `adb logcat -s flutter` (a differenza di `developer.log`, che resta confinato
+/// a DevTools / VM service). Serve a "leggere" quante e quali invalidazioni
+/// partono davvero — in particolare:
 ///  - quante per ogni `resumed` del launcher (deve avvicinarsi a zero dopo il
 ///    throttle di F1.5/F2.6 — correlare col tag `KoruPerf.resume`);
 ///  - se un provider torna a ricaricarsi senza motivo (spia di regressione).
-///
-/// Lettura on-device: `adb logcat -s flutter` e filtra `KoruPerf`.
 class PerfObserver extends ProviderObserver {
   const PerfObserver();
 
@@ -26,7 +25,7 @@ class PerfObserver extends ProviderObserver {
     Object? newValue,
     ProviderContainer container,
   ) {
-    developer.log('[update] ${_name(provider)}', name: 'KoruPerf.provider');
+    debugPrint('KoruPerf.provider [update] ${_name(provider)}');
   }
 
   @override
@@ -34,6 +33,6 @@ class PerfObserver extends ProviderObserver {
     ProviderBase<Object?> provider,
     ProviderContainer container,
   ) {
-    developer.log('[dispose] ${_name(provider)}', name: 'KoruPerf.provider');
+    debugPrint('KoruPerf.provider [dispose] ${_name(provider)}');
   }
 }
