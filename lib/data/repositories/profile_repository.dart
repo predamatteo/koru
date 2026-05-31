@@ -173,20 +173,27 @@ class ProfileRepository {
     int profileId,
     List<({int from, int to})> timeRanges,
   ) async {
-    await (_db.delete(
-      _db.intervals,
-    )..where((i) => i.profileId.equals(profileId))).go();
-    for (final range in timeRanges) {
-      await _db
-          .into(_db.intervals)
-          .insert(
-            IntervalsCompanion.insert(
-              profileId: profileId,
-              fromMinutes: range.from,
-              toMinutes: range.to,
-            ),
-          );
-    }
+    // transaction(): delete + N insert collassano in UNA sola notifica di
+    // `watchAllProfiles` al commit (invece di N+1 ri-emissioni, ognuna delle
+    // quali ricostruisce tutti i ProfileModel con un loop N+1) + atomicità:
+    // nessuno stato intermedio a 0 fasce osservabile dall'enforcement.
+    // Allineato a setAppsForProfile/setWifisForProfile (transazionali a livello DAO).
+    await _db.transaction(() async {
+      await (_db.delete(
+        _db.intervals,
+      )..where((i) => i.profileId.equals(profileId))).go();
+      for (final range in timeRanges) {
+        await _db
+            .into(_db.intervals)
+            .insert(
+              IntervalsCompanion.insert(
+                profileId: profileId,
+                fromMinutes: range.from,
+                toMinutes: range.to,
+              ),
+            );
+      }
+    });
     await _channel.notifyProfileChanged(profileId);
   }
 
