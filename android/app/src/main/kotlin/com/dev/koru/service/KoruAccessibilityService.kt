@@ -7,6 +7,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -216,6 +219,70 @@ class KoruAccessibilityService : AccessibilityService() {
         }
     }
 
+    /// Chiede il focus audio TRANSIENT per mettere in pausa il media dell'app
+    /// sotto un overlay-over-app. Idempotente: se già detenuto, no-op.
+    private fun requestMediaPause() {
+        if (mediaPauseFocusRequest != null) return
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+                            .build(),
+                    )
+                    .setOnAudioFocusChangeListener(mediaPauseFocusListener)
+                    .build()
+                am.requestAudioFocus(req)
+                mediaPauseFocusRequest = req
+            } else {
+                @Suppress("DEPRECATION")
+                am.requestAudioFocus(
+                    mediaPauseFocusListener,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT,
+                )
+                mediaPauseFocusRequest = mediaPauseFocusListener
+            }
+            Log.d(TAG, "Media pause: audio focus acquired")
+        } catch (e: Exception) {
+            Log.w(TAG, "requestMediaPause failed: ${e.message}")
+        }
+    }
+
+    /// Rilascia il focus audio chiesto da [requestMediaPause] → l'app
+    /// sottostante può riprendere la riproduzione. Idempotente.
+    private fun releaseMediaPause() {
+        val held = mediaPauseFocusRequest ?: return
+        mediaPauseFocusRequest = null
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && held is AudioFocusRequest) {
+                am.abandonAudioFocusRequest(held)
+            } else {
+                @Suppress("DEPRECATION")
+                am.abandonAudioFocus(mediaPauseFocusListener)
+            }
+            Log.d(TAG, "Media pause: audio focus released")
+        } catch (e: Exception) {
+            Log.w(TAG, "releaseMediaPause failed: ${e.message}")
+        }
+    }
+
+    /// Termina la sessione "overlay-over-app" corrente (se presente): azzera il
+    /// tracking e rilascia il focus audio. Chiamato quando il blocco over-app
+    /// finisce in QUALSIASI modo — bypass concesso, "Don't open", passaggio a
+    /// un'altra app, blocco "duro" sopravvenuto (focus/limite/sezione),
+    /// profilo non più attivo, screen-off, destroy. Idempotente.
+    private fun endOverlayOverApp() {
+        if (overlayOverAppPackage != null) {
+            overlayOverAppPackage = null
+        }
+        releaseMediaPause()
+    }
+
     /// Schedulato dopo un GLOBAL_ACTION_BACK riuscito: a 600ms verifica
     /// che il pkg target NON sia più in foreground. Se invece e' ancora
     /// li, BACK e' stato "ingoiato" da uno stack interno (mini-player YT,
@@ -267,6 +334,9 @@ class KoruAccessibilityService : AccessibilityService() {
         mainHandler.post {
             overlayManager?.dismiss()
             currentlyBlockingPackage = null
+            // Schermo spento durante un overlay-over-app: chiudi la sessione e
+            // rilascia il focus audio (niente media da mettere in pausa a display off).
+            endOverlayOverApp()
             pendingBackFallbacks.values.forEach { mainHandler.removeCallbacks(it) }
             pendingBackFallbacks.clear()
             pendingBypassExpiryChecks.values.forEach { mainHandler.removeCallbacks(it) }
@@ -349,6 +419,34 @@ class KoruAccessibilityService : AccessibilityService() {
     private var overlayManager: OverlayManager? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /// Package attualmente bloccato in modalità "overlay SOPRA l'app". Quando
+    /// un'app bloccata viene aperta da un LINK / da un'altra app (non
+    /// dall'icona del launcher), mostriamo l'overlay sopra di essa SENZA
+    /// espellerla (niente BACK/HOME): così "Apri comunque" si limita a
+    /// dismissare l'overlay e rivela esattamente il contenuto del deep link
+    /// (es. il video YouTube mandato da un amico), invece di rilanciare l'app
+    /// con `getLaunchIntentForPackage` che la porterebbe alla home perdendo il
+    /// deep link. `null` = blocco "duro" classico (kick-out alla home).
+    /// La sessione over-app termina in [endOverlayOverApp] (bypass, "Don't
+    /// open", uscita verso un'altra app, screen-off, profilo non più attivo).
+    @Volatile
+    private var overlayOverAppPackage: String? = null
+
+    /// AudioFocusRequest attivo finché un overlay-over-app è visibile. Mentre
+    /// l'overlay copre il video l'app sotto continua a girare, quindi chiediamo
+    /// il focus audio TRANSIENT per metterne in PAUSA il media durante il
+    /// countdown (l'audio bleed-through sarebbe fastidioso). Rilasciato in
+    /// [endOverlayOverApp] → l'app può riprendere la riproduzione. Tipo `Any?`
+    /// per non legare il field all'API 26+ ([AudioFocusRequest] esiste da O).
+    @Volatile
+    private var mediaPauseFocusRequest: Any? = null
+
+    /// Listener no-op richiesto da [AudioFocusRequest]/requestAudioFocus: non
+    /// reagiamo ai cambi di focus (non stiamo riproducendo nulla noi), ci serve
+    /// solo "rubare" il focus per mettere in pausa l'app sottostante.
+    private val mediaPauseFocusListener =
+        AudioManager.OnAudioFocusChangeListener { /* no-op: non riproduciamo audio */ }
+
     /// Runnable schedulati a tempo di scadenza del bypass, uno per ogni
     /// package attualmente bypassato. Servono a riattivare il blocco se
     /// l'utente resta dentro l'app anche dopo lo scadere della durata
@@ -395,6 +493,11 @@ class KoruAccessibilityService : AccessibilityService() {
                 // fallback su lastForegroundPackage (Accessibility recente).
                 // Se entrambi unavailable: trust-the-system, procediamo.
                 val targetPkg = overlayManager?.currentPackageName ?: ""
+                // Overlay-over-app: l'app bloccata è ANCORA in foreground sotto
+                // l'overlay (non l'abbiamo mai espulsa). Un BACK (forceHome=false,
+                // il default per APP_BLOCKED) la navigherebbe solo internamente
+                // lasciandola aperta → serve HOME "duro" per chiuderla davvero.
+                val effectiveForceHome = forceHome || (overlayOverAppPackage == targetPkg)
                 val realFg = ForegroundDetector.detect(applicationContext)?.primaryPackage
                 val accFg = lastForegroundPackage
                 val stale = isStaleOverlayClick(targetPkg, realFg, accFg)
@@ -407,11 +510,14 @@ class KoruAccessibilityService : AccessibilityService() {
                     pendingLimitChecks.remove(targetPkg)?.let { mainHandler.removeCallbacks(it) }
                 } else {
                     performGoHomeForBlock(
-                        forceHome = forceHome,
+                        forceHome = effectiveForceHome,
                         blockedPackage = targetPkg.ifEmpty { null },
                     )
                     dismiss()
                 }
+                // L'utente ha scelto "Don't open": la sessione over-app è finita
+                // (rilascia il focus audio, l'app verrà comunque chiusa da HOME).
+                endOverlayOverApp()
             }
             onIntentionChosen = { pkg, intention ->
                 try {
@@ -469,19 +575,27 @@ class KoruAccessibilityService : AccessibilityService() {
                     }
                 }
                 scheduleBypassExpiryCheck(pkg, durationMs, domain)
-                // Discriminator: nel flow APP_BLOCKED/USAGE_LIMIT/FOCUS_MODE/...
-                // abbiamo fatto performGlobalAction(GLOBAL_ACTION_HOME), quindi
-                // l'app non è più in foreground e va rilanciata via startActivity.
-                // Nel flow BYPASS_EXPIRED invece showExtensionPrompt non fa HOME:
-                // l'app è ancora in foreground, basta dismissare l'overlay (un
-                // restart via Intent farebbe un fastidioso restart dell'activity).
+                // Discriminator: il rilancio via startActivity serve SOLO quando
+                // abbiamo espulso l'app (HOME) e dunque non è più in foreground —
+                // i blocchi "duri" APP_BLOCKED/USAGE_LIMIT/FOCUS_MODE da icona.
+                // In DUE casi l'app è invece ANCORA in foreground sotto l'overlay
+                // e basta dismissare:
+                //  - BYPASS_EXPIRED (showExtensionPrompt non fa HOME);
+                //  - OVERLAY-OVER-APP (apertura da link: non abbiamo MAI espulso).
+                // In overlay-over-app il rilancio sarebbe anzi il BUG da evitare:
+                // getLaunchIntentForPackage manda l'app alla home (ACTION_MAIN)
+                // perdendo il deep link — es. lo Short YouTube mandato da un amico.
+                // Dismissando e basta, il video sotto l'overlay resta esattamente
+                // dov'era.
                 //
                 // NB: NON usiamo `lastForegroundPackage == pkg` come signal — il
                 // launcher è in skipPackages, quindi dopo HOME `lastForegroundPackage`
                 // resta sull'app bloccata e il check sarebbe sempre true (era il
                 // bug "Open anyway non rilancia mai l'app").
-                val wasEntryBlock = overlayManager?.currentReason() != BlockReason.BYPASS_EXPIRED
-                if (wasEntryBlock) {
+                val appStillForeground =
+                    overlayManager?.currentReason() == BlockReason.BYPASS_EXPIRED ||
+                        overlayOverAppPackage == pkg
+                if (!appStillForeground) {
                     // CRITICO: startActivity DEVE essere chiamato PRIMA del dismiss.
                     // Su Android 12+ i Background Activity Launch sono ristretti:
                     // un AccessibilityService che NON è in stato "user-interacting"
@@ -511,6 +625,10 @@ class KoruAccessibilityService : AccessibilityService() {
                 } else {
                     dismiss()
                 }
+                // Bypass concesso: la sessione over-app (se attiva) è finita —
+                // rilascia il focus audio così l'app sotto può riprendere la
+                // riproduzione e azzera il tracking. Idempotente altrimenti.
+                endOverlayOverApp()
             }
         }
 
@@ -961,6 +1079,12 @@ class KoruAccessibilityService : AccessibilityService() {
         // - bypassReasonFor: chiude su OverlayManager.bypassReason col clock
         //   duale gestito nello store; per checkAppBlocking lo scope è sempre
         //   l'intero package (null), come il vecchio bypassReason(packageName).
+        // Se eravamo in overlay-over-app per un package DIVERSO, l'utente è
+        // passato altrove (evento genuino, non ghost: il guard sopra l'ha già
+        // filtrato): quella sessione over-app è finita → rilascia il focus audio
+        // e azzera il tracking, così non resta "appiccicato" al pkg precedente.
+        overlayOverAppPackage?.let { if (it != packageName) endOverlayOverApp() }
+
         val qbSnapshot = QuickBlockStore.read(applicationContext)
         val focusShouldBlock = qbSnapshot.shouldBlock(packageName, System.currentTimeMillis())
 
@@ -989,6 +1113,9 @@ class KoruAccessibilityService : AccessibilityService() {
             is BlockDecision.Block -> when (decision.reason) {
                 BlockReason.FOCUS_MODE -> {
                     Log.w(TAG, ">>> BLOCKING APP (focus): $packageName")
+                    // Un focus/limite/sezione sopravvenuto è un blocco "duro" che
+                    // espelle: chiude l'eventuale sessione over-app dello stesso pkg.
+                    endOverlayOverApp()
                     currentlyBlockingPackage = packageName
                     val appLabel = getAppLabel(packageName)
                     mainHandler.post {
@@ -1020,6 +1147,9 @@ class KoruAccessibilityService : AccessibilityService() {
                 BlockReason.USAGE_LIMIT -> {
                     Log.w(TAG, ">>> BLOCKING APP (daily limit, strict=${decision.isStrictLimit}): " +
                         "$packageName ${decision.todayMs / 60_000}min used, cap=${limitMinutes}min")
+                    // Il cap è un blocco "duro" che espelle: chiude l'eventuale
+                    // sessione over-app dello stesso pkg (rilascia il focus audio).
+                    endOverlayOverApp()
                     currentlyBlockingPackage = packageName
                     cancelLimitCheck(packageName)
                     val appLabel = getAppLabel(packageName)
@@ -1061,8 +1191,16 @@ class KoruAccessibilityService : AccessibilityService() {
 
                 else -> { // APP_BLOCKED (gli altri reason non sono raggiungibili qui)
                     val profile = snapshot.profiles.firstOrNull { it.id == decision.profileId }
-                    Log.w(TAG, ">>> BLOCKING APP: $packageName by '${decision.profileTitle}'")
                     currentlyBlockingPackage = packageName
+
+                    // Evento RIPETUTO durante una sessione overlay-over-app già
+                    // attiva per questo pkg: l'app resta in foreground sotto
+                    // l'overlay e ri-emette eventi. Overlay già su + audio già in
+                    // pausa → no-op (evitiamo anche di ri-loggare/ri-emettere il
+                    // blocco a ogni evento, cosa che il kick-out classico non fa
+                    // perché dopo HOME l'app esce dal foreground).
+                    if (overlayOverAppPackage == packageName) return true
+
                     val appLabel = getAppLabel(packageName)
                     val config = OverlayConfig.fromJsonString(decision.relation?.overlayConfigJson)
                     mainHandler.post {
@@ -1075,7 +1213,31 @@ class KoruAccessibilityService : AccessibilityService() {
                             profileEmoji = decision.profileEmoji,
                         )
                     }
-                    performGoHomeForBlock(blockedPackage = packageName)
+
+                    // Modalità del blocco — "da link/altra app" vs "da icona del
+                    // launcher" — decisa dall'app immediatamente precedente
+                    // (UsageStats, authoritative anche per app fuori dal watched-set):
+                    //  - launcher / Koru / nessuna  → apertura DIRETTA dall'icona →
+                    //    blocco "duro" classico: espulsione alla home (BACK→HOME);
+                    //  - un'app REALE (es. WhatsApp) → apertura da link/share/altra
+                    //    app → overlay SOPRA l'app, NIENTE espulsione: così "Apri
+                    //    comunque" si limita a dismissare e rivela esattamente il
+                    //    deep link (il video YouTube), invece di rilanciare l'app
+                    //    alla home perdendolo. Durante il countdown mettiamo in
+                    //    pausa il media dell'app sotto (focus audio).
+                    val cameFrom = ForegroundDetector.previousForegroundPackage(applicationContext, packageName)
+                    val openedFromOtherApp = cameFrom != null &&
+                        cameFrom != applicationContext.packageName &&
+                        !skipPackages.contains(cameFrom)
+                    if (openedFromOtherApp) {
+                        Log.w(TAG, ">>> BLOCKING APP (overlay-over-app, opened from '$cameFrom'): " +
+                            "$packageName by '${decision.profileTitle}'")
+                        overlayOverAppPackage = packageName
+                        requestMediaPause()
+                    } else {
+                        Log.w(TAG, ">>> BLOCKING APP: $packageName by '${decision.profileTitle}'")
+                        performGoHomeForBlock(blockedPackage = packageName)
+                    }
                     val now = System.currentTimeMillis()
                     BlockEventLogger.logBlockSessionAndAccess(
                         applicationContext,
@@ -1090,6 +1252,10 @@ class KoruAccessibilityService : AccessibilityService() {
             }
 
             is BlockDecision.Allow -> {
+                // Questo pkg non è più bloccato ORA (bypass concesso o profilo non
+                // più attivo): una eventuale sessione over-app per esso è finita →
+                // rilascia il focus audio (il video riprende) e azzera il tracking.
+                endOverlayOverApp()
                 // L'evaluator collassa "bypass di profilo attivo" e "nessun
                 // blocco" entrambi in Allow. Qui ri-discriminiamo (come prima)
                 // leggendo lo stato di bypass per scegliere il bookkeeping:
@@ -1219,6 +1385,9 @@ class KoruAccessibilityService : AccessibilityService() {
                 blockedDomain = block.bypassScopeDomain,
             )
         }
+        // Un blocco di sezione è "duro" (espelle): chiude l'eventuale sessione
+        // over-app dello stesso pkg prima del kick-out.
+        endOverlayOverApp()
         // SECTION_BLOCKED: forceHome=true. Bloccare una "sezione"
         // dentro un'app (es. Reels, Shorts) ha senso solo se l'app
         // viene effettivamente chiusa. BACK chiuderebbe solo la
@@ -1495,6 +1664,7 @@ class KoruAccessibilityService : AccessibilityService() {
         pendingBackFallbacks.values.forEach { mainHandler.removeCallbacks(it) }
         pendingBackFallbacks.clear()
         lastBypassedActiveForeground = null
+        endOverlayOverApp()
         overlayManager?.destroy()
         overlayManager = null
         NativeDatabase.close()

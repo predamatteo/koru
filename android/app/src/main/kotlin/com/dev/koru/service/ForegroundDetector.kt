@@ -70,4 +70,59 @@ object ForegroundDetector {
 
         return if (primaryPkg != null) AppsDTO(primaryPkg, secondaryPkg, primaryClass, secondaryClass) else null
     }
+
+    /// Il package che era in foreground IMMEDIATAMENTE PRIMA che [pkg] diventasse
+    /// foreground, guardando indietro [lookbackMs]. Serve a distinguere
+    /// "app aperta da un link / da un'altra app" (predecessore = un'app reale)
+    /// da "aperta dall'icona del launcher" (predecessore = il launcher/home, che
+    /// è SEMPRE il foreground immediatamente precedente quando tocchi un'icona).
+    ///
+    /// Usa UsageStats, NON gli AccessibilityEvent: questi ultimi sono filtrati
+    /// dal watched-set dinamico ([KoruAccessibilityService.applyDynamicPackageFilter]),
+    /// quindi un'app sorgente non bloccata (es. WhatsApp) non comparirebbe in
+    /// `lastForegroundPackage`. UsageStats vede invece tutte le transizioni.
+    ///
+    /// LAG-ROBUST: l'AccessibilityEvent di apertura di [pkg] può arrivare PRIMA
+    /// che UsageStats registri il suo `ACTIVITY_RESUMED`. Quindi non assumiamo
+    /// che il resume di [pkg] sia già nel log: prendiamo l'ULTIMO package != [pkg]
+    /// visto (= chi stava davanti subito prima), sia che il resume di [pkg] sia
+    /// già loggato sia che non lo sia ancora. I resume consecutivi dello stesso
+    /// package non spostano il predecessore (filtro `p != current`).
+    ///
+    /// Ritorna `null` se non determinabile (nessun evento, permesso revocato,
+    /// boot prematuro, oppure [pkg] è l'unico foreground recente). Restituiamo il
+    /// predecessore "grezzo" (incluso il launcher) di proposito: è il caller a
+    /// possedere la lista degli skip-package per la classificazione (launcher/self
+    /// → apertura diretta; app reale → apertura da link/altra app).
+    fun previousForegroundPackage(
+        context: Context,
+        pkg: String,
+        lookbackMs: Long = 15_000L,
+    ): String? {
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+            ?: return null
+        val now = System.currentTimeMillis()
+        val events = usm.queryEvents(now - lookbackMs, now) ?: return null
+        val event = UsageEvents.Event()
+        // `current` = ultimo package risolto come foreground (in ordine
+        // cronologico); `prev` = quello immediatamente precedente, aggiornato
+        // SOLO ai cambi reali di package (`p != current`).
+        var current: String? = null
+        var prev: String? = null
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
+                val p = event.packageName ?: continue
+                if (p != current) {
+                    prev = current
+                    current = p
+                }
+            }
+        }
+        // Se il resume di [pkg] è già loggato è `current` → il predecessore è
+        // `prev`. Se NON è ancora loggato (lag), `current` è ancora chi stava
+        // davanti = il predecessore. In entrambi i casi vogliamo "l'ultimo
+        // foreground diverso da pkg".
+        return if (current == pkg) prev else current
+    }
 }
