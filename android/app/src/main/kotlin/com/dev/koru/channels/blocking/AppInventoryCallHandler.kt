@@ -11,6 +11,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.util.Log
 import com.dev.koru.BuildConfig
+import com.dev.koru.diagnostics.BlackBox
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
@@ -58,13 +59,17 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
                     try {
                         val t0 = System.currentTimeMillis()
                         val data = getInstalledApps(activity)
+                        val dur = System.currentTimeMillis() - t0
                         if (BuildConfig.DEBUG) {
                             Log.d(
                                 "KoruPerf",
-                                "getInstalledApps: ${data.size} app in " +
-                                    "${System.currentTimeMillis() - t0}ms (label-only, no icon)",
+                                "getInstalledApps: ${data.size} app in ${dur}ms (label-only, no icon)",
                             )
                         }
+                        // Scatola nera (always-on): e' la sorgente del DRAWER. La
+                        // durata qui = quanto resta vuota la lista app dopo un
+                        // cold start finche' lo scan PackageManager non completa.
+                        BlackBox.log("APPS", "native getInstalledApps ${data.size} app in ${dur}ms")
                         activity.runOnUiThread { result.success(data) }
                     } catch (e: Exception) {
                         activity.runOnUiThread {
@@ -88,7 +93,12 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
                 // result.
                 Thread {
                     try {
+                        val t0 = System.currentTimeMillis()
                         val names = getInstalledPackageNames(activity)
+                        BlackBox.log(
+                            "APPS",
+                            "native getInstalledPackageNames ${names.size} in ${System.currentTimeMillis() - t0}ms (cheap, no icone)",
+                        )
                         activity.runOnUiThread { result.success(names) }
                     } catch (e: Exception) {
                         activity.runOnUiThread {

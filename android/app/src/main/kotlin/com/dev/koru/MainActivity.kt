@@ -10,6 +10,7 @@ import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import com.dev.koru.channels.BatteryEventChannel
+import com.dev.koru.channels.BlackBoxMethodChannel
 import com.dev.koru.channels.BlockingMethodChannel
 import com.dev.koru.channels.NavigationMethodChannel
 import com.dev.koru.channels.PackageEventsReceiver
@@ -18,6 +19,7 @@ import com.dev.koru.channels.StrictModeMethodChannel
 import com.dev.koru.channels.ServiceEventChannel
 import com.dev.koru.channels.PermissionMethodChannel
 import com.dev.koru.db.NativeDatabase
+import com.dev.koru.diagnostics.BlackBox
 import com.dev.koru.service.AppUsageLimitsStore
 import com.dev.koru.service.KoruAccessibilityService
 import com.dev.koru.service.LockForegroundService
@@ -33,6 +35,16 @@ class MainActivity : FlutterActivity() {
             "onCreate: action=${intent?.action} isHome=${intent?.let { isHomeIntent(it) }} " +
                 "suppressUntil=${KoruAccessibilityService.suppressLauncherNavigationUntilMs} " +
                 "now=${System.currentTimeMillis()}",
+        )
+        // Scatola nera: init difensivo (idempotente — di norma gia' montata da
+        // KoruApplication.onCreate) + marker di creazione Activity con la route
+        // iniziale, cosi' nel file si vede se il cold start e' partito su
+        // /launcher (preferiti) o su /home.
+        BlackBox.init(applicationContext)
+        BlackBox.log(
+            "ACT",
+            "onCreate action=${intent?.action} isHome=${intent?.let { isHomeIntent(it) }} " +
+                "isDefault=${isDefaultLauncher()} initialRoute=${getInitialRoute()}",
         )
         // Defense-in-depth: assicura che la foreground service di
         // backup sia viva se l'utente ha già configurato qualcosa che
@@ -58,6 +70,7 @@ class MainActivity : FlutterActivity() {
         PermissionMethodChannel.register(flutterEngine, this)
         NavigationMethodChannel.register(flutterEngine)
         BatteryEventChannel.register(flutterEngine, applicationContext)
+        BlackBoxMethodChannel.register(flutterEngine)
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
@@ -134,6 +147,7 @@ class MainActivity : FlutterActivity() {
      */
     override fun onStart() {
         super.onStart()
+        BlackBox.log("ACT", "onStart — Activity visibile (foreground)")
         if (packageEventsReceiver == null) {
             val receiver = PackageEventsReceiver()
             // Android 14 (API 34) richiede esplicitamente il flag
@@ -156,6 +170,11 @@ class MainActivity : FlutterActivity() {
 
     override fun onStop() {
         super.onStop()
+        // Segnale chiave: da qui in poi il processo e' in background e diventa
+        // candidabile al low-memory kill. Un `PROC Application.onCreate` che
+        // compare DOPO questo (senza un onStart nel mezzo) = killato in
+        // background e ricreato a freddo.
+        BlackBox.log("ACT", "onStop — Activity in background (candidabile al kill)")
         packageEventsReceiver?.let {
             try {
                 unregisterReceiver(it)
@@ -164,6 +183,16 @@ class MainActivity : FlutterActivity() {
             }
         }
         packageEventsReceiver = null
+    }
+
+    override fun onResume() {
+        super.onResume()
+        BlackBox.log("ACT", "onResume — Activity in primo piano e interattiva")
+    }
+
+    override fun onDestroy() {
+        BlackBox.log("ACT", "onDestroy — Activity distrutta")
+        super.onDestroy()
     }
 
     /**
@@ -212,6 +241,13 @@ class MainActivity : FlutterActivity() {
             "MainActivity",
             "onNewIntent: action=${intent.action} isHome=$isHome isDefault=$isDefault " +
                 "now=$now suppressUntil=$suppressUntil suppressed=${now < suppressUntil}",
+        )
+        // Warm path: l'Activity esiste gia' (singleTask), niente cold start. Se i
+        // preferiti spariscono SENZA un PROC onCreate vicino, NON e' un kill —
+        // e' un re-render a vuoto warm (pista diversa).
+        BlackBox.log(
+            "ACT",
+            "onNewIntent (WARM) isHome=$isHome isDefault=$isDefault suppressed=${now < suppressUntil}",
         )
         if (now < suppressUntil) {
             // Reset del flag: la soppressione vale solo per il singolo

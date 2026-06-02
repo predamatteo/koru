@@ -22,6 +22,7 @@ import com.dev.koru.browser.BrowserUrlDetector
 import com.dev.koru.browser.WebsiteMatcher
 import com.dev.koru.contract.BlockingContract
 import com.dev.koru.content.InAppContentDetector
+import com.dev.koru.diagnostics.BlackBox
 import com.dev.koru.db.NativeAppRelation
 import com.dev.koru.db.NativeDatabase
 import com.dev.koru.db.NativeInterval
@@ -473,6 +474,7 @@ class KoruAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        BlackBox.log("A11Y", "onServiceConnected — accessibility service attivo")
         inAppDetector = InAppContentDetector(applicationContext)
         overlayManager = OverlayManager(applicationContext).apply {
             onReturnHome = { forceHome ->
@@ -1652,6 +1654,7 @@ class KoruAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        BlackBox.log("A11Y", "onDestroy — accessibility service distrutto (possibile kill OEM o teardown processo)")
         instance = null
         actionReceiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
         actionReceiver = null

@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/di/providers.dart';
+import '../../core/diagnostics/black_box.dart';
 import '../../data/database/app_database.dart';
 import '../../domain/entities/launcher_item.dart';
 import '../../platform/blocking_channel.dart';
@@ -33,7 +34,21 @@ final favoriteEntriesProvider = StreamProvider<
   (ref) {
     ref.keepAlive();
     final db = ref.watch(appDatabaseProvider);
-    return db.watchFavoritesWithLabels();
+    // Scatola nera: sorgente dei PREFERITI nella home del launcher. Logghiamo il
+    // PRIMO emit dopo (ri)creazione del provider = quanto tardano i preferiti a
+    // ripopolarsi (lo stream Drift deve ri-emettere lo snapshot). Subito dopo un
+    // `PROC Application.onCreate` conferma la finestra "preferiti vuoti".
+    var firstEmit = true;
+    return db.watchFavoritesWithLabels().map((rows) {
+      if (firstEmit) {
+        firstEmit = false;
+        BlackBox.log(
+          'FAV',
+          'favoriteEntries primo emit dopo (ri)creazione: ${rows.length} voci',
+        );
+      }
+      return rows;
+    });
   },
 );
 

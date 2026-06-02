@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/di/providers.dart';
+import '../../core/diagnostics/black_box.dart';
 import '../../platform/blocking_channel.dart';
 import 'app_personalization_provider.dart';
 
@@ -27,7 +28,27 @@ import 'app_personalization_provider.dart';
 final installedAppsProvider = FutureProvider<List<InstalledAppInfo>>((ref) async {
   ref.keepAlive();
   final blocking = ref.watch(platformChannelServiceProvider).blocking;
-  return blocking.getInstalledApps();
+  // Scatola nera: questa e' la sorgente del DRAWER e il ramo piu' lento del cold
+  // start (scan PackageManager nativo). Tracciamo start/ok/errore + durata, cosi'
+  // dal file si legge per quanto la lista app resta vuota dopo un (ri)avvio del
+  // processo, e se un primo load fallito (AsyncError) ha lasciato il drawer a
+  // secco. `rethrow` preserva la semantica AsyncError per i downstream.
+  final sw = Stopwatch()..start();
+  BlackBox.log('APPS', 'installedAppsProvider fetch start');
+  try {
+    final apps = await blocking.getInstalledApps();
+    BlackBox.log(
+      'APPS',
+      'installedAppsProvider OK ${apps.length} app in ${sw.elapsedMilliseconds}ms',
+    );
+    return apps;
+  } catch (e) {
+    BlackBox.log(
+      'APPS',
+      'installedAppsProvider ERROR dopo ${sw.elapsedMilliseconds}ms: $e',
+    );
+    rethrow;
+  }
 });
 
 /// Set di package installati senza label né icone. Endpoint native cheap

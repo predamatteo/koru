@@ -6,6 +6,7 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import com.dev.koru.BuildConfig
 import com.dev.koru.contract.BlockingContract
+import com.dev.koru.diagnostics.BlackBox
 import com.dev.koru.service.KoruAccessibilityService
 
 object StrictModeEnforcer {
@@ -120,6 +121,14 @@ object StrictModeEnforcer {
     private var lastReadTime = 0L
     private const val CACHE_MS = 1_500L
 
+    /// Soglia oltre la quale una lettura della mask (round-trip Keystore + HMAC)
+    /// e' abbastanza lenta da contare come stall del main thread del processo.
+    /// `handleEvent` gira sul main thread: una readMask > ~5ms a raffica durante
+    /// un burst di window-event e' il meccanismo #1 sospettato del FREEZE. La
+    /// scatola nera registra SOLO i MISS oltre questa soglia (≤1/1.5s per via del
+    /// TTL, e di norma sub-ms quando la strict mode e' spenta) → segnale pulito.
+    private const val KEYSTORE_SLOW_MS = 5L
+
     private fun getMask(context: Context): Int {
         if (CACHE_MS > 0L) {
             val now = System.currentTimeMillis()
@@ -128,8 +137,16 @@ object StrictModeEnforcer {
                 return cachedMask
             }
             if (BuildConfig.DEBUG) Log.d("KoruPerf", "getMask MISS -> readMask (Keystore HMAC)")
+            val t0 = System.currentTimeMillis()
             cachedMask = StrictModeStore.readMask(context)
+            val dur = System.currentTimeMillis() - t0
             lastReadTime = now
+            if (dur >= KEYSTORE_SLOW_MS) {
+                BlackBox.log(
+                    "MASK",
+                    "readMask Keystore/HMAC ${dur}ms mask=$cachedMask — stall sul main thread (burst di window-event = freeze)",
+                )
+            }
             return cachedMask
         }
         return StrictModeStore.readMask(context)

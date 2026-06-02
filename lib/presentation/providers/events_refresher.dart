@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/di/providers.dart';
+import '../../core/diagnostics/black_box.dart';
 import '../../platform/service_event_channel.dart';
 import 'app_limits_provider.dart';
 import 'app_list_provider.dart';
@@ -199,6 +200,7 @@ final appLifecycleInvalidatorProvider = Provider<void>((ref) {
           'KoruPerf.resume #$resumeCount THROTTLED (gap<45s, nessuna invalidazione)',
         );
       }
+      BlackBox.log('RESUME', '#$resumeCount THROTTLED (gap<45s, nessuna invalidazione)');
       return;
     }
     lastHandledResume = now;
@@ -207,6 +209,7 @@ final appLifecycleInvalidatorProvider = Provider<void>((ref) {
         'KoruPerf.resume #$resumeCount HANDLED -> invalidate stats + smart refresh',
       );
     }
+    BlackBox.log('RESUME', '#$resumeCount HANDLED -> invalidate stats + smart refresh installedApps');
     _invalidateStats(ref);
     // Fire-and-forget: il diff-based refresh è async e non deve bloccare
     // il frame di rientro nell'app.
