@@ -1598,12 +1598,22 @@ class KoruAccessibilityService : AccessibilityService() {
 
     private fun applyDynamicPackageFilter(snapshot: ProfilesSnapshot) {
         try {
-            val profilePackages = snapshot.profileApps.values
-                .flatten()
-                .map { it.packageName }
-                .toSet()
-            val watched = profilePackages + KNOWN_BROWSERS + SETTINGS_PACKAGES +
-                skipPackages + packageName
+            // I daily limit sono GLOBALI (non profile-scoped): un'app con un cap
+            // attivo deve restare osservata anche se non e' in alcun profilo
+            // abilitato, altrimenti il servizio non riceve i suoi eventi e il cap
+            // non scatta mai. Lettura nel percorso loadProfiles (gia' I/O DB,
+            // throttled) — non sul hot path di ogni evento.
+            val limitPackages = AppUsageLimitsStore.read(applicationContext)
+                .filterValues { it.minutes > 0 }
+                .keys
+            val watched = WatchedPackageCalculator.calculate(
+                profileApps = snapshot.profileApps,
+                limitPackages = limitPackages,
+                knownBrowsers = KNOWN_BROWSERS,
+                settingsPackages = SETTINGS_PACKAGES,
+                skipPackages = skipPackages,
+                selfPackage = packageName,
+            )
             // Skip se il set non e' cambiato: ricreare AccessibilityServiceInfo
             // forza il system_server a re-validare il manifest e re-bindare
             // il service — operazione non gratuita, va evitata se inutile.

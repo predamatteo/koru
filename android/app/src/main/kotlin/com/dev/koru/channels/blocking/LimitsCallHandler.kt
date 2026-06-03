@@ -1,8 +1,10 @@
 package com.dev.koru.channels.blocking
 
 import android.app.Activity
+import android.content.Intent
 import com.dev.koru.service.AppUsageLimitsStore
 import com.dev.koru.service.BypassCountStore
+import com.dev.koru.service.KoruAccessibilityService
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
@@ -46,6 +48,19 @@ internal object LimitsCallHandler : BlockingCallHandler {
                 // poteva sapere che un salvataggio di limiti (stato di
                 // enforcement) era fallito. Propaghiamo il vero risultato.
                 val saved = AppUsageLimitsStore.save(activity.applicationContext, parsed)
+                if (saved) {
+                    // I daily limit sono globali e l'AccessibilityService osserva
+                    // solo i package nel suo watched-set: un'app con un cap appena
+                    // aggiunto (e non in alcun profilo abilitato) non riceverebbe
+                    // eventi finche' non scatta un altro reload. Forziamo il
+                    // ricalcolo del watched-set riusando lo stesso broadcast del
+                    // canale profili → forceReloadProfiles → applyDynamicPackageFilter.
+                    val ctx = activity.applicationContext
+                    ctx.sendBroadcast(
+                        Intent(KoruAccessibilityService.ACTION_RELOAD_PROFILES)
+                            .setPackage(ctx.packageName),
+                    )
+                }
                 result.success(saved)
             }
             "getBypassCountToday" -> {
