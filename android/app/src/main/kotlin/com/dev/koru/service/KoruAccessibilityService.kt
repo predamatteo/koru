@@ -1596,28 +1596,46 @@ class KoruAccessibilityService : AccessibilityService() {
     @Volatile
     private var lastWatchedPackages: Set<String>? = null
 
+    /// `false` finche' [applyDynamicPackageFilter] non ha applicato almeno una
+    /// volta. Serve perche' il memo `watched == lastWatchedPackages` da solo
+    /// salterebbe la PRIMA applicazione quando e' watch-all (`null == null`,
+    /// stato iniziale): senza questo flag un focus attivo all'avvio del service
+    /// non imposterebbe `packageNames = null`.
+    @Volatile
+    private var filterInitialized = false
+
     private fun applyDynamicPackageFilter(snapshot: ProfilesSnapshot) {
         try {
-            // I daily limit sono GLOBALI (non profile-scoped): un'app con un cap
-            // attivo deve restare osservata anche se non e' in alcun profilo
-            // abilitato, altrimenti il servizio non riceve i suoi eventi e il cap
-            // non scatta mai. Lettura nel percorso loadProfiles (gia' I/O DB,
-            // throttled) — non sul hot path di ogni evento.
-            val limitPackages = AppUsageLimitsStore.read(applicationContext)
-                .filterValues { it.minutes > 0 }
-                .keys
-            val watched = WatchedPackageCalculator.calculate(
-                profileApps = snapshot.profileApps,
-                limitPackages = limitPackages,
-                knownBrowsers = KNOWN_BROWSERS,
-                settingsPackages = SETTINGS_PACKAGES,
-                skipPackages = skipPackages,
-                selfPackage = packageName,
-            )
+            // Focus / quick-block e' CATCH-ALL ("blocca tutto tranne whitelist"):
+            // durante una sessione attiva OGNI app va valutata, quindi osserviamo
+            // tutto (`packageNames = null`). La whitelist la applica l'evaluator
+            // (BlockReason.FOCUS_MODE), non il filtro. Senza questo, un'app fuori
+            // dal watched-set (no profilo, no limite, no browser/settings) non
+            // genererebbe eventi e il focus non la bloccherebbe.
+            val focusActive = QuickBlockStore.read(applicationContext).isSessionActiveNow()
+            // `null` = watch-all (catch-all focus). Altrimenti il set ristretto:
+            // i daily limit sono GLOBALI (non profile-scoped), quindi un'app con
+            // cap attivo resta osservata anche se non e' in alcun profilo. Letture
+            // nel percorso loadProfiles (gia' I/O DB, throttled) — non sul hot path.
+            val watched: Set<String>? = if (focusActive) {
+                null
+            } else {
+                val limitPackages = AppUsageLimitsStore.read(applicationContext)
+                    .filterValues { it.minutes > 0 }
+                    .keys
+                WatchedPackageCalculator.calculate(
+                    profileApps = snapshot.profileApps,
+                    limitPackages = limitPackages,
+                    knownBrowsers = KNOWN_BROWSERS,
+                    settingsPackages = SETTINGS_PACKAGES,
+                    skipPackages = skipPackages,
+                    selfPackage = packageName,
+                )
+            }
             // Skip se il set non e' cambiato: ricreare AccessibilityServiceInfo
             // forza il system_server a re-validare il manifest e re-bindare
             // il service — operazione non gratuita, va evitata se inutile.
-            if (watched == lastWatchedPackages) return
+            if (watched == lastWatchedPackages && filterInitialized) return
             val info = serviceInfo ?: return
             // Modifichiamo in place i soli campi mutabili (packageNames).
             // canRetrieveWindowContent e' read-only sull'oggetto e proviene
@@ -1625,9 +1643,11 @@ class KoruAccessibilityService : AccessibilityService() {
             // riutilizziamo l'istanza esistente. Creare un nuovo
             // AccessibilityServiceInfo from scratch perderebbe quel flag e
             // il system_server lo ri-validerebbe via meta-data.
-            info.packageNames = if (watched.isEmpty()) null else watched.toTypedArray()
+            // null/empty ⇒ `packageNames = null` (ricevi da tutti = watch-all).
+            info.packageNames = if (watched.isNullOrEmpty()) null else watched.toTypedArray()
             serviceInfo = info
             lastWatchedPackages = watched
+            filterInitialized = true
         } catch (e: Exception) {
             Log.w(TAG, "applyDynamicPackageFilter failed: ${e.message}")
         }

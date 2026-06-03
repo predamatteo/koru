@@ -79,11 +79,28 @@ object QuickBlockStore {
             nowWall: Long = System.currentTimeMillis(),
             nowElapsed: Long = SystemClock.elapsedRealtime(),
         ): Boolean {
-            if (!isActive) return false
-            if (isExpired(nowWall, nowElapsed)) return false // expired — safety valve
+            if (!isSessionActiveNow(nowWall, nowElapsed)) return false
             if (isPomodoroMode && isBreakPhase) return false
             return !whitelist.contains(packageName)
         }
+
+        /**
+         * La sessione di focus è IN CORSO e non scaduta — gate package-independent,
+         * che IGNORA break phase e whitelist. È la prima metà di [shouldBlock].
+         *
+         * Serve al `:accessibility` per decidere se OSSERVARE tutte le app
+         * (`packageNames = null`): durante un catch-all qualunque app va valutata,
+         * e la break phase NON va esclusa qui (la sessione è ancora attiva, l'app
+         * verrà ri-bloccata al rientro in work). Escludere la break dalla scelta
+         * del watched-set significherebbe ri-restringere/ri-allargare ad ogni
+         * transizione work↔break; tenendo il watch-all per tutta la sessione si
+         * ricevono solo eventi in più durante il break — l'evaluator non blocca
+         * comunque ([shouldBlock] resta false in break).
+         */
+        fun isSessionActiveNow(
+            nowWall: Long = System.currentTimeMillis(),
+            nowElapsed: Long = SystemClock.elapsedRealtime(),
+        ): Boolean = isActive && !isExpired(nowWall, nowElapsed)
 
         /// Scaduto? `expiresAt <= 0` ⇒ mai (nessuna scadenza impostata). Con
         /// entrambi gli orologi presenti ⇒ richiede che ENTRAMBI siano passati

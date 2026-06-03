@@ -209,6 +209,83 @@ class QuickBlockStoreTest {
         assertThat(snap.shouldBlock("com.x", nowWall = 1_000L, nowElapsed = 1_000L)).isFalse()
     }
 
+    // -------- Snapshot.isSessionActiveNow (gate watch-all del :accessibility) --------
+
+    @Test
+    fun isSessionActiveNow_idle_false() {
+        assertThat(QuickBlockStore.Snapshot.IDLE.isSessionActiveNow(1000L, 1000L)).isFalse()
+    }
+
+    @Test
+    fun isSessionActiveNow_activeFutureExpiry_true() {
+        val snap = QuickBlockStore.Snapshot(
+            isActive = true,
+            isPomodoroMode = false,
+            isBreakPhase = false,
+            expiresAt = 10_000L,
+            whitelist = setOf("com.allowed"),
+        )
+        assertThat(snap.isSessionActiveNow(1000L, 1000L)).isTrue()
+    }
+
+    @Test
+    fun isSessionActiveNow_activeExpired_false() {
+        val snap = QuickBlockStore.Snapshot(
+            isActive = true,
+            isPomodoroMode = false,
+            isBreakPhase = false,
+            expiresAt = 500L,
+            whitelist = emptySet(),
+        )
+        assertThat(snap.isSessionActiveNow(1000L, 1000L)).isFalse()
+    }
+
+    @Test
+    fun isSessionActiveNow_breakPhase_true() {
+        // REGRESSIONE: durante il break la sessione e' ancora ATTIVA → il
+        // :accessibility deve continuare a osservare tutto (a differenza di
+        // shouldBlock, che in break ritorna false). Cosi' al rientro in work
+        // non serve ri-allargare il watched-set.
+        val snap = QuickBlockStore.Snapshot(
+            isActive = true,
+            isPomodoroMode = true,
+            isBreakPhase = true,
+            expiresAt = 10_000L,
+            whitelist = emptySet(),
+        )
+        assertThat(snap.isSessionActiveNow(1000L, 1000L)).isTrue()
+        // Coerenza col contratto: in break shouldBlock resta false.
+        assertThat(snap.shouldBlock("com.x", 1000L)).isFalse()
+    }
+
+    @Test
+    fun isSessionActiveNow_expiresAtZero_true() {
+        // Nessuna scadenza impostata (expiresAt = 0) → sessione attiva.
+        val snap = QuickBlockStore.Snapshot(
+            isActive = true,
+            isPomodoroMode = false,
+            isBreakPhase = false,
+            expiresAt = 0L,
+            whitelist = emptySet(),
+        )
+        assertThat(snap.isSessionActiveNow(1000L, 1000L)).isTrue()
+    }
+
+    @Test
+    fun isSessionActiveNow_forwardWallJumpAlone_staysActive() {
+        // SEC-11: salto WALL in avanti da solo (monotonico non ancora scaduto)
+        // non termina la sessione → resta attiva (mirror di shouldBlock).
+        val snap = QuickBlockStore.Snapshot(
+            isActive = true,
+            isPomodoroMode = false,
+            isBreakPhase = false,
+            expiresAt = 10_000L,
+            whitelist = emptySet(),
+            expiresAtElapsed = 5_000L,
+        )
+        assertThat(snap.isSessionActiveNow(nowWall = 999_999L, nowElapsed = 4_000L)).isTrue()
+    }
+
     // -------- save / read roundtrip --------
 
     @Test

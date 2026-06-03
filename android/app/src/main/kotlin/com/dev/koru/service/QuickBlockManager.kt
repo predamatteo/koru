@@ -1,6 +1,7 @@
 package com.dev.koru.service
 
 import android.content.Context
+import android.content.Intent
 import android.os.CountDownTimer
 import android.os.SystemClock
 import android.util.Log
@@ -218,7 +219,7 @@ class QuickBlockManager {
         // reale. Entrambi calcolati dallo STESSO istante per coerenza.
         val expiresAt = if (phaseDurationMs > 0) System.currentTimeMillis() + phaseDurationMs else 0L
         val expiresAtElapsed = if (phaseDurationMs > 0) SystemClock.elapsedRealtime() + phaseDurationMs else 0L
-        return QuickBlockStore.save(
+        val saved = QuickBlockStore.save(
             ctx,
             QuickBlockStore.Snapshot(
                 isActive = isActive,
@@ -229,6 +230,12 @@ class QuickBlockManager {
                 expiresAtElapsed = expiresAtElapsed,
             ),
         )
+        // Lo stato di focus e' cambiato → il :accessibility deve ricalcolare il
+        // watched-set (catch-all attivo ⇒ osserva tutto). Notifichiamo DOPO la
+        // scrittura, cosi' rilegge lo snapshot aggiornato. Copre start + ogni
+        // transizione di fase pomodoro.
+        notifyAccessibilityReload()
+        return saved
     }
 
     /// Azzera lo snapshot persistito; ritorna `true` se la scrittura è riuscita.
@@ -239,7 +246,29 @@ class QuickBlockManager {
         val ctx = appContext ?: return false
         val ok = QuickBlockStore.clear(ctx)
         if (!ok) Log.w(TAG, "Quick block snapshot NOT cleared — :accessibility may keep blocking until next write")
+        // Fine sessione (stop manuale, onFinish del timer, pomodoro complete) →
+        // il :accessibility deve ri-restringere il watched-set. Notifichiamo
+        // DOPO il clear cosi' rilegge lo snapshot IDLE.
+        notifyAccessibilityReload()
         return ok
+    }
+
+    /// Invia il broadcast di reload allo stesso ricevitore usato dal canale
+    /// profili (KoruAccessibilityService.forceReloadProfiles → loadProfiles →
+    /// applyDynamicPackageFilter), cosi' il watched-set viene ricalcolato sul
+    /// cambio di stato del focus. `triggerProfileReload` del LockForegroundService
+    /// (stesso broadcast) setta solo needsReload, non riscrive lo snapshot →
+    /// nessun loop.
+    private fun notifyAccessibilityReload() {
+        val ctx = appContext ?: return
+        try {
+            ctx.sendBroadcast(
+                Intent(KoruAccessibilityService.ACTION_RELOAD_PROFILES)
+                    .setPackage(ctx.packageName),
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to send reload broadcast: ${e.message}")
+        }
     }
 
     private fun sendTickEvent() {
