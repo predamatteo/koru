@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/di/providers.dart';
+import '../../../core/diagnostics/black_box.dart';
 import '../../../core/router/app_router.dart';
 import '../../providers/app_list_provider.dart';
 import '../../providers/launcher_swipe_actions_provider.dart';
@@ -14,6 +15,11 @@ import 'widgets/launcher_shortcut_buttons.dart';
 /// Velocità minima (px/s) perché un drag conti come swipe intenzionale: filtra
 /// i micro-movimenti senza richiedere flick troppo aggressivi.
 const double _kSwipeVelocityThreshold = 320;
+
+/// One-shot per processo: marca il PRIMO frame renderizzato del launcher dopo
+/// un (ri)avvio del processo = vero "time-to-usable" della home (il proxy
+/// attuale è `APPS OK`, che misura il drawer, non il primo frame del launcher).
+bool _launcherFirstFrameLogged = false;
 
 /// Schermata launcher: clock minimalista + favoriti + 2 shortcut
 /// personalizzabili (phone / camera di default) + link "All apps" e "K"
@@ -37,6 +43,12 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (!_launcherFirstFrameLogged) {
+      _launcherFirstFrameLogged = true;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => BlackBox.log('DART', 'LauncherHome primo frame renderizzato'),
+      );
+    }
   }
 
   @override

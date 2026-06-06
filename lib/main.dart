@@ -17,9 +17,17 @@ Future<void> main() async {
   // start autoritativo e' comunque `PROC Application.onCreate` lato nativo).
   BlackBox.log('DART', 'main() start (Flutter engine avviato)');
 
+  // Timing del lavoro che BLOCCA il primo frame (await prima di runApp): se
+  // questi secondi crescono al cold start, ritardano la comparsa del launcher.
+  final swBoot = Stopwatch()..start();
   await Hive.initFlutter();
+  BlackBox.log('DART', 'Hive.initFlutter fine (${swBoot.elapsedMilliseconds}ms)');
   final hiveSettings = HiveSettingsService();
   await hiveSettings.init();
+  BlackBox.log(
+    'DART',
+    'hiveSettings.init fine (${swBoot.elapsedMilliseconds}ms totali pre-runApp)',
+  );
 
   final database = AppDatabase();
 

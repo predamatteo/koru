@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/constants/hive_keys.dart';
 import '../../core/di/providers.dart';
 import '../../core/diagnostics/black_box.dart';
 import '../../platform/blocking_channel.dart';
@@ -37,6 +40,9 @@ final installedAppsProvider = FutureProvider<List<InstalledAppInfo>>((ref) async
   BlackBox.log('APPS', 'installedAppsProvider fetch start');
   try {
     final apps = await blocking.getInstalledApps();
+    // Write-through su disco: il PROSSIMO cold start dipingerà il drawer da
+    // questa cache in <100ms invece di aspettare di nuovo lo scan nativo.
+    _writeInventoryCache(ref, apps);
     BlackBox.log(
       'APPS',
       'installedAppsProvider OK ${apps.length} app in ${sw.elapsedMilliseconds}ms',
@@ -50,6 +56,51 @@ final installedAppsProvider = FutureProvider<List<InstalledAppInfo>>((ref) async
     rethrow;
   }
 });
+
+/// Inventario app persistito su disco (Hive `cacheBox`) all'ultimo fetch
+/// nativo riuscito. FALLBACK per [visibleAppsProvider] al cold start: quando
+/// [installedAppsProvider] non ha ancora un valore (nessun `previous` dopo una
+/// ricreazione del processo/engine), il drawer dipinge da QUI in <100ms invece
+/// di restare vuoto per i 3-18s dello scan PackageManager nativo
+/// (stale-while-revalidate da disco). Alla risposta nativa il valore reale
+/// rimpiazza la cache. Solo metadati label-only (le icone sono già lazy).
+final cachedAppInventoryProvider = Provider<List<InstalledAppInfo>>((ref) {
+  ref.keepAlive();
+  final raw = ref
+      .read(hiveSettingsServiceProvider)
+      .getString(HiveKeys.cacheBox, HiveKeys.appInventoryCache);
+  if (raw.isEmpty) {
+    BlackBox.log('APPS', 'cache disco inventario MISS (cold, nessuna cache)');
+    return const [];
+  }
+  try {
+    final list = (jsonDecode(raw) as List)
+        .map((e) => InstalledAppInfo.fromMap(e as Map<dynamic, dynamic>))
+        .toList(growable: false);
+    BlackBox.log('APPS', 'cache disco inventario HIT ${list.length} app');
+    return list;
+  } catch (e) {
+    BlackBox.log('APPS', 'cache disco inventario CORROTTA ($e) -> ignorata');
+    return const [];
+  }
+});
+
+/// Persiste l'inventario su disco (write-through da [installedAppsProvider]).
+/// Fire-and-forget: un fallimento di scrittura non deve mai rompere il fetch.
+void _writeInventoryCache(Ref ref, List<InstalledAppInfo> apps) {
+  try {
+    final raw = jsonEncode([
+      for (final a in apps) {'packageName': a.packageName, 'label': a.label},
+    ]);
+    // ignore: discarded_futures — fire-and-forget intenzionale.
+    ref
+        .read(hiveSettingsServiceProvider)
+        .put(HiveKeys.cacheBox, HiveKeys.appInventoryCache, raw)
+        .catchError((Object _) {});
+  } catch (_) {
+    // Serializzazione fallita: ignora, la cache resterà quella precedente.
+  }
+}
 
 /// Set di package installati senza label né icone. Endpoint native cheap
 /// (`getInstalledPackageNames`, ~50ms) che non decoda le bitmap come fa
@@ -134,9 +185,13 @@ final appSearchQueryProvider = StateProvider<String>((_) => '');
 /// l'AsyncLoading.copyWithPrevious → il drawer resta pieno mentre
 /// `getInstalledApps` rifà lo scan PackageManager. NON usare `unwrapPrevious()`:
 /// scarterebbe il previous → lista vuota per tutto il reload (errore storico di
-/// 73d174c/e3c930d). Sul cold start (no previous) resta vuota.
+/// 73d174c/e3c930d). Sul cold start (no previous) ricade su
+/// [cachedAppInventoryProvider] (inventario su disco dell'ultima sessione):
+/// il drawer dipinge subito e si aggiorna quando lo scan nativo completa.
 final visibleAppsProvider = Provider<List<InstalledAppInfo>>((ref) {
-  final apps = ref.watch(installedAppsProvider).valueOrNull ?? const [];
+  final List<InstalledAppInfo> apps =
+      ref.watch(installedAppsProvider).valueOrNull ??
+          ref.watch(cachedAppInventoryProvider);
   final personalization = ref.watch(appPersonalizationProvider);
   final launcherPkgs =
       ref.watch(launcherPackagesProvider).valueOrNull ?? const <String>{};

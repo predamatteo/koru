@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
+import '../../../core/diagnostics/black_box.dart';
 import '../../../data/models/profile_model.dart';
 import '../../providers/active_profile_provider.dart';
 import '../../providers/app_list_provider.dart';
@@ -19,11 +20,22 @@ import 'widgets/today_limits_card.dart';
 ///
 /// Questa NON è la home del launcher (clock+favoriti) — quella vive a
 /// `/launcher` ed è visibile solo quando Koru è lanciato come default launcher.
+///
+/// One-shot per processo: primo frame renderizzato della dashboard (vero
+/// "time-to-usable" quando Koru NON è il launcher di default).
+bool _homeFirstFrameLogged = false;
+
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (!_homeFirstFrameLogged) {
+      _homeFirstFrameLogged = true;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => BlackBox.log('DART', 'Home dashboard primo frame renderizzato'),
+      );
+    }
     final allProfiles = ref.watch(profilesProvider).valueOrNull ?? [];
     final activeProfiles = ref.watch(activeProfilesProvider).valueOrNull ?? [];
     final blocksToday = ref.watch(blockTriggeredCountProvider).valueOrNull ?? 0;

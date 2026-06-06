@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../../core/diagnostics/black_box.dart';
 import 'daos/achievements_dao.dart';
 import 'daos/focus_usage_events_dao.dart';
 import 'daos/intention_usage_events_dao.dart';
@@ -540,11 +541,16 @@ class AppDatabase extends _$AppDatabase {
 
 LazyDatabase _openConnection() {
   return LazyDatabase(() async {
+    // Apertura LAZY: la callback gira al PRIMO accesso al DB (di norma il primo
+    // watcher al cold start). La durata fino a `setup` = costo di apertura DB a
+    // freddo, ramo che contribuisce al "time-to-usable" della dashboard.
+    BlackBox.log('DB', 'Drift lazy open inizio (primo accesso al DB)');
     final dbFolder = await getApplicationDocumentsDirectory();
     final file = File(p.join(dbFolder.path, 'koru.db'));
     return NativeDatabase.createInBackground(
       file,
       setup: (rawDb) {
+        BlackBox.log('DB', 'NativeDatabase open/setup (journal_mode, busy_timeout)');
         // Forziamo journal_mode=DELETE (no WAL) perché il blocking engine
         // legge il DB anche da Kotlin via android.database.sqlite. Le due
         // librerie SQLite distinte (sqlite3_flutter_libs lato Flutter vs

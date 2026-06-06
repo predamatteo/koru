@@ -55,6 +55,11 @@ class HiveKeys {
   /// Mappa packageName → icon base64, invalidata su install/uninstall events.
   static const String appIconCache = 'APP_ICON_CACHE';
 
+  /// Inventario app (JSON: lista `{packageName, label}`) dell'ultimo fetch
+  /// nativo riuscito. Fallback per il drawer al cold start (stale-while-
+  /// revalidate da disco) finché `getInstalledApps` non ri-scansiona.
+  static const String appInventoryCache = 'APP_INVENTORY_CACHE';
+
   // ─── hidden_apps box keys ──────────────────────────────────────────────────
   /// `Set<String>` di package nascosti dal drawer (feature Phase 2 da MP).
   static const String hiddenApps = 'HIDDEN_APPS';

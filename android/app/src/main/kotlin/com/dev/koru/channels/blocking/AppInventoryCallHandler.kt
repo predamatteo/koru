@@ -156,8 +156,17 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
 
     private fun getInstalledApps(context: Context): List<Map<String, Any?>> {
         val pm = context.packageManager
+        // Diagnostica split: separiamo il costo delle query PackageManager
+        // (getInstalledApplications + 2× queryIntentActivities) da quello della
+        // risoluzione label (`getApplicationLabel` per OGNI app, sospettato
+        // dominante dei secondi del cold start) — così nei black-box si vede
+        // quale ramo va attaccato per primo (es. cache disco label-only).
+        val tQuery = System.currentTimeMillis()
         val launcherPkgs = resolveLauncherPackages(pm)
-        return launchableApplications(pm)
+        val apps = launchableApplications(pm)
+        val queryMs = System.currentTimeMillis() - tQuery
+        val tLabel = System.currentTimeMillis()
+        val result = apps
             .map { app ->
                 // PERF: niente icona qui. Decodificare + comprimere un PNG per
                 // OGNI app (1-3s al cold start su set realistici) era il costo
@@ -170,6 +179,11 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
                 )
             }
             .sortedBy { (it["label"] as String).lowercase() }
+        BlackBox.log(
+            "APPS",
+            "native getInstalledApps split: query=${queryMs}ms label+sort=${System.currentTimeMillis() - tLabel}ms",
+        )
+        return result
     }
 
     /// PARITÀ (F2.4): sorgente UNICA dei package "launchable", condivisa da
