@@ -4,10 +4,11 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
-import com.dev.koru.BuildConfig
 import com.dev.koru.contract.BlockingContract
 import com.dev.koru.diagnostics.BlackBox
 import com.dev.koru.service.KoruAccessibilityService
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 object StrictModeEnforcer {
     private const val TAG = "StrictModeEnforcer"
@@ -101,60 +102,119 @@ object StrictModeEnforcer {
         }
     }
 
-    /// Cache della mask con TTL breve. `handleEvent` gira sul main thread del
-    /// processo del service (MAIN process: l'AndroidManifest NON dichiara
-    /// `android:process` per [KoruAccessibilityService]) ed è invocato a OGNI
-    /// window-state-change. `StrictModeStore.readMask` NON è O(1): su un record
-    /// esistente calcola un HMAC keyed dall'Android Keystore (round-trip IPC)
-    /// per la tamper-evidence. Farlo a ogni evento compete col main thread →
-    /// jank/ANR ai cambi app. Era stata azzerata (CACHE_MS=0) temendo staleness
-    /// cross-process, ma quel timore è infondato: vedi sotto.
+    /// Cache della mask servita SEMPRE dalla memoria sul main thread.
+    /// `handleEvent` gira sul main thread del processo del service (MAIN
+    /// process: l'AndroidManifest NON dichiara `android:process` per
+    /// [KoruAccessibilityService]) ed è invocato a OGNI window-state-change.
+    /// `StrictModeStore.readMask` NON è O(1): su un record esistente calcola un
+    /// HMAC keyed dall'Android Keystore (round-trip IPC) per la tamper-evidence.
+    /// Farlo SINCRONO a ogni MISS bloccava il main thread (stall 17-1695ms nei
+    /// black-box log = freeze ai cambi app). Ora il refresh è ASINCRONO: alla
+    /// scadenza del TTL si lancia una read off-main e nel frattempo si continua a
+    /// servire l'ultimo valore noto. Il main thread non tocca mai il Keystore.
     ///
     /// La correttezza NON dipende dal TTL: ogni write path invalida
     /// ESPLICITAMENTE la cache ([StrictModeMethodChannel.setStrictModeOptions]
     /// e `performEmergencyUnblock`, [KoruDeviceAdminReceiver], [StrictModeFailSafe]
-    /// → [invalidateCache]). Poiché service e writer condividono lo STESSO
-    /// processo, `invalidateCache` azzera esattamente questa cache in-memory:
-    /// nessuna staleness cross-process. Il TTL è solo un backstop che limita la
-    /// frequenza delle read costose fra una write e l'altra.
-    private var cachedMask: Int = -1
-    private var lastReadTime = 0L
+    /// → [invalidateCache], che fa un re-read SINCRONO immediato). [version]
+    /// annulla qualsiasi refresh async in volo che leggeva il valore vecchio,
+    /// così un async lento non può sovrascrivere il valore appena invalidato.
+    @Volatile private var cachedMask: Int = -1
+    @Volatile private var lastReadTime = 0L
+    @Volatile private var version = 0
+    @Volatile private var appContextRef: Context? = null
     private const val CACHE_MS = 1_500L
 
+    /// Coalescing: in un burst di window-event tutti vedono la cache stale; il
+    /// primo schedula il refresh, gli altri trovano `true` e ritornano subito.
+    private val refreshing = AtomicBoolean(false)
+
+    /// Executor dedicato (single-thread, daemon) per la read off-main: serializza
+    /// i refresh e non trattiene il processo allo shutdown.
+    private val refreshExecutor by lazy {
+        Executors.newSingleThreadExecutor { r ->
+            Thread(r, "koru-strictmask").apply { isDaemon = true }
+        }
+    }
+
     /// Soglia oltre la quale una lettura della mask (round-trip Keystore + HMAC)
-    /// e' abbastanza lenta da contare come stall del main thread del processo.
-    /// `handleEvent` gira sul main thread: una readMask > ~5ms a raffica durante
-    /// un burst di window-event e' il meccanismo #1 sospettato del FREEZE. La
-    /// scatola nera registra SOLO i MISS oltre questa soglia (≤1/1.5s per via del
-    /// TTL, e di norma sub-ms quando la strict mode e' spenta) → segnale pulito.
+    /// e' abbastanza lenta da contare come stall (ora misurato sul thread di
+    /// background, non più sul main). La scatola nera registra SOLO le read oltre
+    /// questa soglia → segnale pulito.
     private const val KEYSTORE_SLOW_MS = 5L
 
+    /// Prime della cache (chiamato da [KoruAccessibilityService.onServiceConnected]):
+    /// la prima readMask costosa avviene off-main al connect del service, PRIMA
+    /// che l'utente cambi app, così `getMask` trova già un valore e non deve mai
+    /// ricadere sul fail-secure durante l'uso normale.
+    fun prime(context: Context) {
+        appContextRef = context.applicationContext
+        scheduleRefresh()
+    }
+
     private fun getMask(context: Context): Int {
-        if (CACHE_MS > 0L) {
-            val now = System.currentTimeMillis()
-            if (cachedMask >= 0 && now - lastReadTime < CACHE_MS) {
-                if (BuildConfig.DEBUG) Log.d("KoruPerf", "getMask HIT (cache, no Keystore)")
-                return cachedMask
-            }
-            if (BuildConfig.DEBUG) Log.d("KoruPerf", "getMask MISS -> readMask (Keystore HMAC)")
-            val t0 = System.currentTimeMillis()
-            cachedMask = StrictModeStore.readMask(context)
-            val dur = System.currentTimeMillis() - t0
-            lastReadTime = now
-            if (dur >= KEYSTORE_SLOW_MS) {
-                BlackBox.log(
-                    "MASK",
-                    "readMask Keystore/HMAC ${dur}ms mask=$cachedMask — stall sul main thread (burst di window-event = freeze)",
-                )
-            }
-            return cachedMask
+        appContextRef = context.applicationContext
+        val cached = cachedMask
+        if (cached < 0 || System.currentTimeMillis() - lastReadTime >= CACHE_MS) {
+            scheduleRefresh()
         }
-        return StrictModeStore.readMask(context)
+        // Mai bloccare il main thread: se la prima read non è ancora completata
+        // ritorna fail-secure (ALL) finché l'async refresh non popola la cache.
+        // Finestra minima e solo al boot del processo (post-prime di norma già
+        // popolata); coerente col fail-secure di [StrictModeStore.readMask].
+        return if (cached >= 0) cached else BlockingContract.ALL_OPTIONS_ENABLED
+    }
+
+    /// Lancia (al più uno alla volta) un refresh off-main della cache. Cattura la
+    /// [version] all'avvio e committa il risultato SOLO se non è cambiata nel
+    /// frattempo (nessun [invalidateCache] intercorso) → niente stale-write.
+    private fun scheduleRefresh() {
+        val ctx = appContextRef ?: return
+        if (!refreshing.compareAndSet(false, true)) return
+        val startVersion = version
+        try {
+            refreshExecutor.execute {
+                try {
+                    val t0 = System.currentTimeMillis()
+                    val mask = StrictModeStore.readMask(ctx)
+                    val dur = System.currentTimeMillis() - t0
+                    if (version == startVersion) {
+                        cachedMask = mask
+                        lastReadTime = System.currentTimeMillis()
+                    }
+                    if (dur >= KEYSTORE_SLOW_MS) {
+                        BlackBox.log(
+                            "MASK",
+                            "readMask Keystore/HMAC ${dur}ms mask=$mask thread=${Thread.currentThread().name} (off-main async refresh)",
+                        )
+                    }
+                } finally {
+                    refreshing.set(false)
+                }
+            }
+        } catch (e: Throwable) {
+            refreshing.set(false)
+            Log.w(TAG, "strict-mask refresh non schedulabile: ${e.message}")
+        }
     }
 
     fun invalidateCache() {
-        cachedMask = -1
-        lastReadTime = 0L
+        version++
+        val ctx = appContextRef
+        if (ctx != null) {
+            // Write path (raro, user-initiated: cambio opzioni / emergency
+            // unblock / device admin / fail-safe): NON è sul hot path degli
+            // window-event, quindi una read sincrona qui è accettabile e
+            // garantisce zero staleness e zero finestra fail-secure dopo il
+            // cambio. `version++` sopra annulla un eventuale async in volo.
+            cachedMask = StrictModeStore.readMask(ctx)
+            lastReadTime = System.currentTimeMillis()
+        } else {
+            // Mai avuto un context (invalidate prima di prime/getMask): la
+            // prossima getMask farà il refresh async.
+            cachedMask = -1
+            lastReadTime = 0L
+        }
     }
 
     fun handleEvent(service: AccessibilityService, event: AccessibilityEvent): Boolean {

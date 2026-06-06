@@ -208,7 +208,38 @@ class KoruAccessibilityService : AccessibilityService() {
         goToHomeViaIntent()
     }
 
+    /// Anti-loop guard: timestamp dell'ultimo HOME intent rilanciato. Con
+    /// l'app bloccata che si ripiglia il foreground a raffica (mini-player YT /
+    /// inner stack IG, vedi nota in [scheduleBackFallbackHome]) il relaunch HOME
+    /// veniva sparato in loop, e ogni giro (con engine NON cached) ricreava
+    /// l'Activity + un `main()` da zero (osservato nei black-box: onCreate→
+    /// onStop→onDestroy ×3 in 6s). Coalesciamo gli echi ravvicinati.
+    @Volatile private var lastHomeIntentMs = 0L
+    private val homeRelaunchMinIntervalMs = 800L
+
     private fun goToHomeViaIntent() {
+        val now = System.currentTimeMillis()
+        if (now - lastHomeIntentMs < homeRelaunchMinIntervalMs) {
+            // Echo ravvicinato. Se il foreground reale è GIÀ Koru, il HOME
+            // precedente è atterrato e questo è ridondante → skip (rompe il
+            // loop di ricreazione). Se invece il target è ANCORA in foreground
+            // (si è ri-asserito), NON skippiamo: l'enforcement deve procedere.
+            val fg = ForegroundDetector.detect(applicationContext)?.primaryPackage
+            if (fg == packageName) {
+                BlackBox.log(
+                    "HOME",
+                    "relaunch SKIP ridondante (Δ=${now - lastHomeIntentMs}ms, fg=$fg già home)",
+                )
+                return
+            }
+            BlackBox.log(
+                "HOME",
+                "relaunch (Δ=${now - lastHomeIntentMs}ms, fg=$fg ancora foreground → procedo)",
+            )
+        } else {
+            BlackBox.log("HOME", "relaunch (Δ=${now - lastHomeIntentMs}ms)")
+        }
+        lastHomeIntentMs = now
         try {
             val home = Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_HOME)
@@ -475,6 +506,10 @@ class KoruAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         BlackBox.log("A11Y", "onServiceConnected — accessibility service attivo")
+        // Prime async della strict-mask: la prima readMask (round-trip Keystore)
+        // avviene off-main ORA, al connect, così `getMask` durante i successivi
+        // window-event trova sempre la cache popolata e non blocca mai il main.
+        StrictModeEnforcer.prime(applicationContext)
         inAppDetector = InAppContentDetector(applicationContext)
         overlayManager = OverlayManager(applicationContext).apply {
             onReturnHome = { forceHome ->

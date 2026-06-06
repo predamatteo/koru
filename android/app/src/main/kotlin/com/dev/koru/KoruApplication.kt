@@ -40,7 +40,7 @@ class KoruApplication : Application() {
      */
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        BlackBox.log("MEM", "onTrimMemory ${trimName(level)}")
+        BlackBox.log("MEM", "onTrimMemory ${trimName(level)} (level=$level)")
     }
 
     override fun onLowMemory() {
