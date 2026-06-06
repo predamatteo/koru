@@ -9,15 +9,10 @@ import android.os.Looper
 import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
-import com.dev.koru.channels.BatteryEventChannel
-import com.dev.koru.channels.BlackBoxMethodChannel
-import com.dev.koru.channels.BlockingMethodChannel
+import io.flutter.embedding.engine.FlutterEngineCache
 import com.dev.koru.channels.NavigationMethodChannel
 import com.dev.koru.channels.PackageEventsReceiver
-import com.dev.koru.channels.ProfileMethodChannel
-import com.dev.koru.channels.StrictModeMethodChannel
 import com.dev.koru.channels.ServiceEventChannel
-import com.dev.koru.channels.PermissionMethodChannel
 import com.dev.koru.db.NativeDatabase
 import com.dev.koru.diagnostics.BlackBox
 import com.dev.koru.service.AppUsageLimitsStore
@@ -29,22 +24,32 @@ class MainActivity : FlutterActivity() {
     private var packageEventsReceiver: PackageEventsReceiver? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Engine cacheato: scaldiamo (o riusiamo) l'unico FlutterEngine PRIMA di
+        // super.onCreate, così il delegate di FlutterActivity — che legge
+        // getCachedEngineId() durante super.onCreate — trova l'engine già in
+        // cache e vi si aggancia SENZA rilanciare main() (niente cold start su
+        // una semplice ricreazione dell'Activity).
+        val initialRoute = computeInitialRoute()
+        val freshlyWarmed = KoruEngineManager.ensureWarm(this, initialRoute)
         super.onCreate(savedInstanceState)
         Log.d(
             "MainActivity",
             "onCreate: action=${intent?.action} isHome=${intent?.let { isHomeIntent(it) }} " +
+                "freshlyWarmed=$freshlyWarmed " +
                 "suppressUntil=${KoruAccessibilityService.suppressLauncherNavigationUntilMs} " +
                 "now=${System.currentTimeMillis()}",
         )
         // Scatola nera: init difensivo (idempotente — di norma gia' montata da
-        // KoruApplication.onCreate) + marker di creazione Activity con la route
-        // iniziale, cosi' nel file si vede se il cold start e' partito su
-        // /launcher (preferiti) o su /home.
+        // KoruApplication.onCreate) + marker di creazione Activity. `cachedEngine
+        // =true` ⇒ engine RIUSATO (ricreazione Activity a processo vivo, niente
+        // main()); `savedState` distingue una ricreazione con stato salvato da un
+        // cold start vero del processo.
         BlackBox.init(applicationContext)
         BlackBox.log(
             "ACT",
             "onCreate action=${intent?.action} isHome=${intent?.let { isHomeIntent(it) }} " +
-                "isDefault=${isDefaultLauncher()} initialRoute=${getInitialRoute()}",
+                "isDefault=${isDefaultLauncher()} initialRoute=$initialRoute " +
+                "cachedEngine=${!freshlyWarmed} savedState=${savedInstanceState != null}",
         )
         // Defense-in-depth: assicura che la foreground service di
         // backup sia viva se l'utente ha già configurato qualcosa che
@@ -54,30 +59,69 @@ class MainActivity : FlutterActivity() {
         // Idempotente: niente succede se è già running.
         ensureBackupBlockingServiceStarted()
         // SEC-12: cold start con l'intent di KoruDeviceAdminReceiver
-        // (EXTRA_REQUIRE_BACKDOOR_CODE). configureFlutterEngine NON è ancora
-        // girato, quindi NavigationMethodChannel.channel è null → la richiesta
-        // viene marcata come pendente e il listener Dart la fa PULL appena
-        // registra il proprio handler. Non navighiamo qui (Flutter non è pronto).
+        // (EXTRA_REQUIRE_BACKDOOR_CODE). Con engine cached il
+        // NavigationMethodChannel è registrato al warm; se per qualche motivo il
+        // suo channel fosse ancora null la richiesta resta pendente e il listener
+        // Dart la fa PULL appena registra l'handler (meccanismo invariato).
         maybeRequireBackdoorCode(intent)
+        // Re-attach a un engine GIÀ caldo: la route iniziale non si applica più
+        // (main() è già girato; Dart è sulla pagina dell'ultima sessione).
+        // Navighiamo in base all'intent di lancio rispettando la finestra di
+        // soppressione del blocking engine (stessa policy di onNewIntent). Sul
+        // warm fresco invece ci pensa la initialRoute passata all'engine.
+        if (!freshlyWarmed) {
+            routeForLaunchIntent()
+        }
     }
 
+    /// FlutterActivity userà l'engine cacheato da [KoruEngineManager] se
+    /// presente. Se il warm è fallito (cache vuota) ritorniamo null →
+    /// FlutterActivity crea un engine proprio (comportamento legacy, distrutto
+    /// con l'host). Letto dal delegate durante super.onCreate, dopo ensureWarm.
+    override fun getCachedEngineId(): String? =
+        if (FlutterEngineCache.getInstance().contains(KoruEngineManager.ENGINE_ID)) {
+            KoruEngineManager.ENGINE_ID
+        } else {
+            null
+        }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        val t0 = System.currentTimeMillis()
         super.configureFlutterEngine(flutterEngine)
-        BlockingMethodChannel.register(flutterEngine, this)
-        ProfileMethodChannel.register(flutterEngine, this)
-        StrictModeMethodChannel.register(flutterEngine, this)
-        ServiceEventChannel.register(flutterEngine)
-        PermissionMethodChannel.register(flutterEngine, this)
-        NavigationMethodChannel.register(flutterEngine)
-        BatteryEventChannel.register(flutterEngine, applicationContext)
-        BlackBoxMethodChannel.register(flutterEngine)
+        val isCached =
+            FlutterEngineCache.getInstance().get(KoruEngineManager.ENGINE_ID) === flutterEngine
+        if (isCached) {
+            // Engine pre-warmato: EventChannel + channel context-light sono già
+            // stati registrati una volta al warm (ri-registrarli romperebbe la
+            // subscription Dart degli EventChannel). Qui ri-agganciamo SOLO i
+            // method channel Activity-bound, per puntare all'Activity corrente.
+            KoruEngineManager.registerActivityChannels(flutterEngine, this)
+        } else {
+            // Fallback (warm fallito): engine creato da FlutterActivity → nessun
+            // channel è stato registrato al warm, li registriamo tutti qui.
+            KoruEngineManager.registerAllChannels(flutterEngine, this)
+        }
+        BlackBox.log(
+            "ACT",
+            "configureFlutterEngine (${System.currentTimeMillis() - t0}ms, cached=$isCached)",
+        )
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
-        // Rilascia sink/handler dei channel longevi prima che l'engine
-        // venga distrutto, così non restano reference a sink morti.
-        ServiceEventChannel.detach()
-        NavigationMethodChannel.detach()
+        val isCached =
+            FlutterEngineCache.getInstance().get(KoruEngineManager.ENGINE_ID) === flutterEngine
+        if (!isCached) {
+            // Engine per-activity (fallback) che verrà distrutto con l'host:
+            // scollega i sink longevi prima del teardown, così un emit
+            // successivo non solleva "Reply already submitted".
+            ServiceEventChannel.detach()
+            NavigationMethodChannel.detach()
+        }
+        // Engine cached: NON fare detach. Persiste oltre la distruzione
+        // dell'Activity e il prossimo attach lo riusa; scollegare il sink di
+        // ServiceEventChannel fermerebbe gli eventi del foreground service verso
+        // il Dart (che resta vivo) finché un nuovo onListen non lo ripopola.
+        BlackBox.log("ACT", "cleanUpFlutterEngine (cached=$isCached)")
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
@@ -201,13 +245,40 @@ class MainActivity : FlutterActivity() {
      * Altrimenti (aperta da drawer, task switcher, o HOME intent residuo
      * dopo che l'utente ha cambiato default launcher) partiamo da `/` →
      * GoRouter redirige a `/home`.
+     *
+     * Con engine cacheato questa route viene passata UNA volta al warm
+     * (`engine.navigationChannel.setInitialRoute`, vedi [KoruEngineManager]);
+     * l'override [getInitialRoute] resta per il path di fallback (engine
+     * per-activity) dove FlutterActivity la consulta direttamente.
      */
-    override fun getInitialRoute(): String? {
-        val current = intent ?: return super.getInitialRoute()
-        return if (isHomeIntent(current) && isDefaultLauncher()) {
+    private fun computeInitialRoute(): String {
+        val current = intent
+        return if (current != null && isHomeIntent(current) && isDefaultLauncher()) {
             "/launcher"
         } else {
-            super.getInitialRoute()
+            "/"
+        }
+    }
+
+    override fun getInitialRoute(): String? = computeInitialRoute()
+
+    /// Naviga Flutter in base all'intent di lancio quando l'Activity si
+    /// ri-aggancia a un engine GIÀ caldo (la initialRoute non si applica più,
+    /// `main()` è già girato). Mirror della policy di [onNewIntent]: rispetta la
+    /// soppressione del blocking engine, altrimenti HOME+default → `/launcher`,
+    /// sennò esce dal launcher se Dart è rimasto lì da una sessione precedente.
+    private fun routeForLaunchIntent() {
+        val current = intent ?: return
+        val now = System.currentTimeMillis()
+        val suppressUntil = KoruAccessibilityService.suppressLauncherNavigationUntilMs
+        if (now < suppressUntil) {
+            KoruAccessibilityService.suppressLauncherNavigationUntilMs = 0L
+            return
+        }
+        if (isHomeIntent(current) && isDefaultLauncher()) {
+            NavigationMethodChannel.goToLauncher()
+        } else {
+            NavigationMethodChannel.goToHomeIfOnLauncher()
         }
     }
 
