@@ -375,6 +375,8 @@ class KoruAccessibilityService : AccessibilityService() {
             pendingBypassExpiryChecks.clear()
             pendingLimitChecks.values.forEach { mainHandler.removeCallbacks(it) }
             pendingLimitChecks.clear()
+            pendingWindowBoundaryChecks.values.forEach { mainHandler.removeCallbacks(it) }
+            pendingWindowBoundaryChecks.clear()
         }
     }
 
@@ -494,6 +496,15 @@ class KoruAccessibilityService : AccessibilityService() {
     /// continua ad usare l'app oltre i 30' senza che nulla lo fermi
     /// (bug osservato su Instagram).
     private val pendingLimitChecks = mutableMapOf<String, Runnable>()
+
+    /// Runnable schedulati al PROSSIMO confine di finestra oraria, uno per
+    /// package in foreground. Coprono il caso "confine attraversato mentre
+    /// l'utente è già dentro l'app": a quel confine non arriva alcun
+    /// TYPE_WINDOW_STATE_CHANGED, quindi senza questo timer una finestra che
+    /// INIZIA (es. 14:00) mentre l'app è aperta non bloccherebbe mai finché
+    /// l'utente non genera un nuovo evento (bug osservato con profilo
+    /// 9-13/14-18). Stesso pattern di [pendingLimitChecks].
+    private val pendingWindowBoundaryChecks = mutableMapOf<String, Runnable>()
 
     /// Throttle per TYPE_WINDOW_CONTENT_CHANGED nei browser: limita la lettura
     /// della URL bar (operazione relativamente costosa) a max 2/s.
@@ -984,6 +995,66 @@ class KoruAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * Pianifica un re-check di [checkAppBlocking] per [pkg] al PROSSIMO confine
+     * di una finestra oraria di un profilo TIME che lo targetizza.
+     *
+     * Risolve il caso "confine attraversato mentre l'utente è già dentro":
+     * i TYPE_WINDOW_STATE_CHANGED scattano solo all'apertura/cambio app, quindi
+     * una finestra che INIZIA (es. 14:00) mentre [pkg] è in foreground non
+     * bloccherebbe mai finché l'utente non genera un nuovo evento. Allo scadere,
+     * se l'utente è ancora dentro ([lastForegroundPackage] == pkg), rilancia
+     * checkAppBlocking che — ora dentro la finestra — blocca; restando in Allow
+     * ri-arma il confine successivo (catena auto-perpetuante). Se l'utente è
+     * uscito, no-op (al rientro scatterà spontaneamente checkAppBlocking).
+     *
+     * Stesso pattern di [scheduleLimitCheck]. Considera solo i profili abilitati,
+     * non in pausa indeterminata, di tipo TIME e attivi OGGI ([currentDayFlag]):
+     * gli altri non hanno confini orari rilevanti per pkg.
+     */
+    private fun scheduleNextWindowBoundaryCheck(pkg: String, snapshot: ProfilesSnapshot) {
+        pendingWindowBoundaryChecks.remove(pkg)?.let { mainHandler.removeCallbacks(it) }
+
+        val todayFlag = currentDayFlag()
+        val intervals = snapshot.profiles.asSequence()
+            .filter { p ->
+                p.isEnabled &&
+                    p.pausedUntil >= 0 &&
+                    (p.typeCombinations and PROFILE_TYPE_TIME) != 0 &&
+                    (p.dayFlags and todayFlag) != 0 &&
+                    snapshot.profileApps[p.id]?.any { it.packageName == pkg && it.isEnabled } == true
+            }
+            .flatMap { (snapshot.profileIntervals[it.id] ?: emptyList()).asSequence() }
+            .toList()
+        if (intervals.isEmpty()) return
+
+        val delayMin =
+            BlockPolicyEvaluator.minutesUntilNextBoundary(currentMinutesOfDay(), intervals) ?: return
+
+        val r = object : Runnable {
+            override fun run() {
+                // Service hygiene: skip se il service e' stato distrutto.
+                if (instance != this@KoruAccessibilityService) return
+                pendingWindowBoundaryChecks.remove(pkg)
+                if (lastForegroundPackage != pkg) {
+                    Log.d(TAG, "Window-boundary re-check for $pkg: user not there (foreground=$lastForegroundPackage)")
+                    return
+                }
+                Log.i(TAG, "Window boundary reached for $pkg, re-evaluating")
+                checkAppBlocking(pkg, profilesSnapshot.get())
+            }
+        }
+        pendingWindowBoundaryChecks[pkg] = r
+        // +1s di grace per cadere sicuri DENTRO la finestra: isNowInInterval è
+        // half-open [from, to), a (from - 1s) saremmo ancora fuori.
+        mainHandler.postDelayed(r, delayMin * 60_000L + 1_000L)
+        Log.d(TAG, "Scheduled window-boundary re-check for $pkg in ${delayMin}min")
+    }
+
+    private fun cancelWindowBoundaryCheck(pkg: String) {
+        pendingWindowBoundaryChecks.remove(pkg)?.let { mainHandler.removeCallbacks(it) }
+    }
+
+    /**
      * Mostra l'overlay di estensione (time-up prompt) sopra l'app ancora
      * in foreground. A differenza del blocco "entry", NON facciamo HOME:
      * l'overlay vive sopra l'app; se l'utente sceglie un'estensione,
@@ -1189,6 +1260,7 @@ class KoruAccessibilityService : AccessibilityService() {
                     endOverlayOverApp()
                     currentlyBlockingPackage = packageName
                     cancelLimitCheck(packageName)
+                    cancelWindowBoundaryCheck(packageName)
                     val appLabel = getAppLabel(packageName)
                     // Config custom dall'eventuale relation per-app/profilo del
                     // pkg (branding del limite). Cercata su tutto lo snapshot
@@ -1229,6 +1301,7 @@ class KoruAccessibilityService : AccessibilityService() {
                 else -> { // APP_BLOCKED (gli altri reason non sono raggiungibili qui)
                     val profile = snapshot.profiles.firstOrNull { it.id == decision.profileId }
                     currentlyBlockingPackage = packageName
+                    cancelWindowBoundaryCheck(packageName)
 
                     // Evento RIPETUTO durante una sessione overlay-over-app già
                     // attiva per questo pkg: l'app resta in foreground sotto
@@ -1293,6 +1366,12 @@ class KoruAccessibilityService : AccessibilityService() {
                 // più attivo): una eventuale sessione over-app per esso è finita →
                 // rilascia il focus audio (il video riprende) e azzera il tracking.
                 endOverlayOverApp()
+                // Confine orario: se un profilo TIME blocca pkg in una finestra
+                // FUTURA (es. ora 13:57, finestra 14:00-18:00), pianifica il
+                // re-check al confine — altrimenti, restando dentro l'app senza
+                // generare eventi, il blocco non scatterebbe fino al prossimo
+                // window-state-change (bug osservato su Instagram).
+                scheduleNextWindowBoundaryCheck(packageName, snapshot)
                 // L'evaluator collassa "bypass di profilo attivo" e "nessun
                 // blocco" entrambi in Allow. Qui ri-discriminiamo (come prima)
                 // leggendo lo stato di bypass per scegliere il bookkeeping:
@@ -1729,6 +1808,8 @@ class KoruAccessibilityService : AccessibilityService() {
         pendingBypassExpiryChecks.clear()
         pendingLimitChecks.values.forEach { mainHandler.removeCallbacks(it) }
         pendingLimitChecks.clear()
+        pendingWindowBoundaryChecks.values.forEach { mainHandler.removeCallbacks(it) }
+        pendingWindowBoundaryChecks.clear()
         pendingBackFallbacks.values.forEach { mainHandler.removeCallbacks(it) }
         pendingBackFallbacks.clear()
         lastBypassedActiveForeground = null

@@ -318,4 +318,32 @@ object BlockPolicyEvaluator {
             fromMinutes < toMinutes -> nowMinutes in fromMinutes until toMinutes
             else -> nowMinutes >= fromMinutes || nowMinutes < toMinutes
         }
+
+    /**
+     * Minuti (1..1440) dal minuto-del-giorno [nowMinutes] al PROSSIMO confine
+     * (inizio O fine) tra gli [intervals], con wrap a mezzanotte. `null` se non
+     * esiste alcun confine significativo (lista vuota, o solo intervalli 24h
+     * `from == to`).
+     *
+     * Serve a schedulare un re-check del blocco quando un confine orario viene
+     * attraversato MENTRE l'app è già in foreground: a quel confine non arriva
+     * alcun `TYPE_WINDOW_STATE_CHANGED`, quindi
+     * [KoruAccessibilityService.checkAppBlocking] non verrebbe mai richiamato
+     * spontaneamente (stesso blind-spot già coperto per bypass-TTL e
+     * daily-limit). Un confine che cade ESATTAMENTE ORA è mappato a 1440
+     * (= fra 24h), non a 0: "ora" la decisione è già stata presa da questo
+     * stesso check, il prossimo utile è il giro successivo.
+     */
+    internal fun minutesUntilNextBoundary(nowMinutes: Int, intervals: List<NativeInterval>): Int? {
+        var best: Int? = null
+        for (iv in intervals) {
+            if (iv.fromMinutes == iv.toMinutes) continue // 24h: nessun confine
+            for (boundary in intArrayOf(iv.fromMinutes, iv.toMinutes)) {
+                val delta = ((boundary - nowMinutes) % 1440 + 1440) % 1440 // 0..1439
+                val d = if (delta == 0) 1440 else delta
+                if (best == null || d < best) best = d
+            }
+        }
+        return best
+    }
 }

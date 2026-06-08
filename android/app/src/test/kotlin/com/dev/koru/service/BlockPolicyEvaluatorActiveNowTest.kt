@@ -98,6 +98,54 @@ class BlockPolicyEvaluatorActiveNowTest {
         assertThat(BlockPolicyEvaluator.isNowInInterval(from - 1, from, to)).isFalse()
     }
 
+    // ---- minutesUntilNextBoundary -------------------------------------------
+
+    @Test
+    fun nextBoundary_twoWindows_beforeSecondStart() {
+        // 09-13 e 14-18; ore 13:57 (837') → prossimo confine = inizio 14:00 fra 3'.
+        val intervals = listOf(interval(9 * 60, 13 * 60), interval(14 * 60, 18 * 60))
+        assertThat(BlockPolicyEvaluator.minutesUntilNextBoundary(13 * 60 + 57, intervals))
+            .isEqualTo(3)
+    }
+
+    @Test
+    fun nextBoundary_exactlyOnBoundary_skipsToNext() {
+        // Ore 14:00 esatte (inizio finestra): il confine "ora" vale 1440, non 0,
+        // quindi il prossimo confine è la FINE 18:00 fra 240'.
+        val intervals = listOf(interval(9 * 60, 13 * 60), interval(14 * 60, 18 * 60))
+        assertThat(BlockPolicyEvaluator.minutesUntilNextBoundary(14 * 60, intervals))
+            .isEqualTo(240)
+    }
+
+    @Test
+    fun nextBoundary_insideWindow_returnsEnd() {
+        // Dentro 09-13 alle 12:59 → prossimo confine = fine 13:00 fra 1'.
+        assertThat(BlockPolicyEvaluator.minutesUntilNextBoundary(12 * 60 + 59, listOf(interval(9 * 60, 13 * 60))))
+            .isEqualTo(1)
+    }
+
+    @Test
+    fun nextBoundary_emptyList_null() {
+        assertThat(BlockPolicyEvaluator.minutesUntilNextBoundary(12 * 60, emptyList())).isNull()
+    }
+
+    @Test
+    fun nextBoundary_only24hInterval_null() {
+        // from == to ⇒ 24h, nessun confine significativo.
+        assertThat(BlockPolicyEvaluator.minutesUntilNextBoundary(12 * 60, listOf(interval(600, 600))))
+            .isNull()
+    }
+
+    @Test
+    fun nextBoundary_crossMidnight_picksNearest() {
+        // Finestra 22:00-06:00 (1320,360). Alle 23:00 (1380') il confine più
+        // vicino è la FINE 06:00 del giorno dopo, fra 420'.
+        val intervals = listOf(interval(22 * 60, 6 * 60))
+        assertThat(BlockPolicyEvaluator.minutesUntilNextBoundary(23 * 60, intervals)).isEqualTo(420)
+        // Alle 05:00 (300') il confine più vicino è la fine 06:00, fra 60'.
+        assertThat(BlockPolicyEvaluator.minutesUntilNextBoundary(5 * 60, intervals)).isEqualTo(60)
+    }
+
     // ---- isProfileActiveNow: matrice ----------------------------------------
 
     @Test
