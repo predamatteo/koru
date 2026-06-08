@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -70,24 +71,26 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
   @override
   void dispose() {
     launcherRouteObserver.unsubscribe(this);
-    _setGestureExclusion(false);
+    _setLauncherActive(false);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  // ─── RouteAware: l'override gesture vive SOLO quando il launcher è in cima ──
-  // Il tasto "K" fa push di /home SOPRA il launcher (che resta montato sotto):
-  // senza questo scoping l'esclusione resterebbe attiva dentro l'app, bloccando
-  // back e home di sistema. didPushNext (coperto) → off; didPopNext / didPush
-  // (riscoperto o primo mount) → on.
+  // ─── RouteAware: gli override "da launcher" vivono SOLO quando è in cima ──
+  // Due override sono scoping-sensibili e vanno spenti quando il launcher è
+  // coperto: (1) l'esclusione gesture di sistema e (2) la nav bar nascosta. Il
+  // tasto "K" fa push di /home SOPRA il launcher (che resta montato sotto):
+  // senza scoping l'esclusione bloccherebbe back/home di sistema e la nav bar
+  // resterebbe nascosta dentro l'app. didPushNext (coperto) → off; didPopNext /
+  // didPush (riscoperto o primo mount) → on.
   @override
-  void didPush() => _setGestureExclusion(true);
+  void didPush() => _setLauncherActive(true);
 
   @override
-  void didPopNext() => _setGestureExclusion(true);
+  void didPopNext() => _setLauncherActive(true);
 
   @override
-  void didPushNext() => _setGestureExclusion(false);
+  void didPushNext() => _setLauncherActive(false);
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -96,7 +99,25 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
     // l'utente è su un'altra route (es. /home) NON dobbiamo riattivare.
     if (state == AppLifecycleState.resumed &&
         (ModalRoute.of(context)?.isCurrent ?? false)) {
-      _setGestureExclusion(true);
+      _setLauncherActive(true);
+    }
+  }
+
+  /// Attiva/disattiva gli override "da launcher" (validi solo col launcher in
+  /// cima): esclusione gesture di sistema + nav bar nascosta. Vedi il commento
+  /// RouteAware sopra per lo scoping.
+  void _setLauncherActive(bool active) {
+    _setGestureExclusion(active);
+    if (active) {
+      // Nasconde SOLO la navigation bar (il pill bianco di sistema); la status
+      // bar in alto (orologio/batteria) resta visibile.
+      SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.manual,
+        overlays: const [SystemUiOverlay.top],
+      );
+    } else {
+      // Ripristina la nav bar normale per il resto dell'app (default Android 15).
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
   }
 
@@ -174,7 +195,7 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
                     LauncherSwipeDirection.right,
                     Icons.chevron_right,
                   ),
-                  const Expanded(child: FavoritesList()),
+                  Expanded(child: _buildFadedFavorites()),
                   _buildSideArrow(
                     LauncherSwipeDirection.left,
                     Icons.chevron_left,
@@ -182,8 +203,7 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
                 ],
               ),
             ),
-            _buildSwipeHints(),
-            const LauncherShortcutButtons(),
+            _buildBottomBar(),
             const SizedBox(height: 8),
             ],
           ),
@@ -211,21 +231,46 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
     );
   }
 
-  /// Hint per lo swipe verso l'alto: apre sempre "All apps". È una gesture FISSA
-  /// del launcher (non configurabile, a differenza di sx/dx rese come frecce
-  /// laterali — vedi [_buildSideArrow]), quindi l'hint è sempre presente.
-  /// Tappabile: stessa azione dello swipe, così l'accesso al drawer resta
-  /// possibile anche dove la gesture di sistema interferisce.
-  Widget _buildSwipeHints() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Center(
-        child: _SwipeHint(
+  /// Lista favoriti con bordi superiore/inferiore sfumati: quando la lista
+  /// scrolla (molti preferiti) il primo/ultimo item sfuma invece di tagliarsi
+  /// netto contro le righe adiacenti. Il fade è applicato qui (call-site del
+  /// launcher) e non dentro [FavoritesList], così non impatta gli altri usi.
+  Widget _buildFadedFavorites() {
+    return ShaderMask(
+      shaderCallback: (bounds) => const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Colors.transparent,
+          Colors.black,
+          Colors.black,
+          Colors.transparent,
+        ],
+        stops: [0.0, 0.04, 0.96, 1.0],
+      ).createShader(bounds),
+      blendMode: BlendMode.dstIn,
+      child: const FavoritesList(),
+    );
+  }
+
+  /// Barra inferiore: shortcut telefono/camera agli angoli + hint "All apps"
+  /// centrato allo stesso livello. Lo swipe-su verso "All apps" è una gesture
+  /// FISSA del launcher (non configurabile, a differenza di sx/dx rese come
+  /// frecce laterali — vedi [_buildSideArrow]); l'hint resta sempre presente e
+  /// tappabile (stessa azione dello swipe, utile dove la gesture di sistema
+  /// interferisce). Lo Stack centra "All apps" tra le due icone senza overlap
+  /// dei tap: hint stretto al centro, icone ai bordi.
+  Widget _buildBottomBar() {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        const LauncherShortcutButtons(),
+        _SwipeHint(
           icon: Icons.keyboard_arrow_up,
           label: 'All apps',
           onTap: _openAllApps,
         ),
-      ),
+      ],
     );
   }
 
