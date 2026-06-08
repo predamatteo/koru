@@ -3,6 +3,7 @@ package com.dev.koru.channels
 import android.app.Activity
 import android.content.Intent
 import android.util.Log
+import com.dev.koru.service.UiSettingsStore
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
@@ -37,6 +38,17 @@ object ProfileMethodChannel {
                     }
                     "syncAll" -> {
                         reloadServiceProfiles()
+                        result.success(null)
+                    }
+                    "setActiveFontId" -> {
+                        // Preferenza UI globale (font scelto in-app) → store
+                        // cross-process letto dall'overlay nel processo
+                        // :accessibility. Nessun reload profili necessario.
+                        val fontId = call.argument<Int>("fontId") ?: 0
+                        activityRef?.let {
+                            UiSettingsStore.setActiveFontId(it.applicationContext, fontId)
+                        }
+                        Log.d(TAG, "Active font id set: $fontId")
                         result.success(null)
                     }
                     else -> result.notImplemented()

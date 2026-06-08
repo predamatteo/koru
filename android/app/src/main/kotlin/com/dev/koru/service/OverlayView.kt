@@ -14,11 +14,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -32,10 +34,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dev.koru.R
 import com.dev.koru.overlay.BlockReason
 import com.dev.koru.overlay.OverlayConfig
 import kotlinx.coroutines.delay
@@ -142,29 +146,30 @@ internal fun BlockedScreen(
         ) {
             Spacer(Modifier.weight(1f))
 
-            // Preferisci l'emoji del profilo (scelta dall'utente); fallback
-            // all'emoji della reason se il profilo non ha un'icona custom.
-            val headerEmoji = when {
-                !profileEmoji.isNullOrBlank() && profileEmoji != "NoIcon" -> profileEmoji
-                else -> reasonEmoji(reason)
-            }
-            Text(
-                text = headerEmoji,
-                fontSize = 56.sp,
+            // Header: icona lineare per-reason tinta col verde Koru (mirror
+            // delle icone outline dell'anteprima Flutter). Sostituisce le vecchie
+            // emoji colorate per allinearsi al minimalismo dell'app.
+            Icon(
+                painter = painterResource(reasonIcon(reason)),
+                contentDescription = null,
+                tint = KoruPrimary,
+                modifier = Modifier.size(64.dp),
             )
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(28.dp))
             Text(
                 text = reasonTitle(reason, config),
                 color = KoruTextPrimary,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = 26.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = (-0.2).sp,
                 textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
             Text(
                 text = config.messageSubtitle ?: "paused by “$profileTitle”",
-                color = KoruTextPrimary.copy(alpha = 0.78f),
-                fontSize = 16.sp,
+                color = KoruTextPrimary.copy(alpha = 0.70f),
+                fontSize = 15.sp,
+                letterSpacing = 0.1.sp,
                 textAlign = TextAlign.Center,
             )
 
@@ -212,8 +217,9 @@ internal fun BlockedScreen(
                     Spacer(Modifier.height(8.dp))
                     Text(
                         text = "Bypassed ${bypassPolicy.countToday}× today",
-                        color = KoruTextPrimary.copy(alpha = 0.55f),
+                        color = KoruTextPrimary.copy(alpha = 0.60f),
                         fontSize = 12.sp,
+                        letterSpacing = 0.3.sp,
                     )
                 }
             } else {
@@ -232,7 +238,12 @@ internal fun BlockedScreen(
                     contentColor = Color(config.backgroundColorArgb),
                 ),
             ) {
-                Text("Don't open $appLabel", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    "Don't open $appLabel",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 0.2.sp,
+                )
             }
 
             AnimatedVisibility(
@@ -243,7 +254,7 @@ internal fun BlockedScreen(
                 TextButton(onClick = { showDurationPicker = true }) {
                     Text(
                         "Open anyway",
-                        color = KoruTextPrimary.copy(alpha = 0.78f),
+                        color = KoruTextPrimary.copy(alpha = 0.70f),
                         fontSize = 14.sp,
                     )
                 }
@@ -269,19 +280,22 @@ private fun DurationPickerSection(
     ) {
         Spacer(Modifier.weight(1f))
 
-        Text(
-            text = "⏱️", // ⏱️
-            fontSize = 56.sp,
+        Icon(
+            painter = painterResource(R.drawable.ic_block_hourglass),
+            contentDescription = null,
+            tint = KoruPrimary,
+            modifier = Modifier.size(64.dp),
         )
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(28.dp))
         Text(
             text = "How long?",
             color = KoruTextPrimary,
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
+            fontSize = 26.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = (-0.2).sp,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(10.dp))
         Text(
             text = if (bypassCountToday > 0) {
                 "$appLabel — bypass #${bypassCountToday + 1} today. " +
@@ -289,8 +303,9 @@ private fun DurationPickerSection(
             } else {
                 "$appLabel will be blocked again after this time."
             },
-            color = KoruTextPrimary.copy(alpha = 0.78f),
-            fontSize = 16.sp,
+            color = KoruTextPrimary.copy(alpha = 0.70f),
+            fontSize = 15.sp,
+            letterSpacing = 0.1.sp,
             textAlign = TextAlign.Center,
         )
 
@@ -309,7 +324,7 @@ private fun DurationPickerSection(
         TextButton(onClick = onCancel) {
             Text(
                 "Cancel",
-                color = KoruTextPrimary.copy(alpha = 0.78f),
+                color = KoruTextPrimary.copy(alpha = 0.70f),
                 fontSize = 14.sp,
             )
         }
@@ -333,7 +348,7 @@ private fun DurationOptionButton(
         Text(
             label,
             color = KoruTextPrimary,
-            fontSize = 18.sp,
+            fontSize = 17.sp,
             fontWeight = FontWeight.Medium,
         )
     }
@@ -357,23 +372,27 @@ private fun ExtensionPromptSection(
     ) {
         Spacer(Modifier.weight(1f))
 
-        Text(
-            text = "⏰", // ⏰
-            fontSize = 56.sp,
+        Icon(
+            painter = painterResource(R.drawable.ic_block_alarm),
+            contentDescription = null,
+            tint = KoruPrimary,
+            modifier = Modifier.size(64.dp),
         )
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(28.dp))
         Text(
             text = "Time's up",
             color = KoruTextPrimary,
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
+            fontSize = 26.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = (-0.2).sp,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(10.dp))
         Text(
             text = "How much longer with $appLabel?",
-            color = KoruTextPrimary.copy(alpha = 0.78f),
-            fontSize = 16.sp,
+            color = KoruTextPrimary.copy(alpha = 0.70f),
+            fontSize = 15.sp,
+            letterSpacing = 0.1.sp,
             textAlign = TextAlign.Center,
         )
 
@@ -400,7 +419,12 @@ private fun ExtensionPromptSection(
                 contentColor = KoruBgBase,
             ),
         ) {
-            Text("Close $appLabel", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Text(
+                "Close $appLabel",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 0.2.sp,
+            )
         }
     }
 }
@@ -413,8 +437,8 @@ private fun MindfulIntentionPrompt(
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             "Why are you opening it?",
-            color = KoruTextPrimary.copy(alpha = 0.85f),
-            fontSize = 15.sp,
+            color = KoruTextPrimary.copy(alpha = 0.80f),
+            fontSize = 14.sp,
             fontWeight = FontWeight.Medium,
         )
         Spacer(Modifier.height(12.dp))
@@ -471,8 +495,8 @@ private fun LockedIndicator(reason: BlockReason) {
     ) {
         Text(
             text,
-            color = KoruTextPrimary.copy(alpha = 0.55f),
-            fontSize = 16.sp,
+            color = KoruTextPrimary.copy(alpha = 0.60f),
+            fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
         )
     }
@@ -547,20 +571,25 @@ private fun CountdownButton(
             Text(
                 display,
                 color = KoruTextPrimary,
-                fontSize = if (phase == CountdownPhase.FINISHED) 18.sp else 28.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = if (phase == CountdownPhase.FINISHED) 17.sp else 30.sp,
+                fontWeight =
+                    if (phase == CountdownPhase.FINISHED) FontWeight.Medium else FontWeight.SemiBold,
             )
         }
     }
 }
 
-private fun reasonEmoji(reason: BlockReason): String = when (reason) {
-    BlockReason.FOCUS_MODE -> "🧘"       // 🧘
-    BlockReason.SECTION_BLOCKED -> "🛑"  // 🛑
-    BlockReason.WEBSITE_BLOCKED -> "🌐"  // 🌐
-    BlockReason.APP_BLOCKED -> "🌿"      // 🌿
-    BlockReason.USAGE_LIMIT -> "⏳"            // ⏳
-    BlockReason.BYPASS_EXPIRED -> "⏰"          // ⏰
+/// Icona lineare per-reason (vector drawable in res/drawable). Mirror, dove
+/// esistono, delle icone outline dell'anteprima Flutter (block_overlay_screen):
+/// spa / self_improvement / layers_clear / language; hourglass e alarm coprono i
+/// due reason solo-nativi (USAGE_LIMIT, BYPASS_EXPIRED).
+private fun reasonIcon(reason: BlockReason): Int = when (reason) {
+    BlockReason.FOCUS_MODE -> R.drawable.ic_block_self_improvement
+    BlockReason.SECTION_BLOCKED -> R.drawable.ic_block_layers_clear
+    BlockReason.WEBSITE_BLOCKED -> R.drawable.ic_block_language
+    BlockReason.APP_BLOCKED -> R.drawable.ic_block_spa
+    BlockReason.USAGE_LIMIT -> R.drawable.ic_block_hourglass
+    BlockReason.BYPASS_EXPIRED -> R.drawable.ic_block_alarm
 }
 
 private fun reasonTitle(reason: BlockReason, config: OverlayConfig): String =

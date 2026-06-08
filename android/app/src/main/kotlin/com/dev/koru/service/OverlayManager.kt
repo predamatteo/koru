@@ -332,6 +332,12 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
                 }
             }
 
+            // Font scelto dall'utente (in-app), propagato al processo
+            // :accessibility via UiSettingsStore. Risolto UNA volta per overlay
+            // (I/O cache-ato in KoruFonts); null ⇒ font di sistema.
+            val overlayFontFamily =
+                KoruFonts.resolve(context, UiSettingsStore.activeFontId(context))
+
             val composeView = ComposeView(context).apply {
                 setViewTreeLifecycleOwner(this@OverlayManager)
                 setViewTreeSavedStateRegistryOwner(this@OverlayManager)
@@ -345,6 +351,15 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
                             background = KoruBgBase,
                         ),
                     ) {
+                        // Applica il fontFamily a TUTTI i Text dell'overlay via
+                        // LocalTextStyle: i singoli Text fissano size/weight ma
+                        // non la family, quindi la ereditano da qui. null = system.
+                        androidx.compose.runtime.CompositionLocalProvider(
+                            androidx.compose.material3.LocalTextStyle provides
+                                androidx.compose.material3.LocalTextStyle.current.copy(
+                                    fontFamily = overlayFontFamily,
+                                ),
+                        ) {
                         // I valori sono letti dai mutableState dentro la
                         // composable (vedi BlockedScreen): qui passiamo i
                         // .value per rendere esplicita la sottoscrizione.
@@ -373,6 +388,7 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
                                 onBypassOpen?.invoke(_currentPackageName.value, durationMs, _blockedDomain.value)
                             },
                         )
+                        }
                     }
                 }
             }

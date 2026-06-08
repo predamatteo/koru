@@ -80,6 +80,13 @@ void main() {
       expect(calls.first.arguments, isNull);
     });
 
+    test('setActiveFontId sends fontId argument', () async {
+      setMockHandler((_) async => null);
+      await ProfileChannel().setActiveFontId(2);
+      expect(calls.first.method, 'setActiveFontId');
+      expect(calls.first.arguments, {'fontId': 2});
+    });
+
     test('multiple calls accumulate in order', () async {
       setMockHandler((_) async => null);
       final c = ProfileChannel();

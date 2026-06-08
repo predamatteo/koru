@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/hive_keys.dart';
@@ -17,6 +19,16 @@ class FontPreferenceNotifier extends Notifier<KoruFont> {
     final hive = ref.read(hiveSettingsServiceProvider);
     await hive.put(HiveKeys.uiStateBox, HiveKeys.activeFontId, font.id);
     state = font;
+    // Propaga il font all'overlay di blocco nativo (gira nel processo
+    // :accessibility, che non legge Hive). Fire-and-forget: un errore del
+    // channel non deve bloccare il cambio tema lato UI.
+    unawaited(
+      ref
+          .read(platformChannelServiceProvider)
+          .profile
+          .setActiveFontId(font.id)
+          .catchError((_) {}),
+    );
   }
 }
 

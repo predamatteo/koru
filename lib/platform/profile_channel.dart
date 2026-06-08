@@ -23,4 +23,10 @@ class ProfileChannel {
       });
 
   Future<void> syncAll() => _channel.invokeMethod<void>('syncAll');
+
+  /// Propaga al native il font scelto dall'utente (KoruFont.id). L'overlay di
+  /// blocco gira nel processo `:accessibility`, che non legge Hive: il native
+  /// lo persiste in uno store cross-process e lo applica all'overlay.
+  Future<void> setActiveFontId(int fontId) =>
+      _channel.invokeMethod<void>('setActiveFontId', {'fontId': fontId});
 }

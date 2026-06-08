@@ -85,6 +85,11 @@ TestHarness buildTestContainer({List<Override> extra = const []}) {
   when(() => platform.permission).thenReturn(permission);
   when(() => platform.events).thenReturn(events);
 
+  // FontPreferenceNotifier.set() notifica il native del font scelto (best
+  // effort): stub fire-and-forget di default, così i test che cambiano font
+  // non incappano in un mock non stubato (Null vs Future<void>).
+  when(() => profileCh.setActiveFontId(any())).thenAnswer((_) async {});
+
   final container = ProviderContainer(overrides: [
     appDatabaseProvider.overrideWithValue(db),
     hiveSettingsServiceProvider.overrideWithValue(hive),
