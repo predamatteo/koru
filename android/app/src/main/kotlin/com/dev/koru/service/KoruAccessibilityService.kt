@@ -366,6 +366,7 @@ class KoruAccessibilityService : AccessibilityService() {
         mainHandler.post {
             overlayManager?.dismiss()
             currentlyBlockingPackage = null
+            preLaunchOverlayPackage = null
             // Schermo spento durante un overlay-over-app: chiudi la sessione e
             // rilascia il focus audio (niente media da mettere in pausa a display off).
             endOverlayOverApp()
@@ -466,6 +467,21 @@ class KoruAccessibilityService : AccessibilityService() {
     @Volatile
     private var overlayOverAppPackage: String? = null
 
+    /// Package per cui è mostrato un overlay di blocco PRE-LANCIO: l'utente ha
+    /// toccato l'icona dall'UI di Koru (launcher/drawer/favoriti) e
+    /// [showPreLaunchBlockIfNeeded] ha mostrato l'overlay PRIMA di aprire l'app
+    /// (niente apri→espelli→riapri). Differenza chiave rispetto al blocco
+    /// classico: l'app NON è mai stata aperta, quindi "Don't open" deve solo
+    /// dismissare l'overlay (siamo già sul launcher) — non BACK/HOME, che
+    /// navigherebbe/resetterebbe il launcher. "Open anyway" invece passa per il
+    /// ramo standard `!appStillForeground` di [onBypassOpen] →
+    /// startActivity(getLaunchIntentForPackage) = apre l'app per la prima volta.
+    /// Azzerato appena un evento app REALE supera lo stato pre-lancio
+    /// (checkAppBlocking), su "Open anyway"/"Don't open", screen-off e destroy.
+    /// `null` = nessun overlay pre-lancio in corso.
+    @Volatile
+    private var preLaunchOverlayPackage: String? = null
+
     /// AudioFocusRequest attivo finché un overlay-over-app è visibile. Mentre
     /// l'overlay copre il video l'app sotto continua a girare, quindi chiediamo
     /// il focus audio TRANSIENT per metterne in PAUSA il media durante il
@@ -523,7 +539,7 @@ class KoruAccessibilityService : AccessibilityService() {
         StrictModeEnforcer.prime(applicationContext)
         inAppDetector = InAppContentDetector(applicationContext)
         overlayManager = OverlayManager(applicationContext).apply {
-            onReturnHome = { forceHome ->
+            onReturnHome = onReturnHome@{ forceHome ->
                 // Tap esplicito dall'overlay: il flag `forceHome` decide
                 // se forzare HOME (Intent) o tentare BACK prima con
                 // fallback HOME. La policy è scelta in OverlayManager
@@ -541,6 +557,18 @@ class KoruAccessibilityService : AccessibilityService() {
                 // fallback su lastForegroundPackage (Accessibility recente).
                 // Se entrambi unavailable: trust-the-system, procediamo.
                 val targetPkg = overlayManager?.currentPackageName ?: ""
+                // PRE-LANCIO: overlay mostrato PRIMA di aprire l'app (tap
+                // sull'icona dall'UI di Koru — vedi [showPreLaunchBlockIfNeeded]).
+                // L'app non è mai stata aperta: "Don't open" = solo dismiss,
+                // niente BACK/HOME (siamo sul launcher; un BACK lo navigherebbe,
+                // un HOME ne resetterebbe la pagina). L'app resta non aperta.
+                if (preLaunchOverlayPackage != null && preLaunchOverlayPackage == targetPkg) {
+                    Log.i(TAG, "PRE-LAUNCH 'Don't open' for $targetPkg — dismiss only (app mai aperta)")
+                    preLaunchOverlayPackage = null
+                    currentlyBlockingPackage = null
+                    dismiss()
+                    return@onReturnHome
+                }
                 // Overlay-over-app: l'app bloccata è ANCORA in foreground sotto
                 // l'overlay (non l'abbiamo mai espulsa). Un BACK (forceHome=false,
                 // il default per APP_BLOCKED) la navigherebbe solo internamente
@@ -580,6 +608,10 @@ class KoruAccessibilityService : AccessibilityService() {
                 }
             }
             onBypassOpen = { pkg, durationMs, domain ->
+                // "Open anyway": se l'overlay era PRE-LANCIO, l'app sta per
+                // essere aperta dal ramo !appStillForeground qui sotto
+                // (getLaunchIntentForPackage) → non è più uno stato pre-lancio.
+                preLaunchOverlayPackage = null
                 // Il bypass è stato registrato in OverlayManager.Companion via
                 // markBypassed(pkg, durationMs, domain). domain non-null = blocco
                 // website → bypass per-dominio (sblocca solo quel sito, non tutto
@@ -1175,6 +1207,13 @@ class KoruAccessibilityService : AccessibilityService() {
             return false
         }
 
+        // Un evento app REALE (superato il ghost-guard) rende obsoleto lo stato
+        // "pre-lancio": l'app è ora davvero in foreground — aperta dall'esterno
+        // o appena lanciata da "Open anyway". Da qui vale la semantica di blocco
+        // "duro" classica ("Don't open" → kick), non quella pre-lancio (dismiss
+        // only). Vedi [showPreLaunchBlockIfNeeded] / [preLaunchOverlayPackage].
+        preLaunchOverlayPackage = null
+
         // Decisione DELEGATA a [BlockPolicyEvaluator]: focus → daily limit →
         // bypass di profilo → profile loop. L'ordine (e ogni guard) è
         // cross-checkato col vecchio inline; qui restano solo i side-effect.
@@ -1447,6 +1486,166 @@ class KoruAccessibilityService : AccessibilityService() {
             websiteScopeDomain = websiteScopeDomain,
             sectionWireId = sectionWireId,
         )
+    }
+
+    /**
+     * GATE PRE-LANCIO per le aperture dall'UI di Koru (icona launcher/drawer/
+     * favoriti/shortcut/swipe). Chiamato da [AppActionsCallHandler] PRIMA di
+     * `startActivity`: se [packageName] sarebbe bloccato ORA, mostra l'overlay
+     * di blocco SENZA aprire l'app e ritorna `true` → il chiamante NON lancia
+     * l'intent. Così la UX diventa tap-icona → overlay → (Open anyway: apre /
+     * Don't open: resta chiuso), eliminando il vecchio apri→espelli→riapri.
+     *
+     * L'overlay è IDENTICO a quello del path event-driven (stessa
+     * [OverlayManager], stesso styling/font): non duplichiamo UI. I callback
+     * esistenti gestiscono il resto, SENZA modifiche:
+     *  - "Open anyway" → [OverlayManager.onBypassOpen]: l'app non è in
+     *    foreground (reason ≠ BYPASS_EXPIRED, niente overlay-over-app) → ramo
+     *    `!appStillForeground` → markBypassed + startActivity(launchIntent) =
+     *    apre l'app per la prima volta (stessa grace di interazione del kick-out
+     *    classico, qui per giunta Koru è in foreground);
+     *  - "Don't open" → [OverlayManager.onReturnHome]: intercettato via
+     *    [preLaunchOverlayPackage] → solo dismiss (niente BACK/HOME).
+     *
+     * Decisione DELEGATA a [BlockPolicyEvaluator] (single source of truth, come
+     * checkAppBlocking e LockRunnable): focus → daily limit → bypass profilo →
+     * profile loop. NESSUN side-effect di espulsione: l'app non è ancora aperta.
+     *
+     * Fail-safe: usa lo snapshot profili corrente senza forzare un reload
+     * sul main thread (il tap resta reattivo). Una rara staleness degrada al
+     * massimo al comportamento legacy — l'enforcement event-driven resta il
+     * backstop autoritativo quando l'app effettivamente si apre. I limiti e il
+     * focus sono letti FRESCHI dai rispettivi store (cross-process su file),
+     * quindi non dipendono dalla freshness dello snapshot.
+     *
+     * Ritorna `false` (→ lancia normalmente) se non bloccato, se [packageName]
+     * è Koru stessa / un pacchetto skip, o se non c'è overlay da mostrare.
+     * Eseguito sul main thread (handler del MethodChannel `launchApp`).
+     */
+    fun showPreLaunchBlockIfNeeded(packageName: String): Boolean {
+        if (packageName == this.packageName || skipPackages.contains(packageName)) return false
+        // Fail-open: senza un overlay host non possiamo mostrare il blocco →
+        // meglio lanciare l'app (l'enforcement event-driven la catturerà
+        // all'apertura) che lasciare l'utente con né overlay né app aperta.
+        if (overlayManager == null) return false
+
+        val now = System.currentTimeMillis()
+        val snapshot = profilesSnapshot.get()
+
+        // Stesse letture d'ambiente di [checkAppBlocking] (tenere allineate):
+        // focus (QuickBlockStore) e limite (AppUsageLimitsStore + contatore
+        // guardato anti clock-backward) sono cross-process su file → freschi.
+        val qbSnapshot = QuickBlockStore.read(applicationContext)
+        val focusShouldBlock = qbSnapshot.shouldBlock(packageName, now)
+
+        val limitEntry = AppUsageLimitsStore.entryFor(applicationContext, packageName)
+        val limitMinutes = limitEntry?.minutes ?: 0
+        val limitTodayMs = if (limitMinutes > 0) {
+            UsageCounter.guardedTodayForegroundMs(applicationContext, packageName)
+        } else 0L
+        val isLimitStrict = limitEntry?.strict ?: true
+
+        val decision = BlockPolicyEvaluator.evaluate(
+            buildBlockQuery(
+                packageName = packageName,
+                snapshot = snapshot,
+                limitMinutes = limitMinutes,
+                isLimitStrict = isLimitStrict,
+                limitTodayMs = limitTodayMs,
+                focusShouldBlock = focusShouldBlock,
+            ),
+        )
+
+        val block = decision as? BlockDecision.Block ?: return false
+
+        val appLabel = getAppLabel(packageName)
+        currentlyBlockingPackage = packageName
+        preLaunchOverlayPackage = packageName
+
+        // Per reason: stesso overlay + stesso logging del path event-driven
+        // (checkAppBlocking), ma SENZA performGoHomeForBlock (l'app non è aperta)
+        // e senza la discriminazione over-app (un'apertura da icona non è mai
+        // "da link"). Se l'utente farà "Open anyway" verrà loggato anche lo
+        // SKIPPED in onBypassOpen, esattamente come nel flusso classico.
+        when (block.reason) {
+            BlockReason.USAGE_LIMIT -> {
+                val limitRelation = snapshot.profileApps.values.asSequence()
+                    .flatten()
+                    .firstOrNull { it.packageName == packageName }
+                val limitBaseConfig = OverlayConfig.fromJsonString(limitRelation?.overlayConfigJson)
+                val (overlayConfig, policy) = OverlayPolicies.buildUsageLimitOverlay(
+                    applicationContext,
+                    packageName,
+                    baseConfig = limitBaseConfig,
+                    isStrict = block.isStrictLimit,
+                )
+                mainHandler.post {
+                    overlayManager?.show(
+                        packageName = packageName,
+                        appLabel = appLabel,
+                        profileTitle = block.profileTitle,
+                        reason = BlockReason.USAGE_LIMIT,
+                        config = overlayConfig,
+                        profileEmoji = block.profileEmoji,
+                        bypassPolicy = policy,
+                    )
+                }
+                BlockEventLogger.logRestrictedAccess(
+                    applicationContext,
+                    packageName,
+                    eventType = 0,
+                    restrictionType = BlockingContract.RESTRICTION_TYPE_USAGE_LIMIT,
+                    timestamp = now,
+                )
+            }
+
+            BlockReason.FOCUS_MODE -> {
+                mainHandler.post {
+                    overlayManager?.show(
+                        packageName = packageName,
+                        appLabel = appLabel,
+                        profileTitle = block.profileTitle,
+                        reason = BlockReason.FOCUS_MODE,
+                        config = OverlayConfig.DEFAULT,
+                        profileEmoji = block.profileEmoji,
+                    )
+                }
+                BlockEventLogger.logBlockSessionAndAccess(
+                    applicationContext,
+                    sessionName = packageName,
+                    packageName = packageName,
+                    restrictionType = BlockingContract.RESTRICTION_TYPE_FOCUS_MODE,
+                    timestamp = now,
+                )
+            }
+
+            else -> { // APP_BLOCKED (WEBSITE/SECTION non raggiungibili da query per-app)
+                val profile = snapshot.profiles.firstOrNull { it.id == block.profileId }
+                val config = OverlayConfig.fromJsonString(block.relation?.overlayConfigJson)
+                mainHandler.post {
+                    overlayManager?.show(
+                        packageName = packageName,
+                        appLabel = appLabel,
+                        profileTitle = block.profileTitle,
+                        reason = BlockReason.APP_BLOCKED,
+                        config = config,
+                        profileEmoji = block.profileEmoji,
+                    )
+                }
+                BlockEventLogger.logBlockSessionAndAccess(
+                    applicationContext,
+                    sessionName = packageName,
+                    packageName = packageName,
+                    restrictionType = BlockingContract.RESTRICTION_TYPE_APP,
+                    timestamp = now,
+                )
+                if (profile != null) BlockEventLogger.emitBlockingState(true, packageName, profile)
+            }
+        }
+
+        Log.w(TAG, ">>> PRE-LAUNCH BLOCK: $packageName (${block.reason}) — overlay shown, app NOT opened")
+        BlackBox.log("A11Y", "pre-launch block $packageName reason=${block.reason}")
+        return true
     }
 
     private fun checkInAppContentBlocking(
@@ -1813,6 +2012,7 @@ class KoruAccessibilityService : AccessibilityService() {
         pendingBackFallbacks.values.forEach { mainHandler.removeCallbacks(it) }
         pendingBackFallbacks.clear()
         lastBypassedActiveForeground = null
+        preLaunchOverlayPackage = null
         endOverlayOverApp()
         overlayManager?.destroy()
         overlayManager = null

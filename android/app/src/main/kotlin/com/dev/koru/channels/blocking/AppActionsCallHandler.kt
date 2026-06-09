@@ -2,6 +2,7 @@ package com.dev.koru.channels.blocking
 
 import android.app.Activity
 import android.content.Intent
+import com.dev.koru.service.KoruAccessibilityService
 import com.dev.koru.strictmode.StrictModeStore
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -34,13 +35,30 @@ internal object AppActionsCallHandler : BlockingCallHandler {
                 val pkg = call.argument<String>("packageName")
                     ?: return result.error("MISSING_ARG", "packageName required", null)
                 val intent = activity.packageManager.getLaunchIntentForPackage(pkg)
-                if (intent != null) {
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    activity.startActivity(intent)
-                    result.success(true)
-                } else {
+                if (intent == null) {
                     result.success(false)
+                    return
                 }
+                // GATE PRE-LANCIO: se Koru bloccherebbe quest'app ORA, mostra
+                // l'overlay di blocco PRIMA di aprirla e NON lanciare l'intent
+                // (niente apri→espelli→riapri — UX migliore). L'overlay esistente
+                // gestisce il resto: "Open anyway" apre l'app, "Don't open" resta
+                // sul launcher. Mirror dello stesso pattern "rifiuta prima di
+                // lanciare l'intent" già usato qui sotto per uninstallApp.
+                //
+                // Solo se l'AccessibilityService — host canonico dell'overlay e
+                // della logica di decisione (in-process: stesso processo del
+                // launcher) — è vivo. Se è morto, lanciamo direttamente e il
+                // backup poller (LockForegroundService) cattura l'app dopo
+                // l'apertura: graceful degradation al comportamento legacy.
+                val a11y = KoruAccessibilityService.instance
+                if (a11y != null && a11y.showPreLaunchBlockIfNeeded(pkg)) {
+                    result.success(false)
+                    return
+                }
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                activity.startActivity(intent)
+                result.success(true)
             }
             "uninstallApp" -> {
                 val pkg = call.argument<String>("packageName")
