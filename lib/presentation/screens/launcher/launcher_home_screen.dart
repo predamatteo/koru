@@ -40,6 +40,14 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
     with WidgetsBindingObserver, RouteAware {
   ModalRoute<dynamic>? _subscribedRoute;
 
+  /// Overscroll-to-open: oltre questa quantità di overscroll verso il fondo
+  /// (px logici, generata da un drag del dito) lo swipe-su SOPRA la lista apre
+  /// "All apps". Soglia deliberata per non aprire al solo raggiungere l'ultimo
+  /// item durante lo scroll. Vedi [_onFavoritesScroll].
+  static const double _kOverscrollOpenThreshold = 64;
+  double _overscrollUp = 0;
+  bool _overscrollOpened = false;
+
   @override
   void initState() {
     super.initState();
@@ -149,10 +157,12 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
         // `opaque` così riceve i drag anche sulle zone "vuote" del layout.
         // Gli swipe ORIZZONTALI non confliggono con la FavoritesList (che
         // gestisce solo drag verticali + long-press reorder). Lo swipe
-        // VERTICALE verso l'alto vince l'arena nelle zone non scrollabili
-        // (clock in alto, area bottoni in basso): partendo "dal basso" come
-        // da design il gesto parte fuori dalla lista e funziona; se parte
-        // sopra la lista, è la lista a scrollare (comportamento atteso).
+        // VERTICALE verso l'alto apre "All apps": nelle zone non scrollabili
+        // (clock, area bottoni) e quando la lista entra tutta (lo Scrollable
+        // rifiuta il drag → vince questo GestureDetector). Quando invece la
+        // lista ha contenuto scrollabile è lei a vincere l'arena e a scrollare;
+        // lì l'apertura avviene tirando OLTRE il fondo (overscroll-to-open,
+        // vedi [_onFavoritesScroll]).
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onHorizontalDragEnd: _onHorizontalDrag,
@@ -235,22 +245,52 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
   /// scrolla (molti preferiti) il primo/ultimo item sfuma invece di tagliarsi
   /// netto contro le righe adiacenti. Il fade è applicato qui (call-site del
   /// launcher) e non dentro [FavoritesList], così non impatta gli altri usi.
+  /// Il [NotificationListener] aggiunge l'overscroll-to-open (vedi
+  /// [_onFavoritesScroll]) senza toccare scroll/reorder della lista.
   Widget _buildFadedFavorites() {
-    return ShaderMask(
-      shaderCallback: (bounds) => const LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [
-          Colors.transparent,
-          Colors.black,
-          Colors.black,
-          Colors.transparent,
-        ],
-        stops: [0.0, 0.04, 0.96, 1.0],
-      ).createShader(bounds),
-      blendMode: BlendMode.dstIn,
-      child: const FavoritesList(),
+    return NotificationListener<ScrollNotification>(
+      onNotification: _onFavoritesScroll,
+      child: ShaderMask(
+        shaderCallback: (bounds) => const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.transparent,
+            Colors.black,
+            Colors.black,
+            Colors.transparent,
+          ],
+          stops: [0.0, 0.04, 0.96, 1.0],
+        ).createShader(bounds),
+        blendMode: BlendMode.dstIn,
+        child: const FavoritesList(),
+      ),
     );
+  }
+
+  /// Overscroll-to-open: quando la lista preferiti ha contenuto scrollabile il
+  /// suo Scrollable vince la gesture arena sullo swipe-su del GestureDetector di
+  /// schermo. Per dare comunque accesso a "All apps" da sopra la lista,
+  /// intercettiamo l'overscroll OLTRE il fondo (`overscroll > 0`) prodotto da un
+  /// drag del dito (`dragDetails != null`, così il rimbalzo balistico di un
+  /// fling non conta) e, superata [_kOverscrollOpenThreshold], apriamo una sola
+  /// volta per gesto. `return false` per non consumare la notifica: scroll,
+  /// reorder e fade restano invariati. (Caso lista-corta: lo Scrollable rifiuta
+  /// il drag e ad aprire è il GestureDetector parent.)
+  bool _onFavoritesScroll(ScrollNotification n) {
+    if (n is ScrollStartNotification) {
+      _overscrollUp = 0;
+      _overscrollOpened = false;
+    } else if (n is OverscrollNotification &&
+        n.dragDetails != null &&
+        n.overscroll > 0) {
+      _overscrollUp += n.overscroll;
+      if (!_overscrollOpened && _overscrollUp >= _kOverscrollOpenThreshold) {
+        _overscrollOpened = true;
+        _openAllApps();
+      }
+    }
+    return false;
   }
 
   /// Barra inferiore: shortcut telefono/camera agli angoli + hint "All apps"
