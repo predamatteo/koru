@@ -401,12 +401,17 @@ class KoruAccessibilityService : AccessibilityService() {
     /// resumed. Senza questo re-check l'overlay non comparirebbe finche'
     /// l'utente non navigasse altrove e tornasse. Interroghiamo UsageStats
     /// per il foreground reale e rilanciamo checkAppBlocking.
+    ///
+    /// overAppIfBlocked=true: l'app era gia' aperta al lock, quindi un
+    /// eventuale blocco di profilo (es. bypass revocato dallo screen-off)
+    /// mostra l'overlay SOPRA l'app senza espellerla — chiusa solo se
+    /// l'utente sceglie "Don't open", come per pre-lancio e deep-link.
     private fun handleUserPresent() {
         val fg = ForegroundDetector.detect(applicationContext)?.primaryPackage
         Log.d(TAG, "USER_PRESENT: foreground=$fg → re-check if blocked")
         if (fg == null || skipPackages.contains(fg) || fg == packageName) return
         mainHandler.post {
-            checkAppBlocking(fg, profilesSnapshot.get())
+            checkAppBlocking(fg, profilesSnapshot.get(), overAppIfBlocked = true)
         }
     }
 
@@ -1161,10 +1166,20 @@ class KoruAccessibilityService : AccessibilityService() {
 
     /**
      * Ritorna true se ha bloccato l'app (overlay mostrato + HOME).
+     *
+     * [overAppIfBlocked]: per i re-check di un'app GIÀ in foreground (unlock
+     * su app resumed, vedi [handleUserPresent]) un eventuale blocco di
+     * profilo usa la modalità overlay-over-app invece del kick-out: l'utente
+     * non ha "aperto" nulla, l'app era già lì — va lasciata sotto l'overlay
+     * finché non decide lui ("Don't open" = HOME duro, "Open anyway" =
+     * dismiss e l'app continua da dov'era). Stessa famiglia UX del blocco
+     * pre-lancio e del deep-link. Focus/limite restano blocchi "duri" che
+     * espellono anche con questo flag (scelta deliberata di quei rami).
      */
     private fun checkAppBlocking(
         packageName: String,
         snapshot: ProfilesSnapshot = profilesSnapshot.get(),
+        overAppIfBlocked: Boolean = false,
     ): Boolean {
         // NB ordine dei guard (vedi anche [LockRunnable.checkAndBlock], che
         // DEVE restare allineato): ghost-guard → focus → daily limit →
@@ -1387,12 +1402,17 @@ class KoruAccessibilityService : AccessibilityService() {
                     //    deep link (il video YouTube), invece di rilanciare l'app
                     //    alla home perdendolo. Durante il countdown mettiamo in
                     //    pausa il media dell'app sotto (focus audio).
+                    // [overAppIfBlocked] forza la modalità over-app a prescindere
+                    // da cameFrom: usato dal re-check post-unlock, dove l'app era
+                    // già in foreground (resumed, non "aperta") e cameFrom
+                    // riporterebbe il launcher di un'apertura ormai storica.
                     val cameFrom = ForegroundDetector.previousForegroundPackage(applicationContext, packageName)
                     val openedFromOtherApp = cameFrom != null &&
                         cameFrom != applicationContext.packageName &&
                         !skipPackages.contains(cameFrom)
-                    if (openedFromOtherApp) {
-                        Log.w(TAG, ">>> BLOCKING APP (overlay-over-app, opened from '$cameFrom'): " +
+                    if (openedFromOtherApp || overAppIfBlocked) {
+                        val why = if (openedFromOtherApp) "opened from '$cameFrom'" else "resumed re-check"
+                        Log.w(TAG, ">>> BLOCKING APP (overlay-over-app, $why): " +
                             "$packageName by '${decision.profileTitle}'")
                         overlayOverAppPackage = packageName
                         requestMediaPause()
