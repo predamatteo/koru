@@ -12,8 +12,10 @@ import com.dev.koru.diagnostics.BlackBox
 /// al launcher Koru. Android riserva la striscia mandatory in basso: la
 /// gesture NON è escludibile via setSystemGestureExclusionRects (vedi
 /// [com.dev.koru.channels.PermissionMethodChannel]), quindi l'unico blocco
-/// affidabile è rilevare la finestra recents appena appare e richiuderla
-/// (flash di ~100-300ms accettato dal design).
+/// possibile è rilevare la finestra recents appena appare e dismissarla
+/// IMMEDIATAMENTE (BACK sullo stesso callback dell'evento: la schermata
+/// rimbalza a metà animazione — il "flash" residuo è la sola latenza di
+/// consegna dell'evento, fisicamente incomprimibile per un'app non-system).
 ///
 /// Stato (singleton in-memory: servizio a11y, channel handler e engine Flutter
 /// vivono tutti nel processo MAIN — nessun android:process nel manifest):
@@ -44,11 +46,11 @@ object LauncherRecentsGate {
     private const val TAG = "LauncherRecentsGate"
     internal const val ALLOW_TOKEN_MS = 5_000L
 
-    /// Verify-before-kick: tra l'evento recents e il kick aspettiamo questo
-    /// delay e ri-verifichiamo. Assorbe eventi recents transitori (es.
-    /// quick-switch sul pill che su alcuni OEM resume-a brevemente
-    /// RecentsActivity): al verify l'app target è già foreground → abort.
-    private const val KICK_VERIFY_DELAY_MS = 250L
+    /// Fallback del dismiss immediato: se dopo questo delay la sessione
+    /// recents è ancora aperta (nessun window event di ritorno al launcher),
+    /// il BACK non ha chiuso la schermata → forza HOME. Cancellato da
+    /// [onNonRecentsWindow] quando il dismiss riesce.
+    private const val KICK_FALLBACK_DELAY_MS = 500L
 
     /// Sanity-check della sessione: se l'utente esce dalle recents verso
     /// un'app FUORI dal watched-set dinamico, nessun window event arriva e la
@@ -136,6 +138,11 @@ object LauncherRecentsGate {
         }
 
         val tokenValid = SystemClock.uptimeMillis() <= allowUntilUptimeMs
+        // Dismiss già in volo: le re-emissioni recents durante la chiusura
+        // non devono ricomputare la provenienza (query UsageStats) né
+        // accodare altri BACK (uno sparato a recents già chiuse colpirebbe
+        // il launcher). Il token salta il filtro: un tap sull'icona vince.
+        if (pendingKick != null && !tokenValid) return true
         // computeCameFromKoru fa query UsageStats: valutato SOLO quando le
         // condizioni economiche non hanno già deciso (evento recents = raro).
         val decision = if (tokenValid || sessionAllowed || !shieldActive) {
@@ -158,7 +165,7 @@ object LauncherRecentsGate {
                     "recents allowed ($decision): aperta fuori dal launcher Koru",
                 )
             }
-            Decision.BLOCK -> scheduleVerifiedKick(service, pkg, className)
+            Decision.BLOCK -> performImmediateKick(service, pkg, className)
         }
         return true
     }
@@ -212,7 +219,18 @@ object LauncherRecentsGate {
         return primary == self
     }
 
-    private fun scheduleVerifiedKick(
+    /// Dismiss IMMEDIATO sullo stesso callback dell'evento recents: BACK
+    /// chiude la schermata tornando al launcher sottostante senza relaunch
+    /// dell'Activity — il flash si riduce alla latenza di consegna
+    /// dell'evento (la recents rimbalza a metà animazione). Richiesta
+    /// esplicita di design: dal launcher la funzione nativa va bloccata,
+    /// non "aperta e richiusa". Niente verify differito: la provenienza è
+    /// già stata verificata al decision time; il costo residuo è un raro
+    /// falso kick da lag UsageStats (swipe entro ~1s dal lancio di un'app),
+    /// accettato in cambio del blocco istantaneo. Anche il quick-switch dal
+    /// launcher che passa dalla RecentsActivity viene bloccato — coerente:
+    /// è un accesso alle app recenti.
+    private fun performImmediateKick(
         service: KoruAccessibilityService,
         pkg: String,
         className: String,
@@ -220,22 +238,25 @@ object LauncherRecentsGate {
         if (pendingKick != null) return
         BlackBox.log(
             "RECENTS",
-            "gesture recents dal launcher: $pkg/$className → kick tra ${KICK_VERIFY_DELAY_MS}ms (verify)",
+            "gesture recents dal launcher: $pkg/$className → dismiss immediato (BACK)",
         )
-        val r = Runnable {
+        // suppressLauncherNavigationUntilMs viene settato dall'helper: anche
+        // il fallback BACK→HOME interno non resetta la sub-pagina launcher.
+        service.performGoHomeForBlock(forceHome = false)
+        // Fallback: se a +500ms la sessione è ancora aperta (nessun window
+        // event di ritorno) il BACK non è bastato → forza HOME. `pendingKick`
+        // fa anche da marker anti-doppio-BACK per le re-emissioni recents
+        // durante la chiusura (vedi early-return in handleEvent).
+        val fallback = Runnable {
             pendingKick = null
             // Igiene post-onDestroy (stesso guard degli altri delayed
-            // runnable del service): un kick orfano su un service morto
-            // sparerebbe comunque l'HOME intent e sporcherebbe lo stato
-            // di un'eventuale istanza rebindata.
+            // runnable del service).
             if (KoruAccessibilityService.instance !== service) return@Runnable
-            // Verify 1: foreground reale già un'app vera (≠ Koru, ≠ host
-            // recents plausibile) → transizione/quick-switch commit-ata:
-            // abort + chiusura sessione (le recents non sono più davanti).
-            // NB: il predicato host è lo STESSO usato per classificare la
-            // finestra come recents — usare solo SKIP_PACKAGES qui rendeva
-            // il kick sempre abortito sugli OEM con host fuori dallo skip-set
-            // (l'host stesso veniva classificato come "app reale").
+            if (!recentsVisible) return@Runnable // dismiss riuscito
+            // Foreground reale già un'app vera (≠ Koru, ≠ host recents
+            // plausibile — STESSO predicato della detection, set diversi qui
+            // rendevano il fallback cieco sugli OEM fuori da SKIP): l'utente
+            // è uscito da solo, niente HOME.
             val fg = try {
                 ForegroundDetector.detect(service.applicationContext)?.primaryPackage
             } catch (_: Exception) {
@@ -246,39 +267,22 @@ object LauncherRecentsGate {
                     fg, KoruAccessibilityService.SKIP_PACKAGES,
                 )
             if (fgIsRealApp) {
-                BlackBox.log("RECENTS", "kick ABORT: foreground reale=$fg (transizione)")
+                BlackBox.log("RECENTS", "fallback HOME annullato: foreground reale=$fg")
                 endSession(service)
                 return@Runnable
             }
-            // Verify 2: ri-check della provenienza. Il lag di indicizzazione
-            // UsageStats può aver prodotto un BLOCK per uno swipe partito da
-            // dentro un'app appena lanciata dal launcher (X non ancora
-            // indicizzata al decision time): se ora la provenienza legge
-            // non-launcher, le recents sono legittime → sessione allowed.
-            if (!computeCameFromKoru(service, pkg)) {
-                BlackBox.log("RECENTS", "kick ABORT: provenienza non-launcher al re-check")
-                sessionAllowed = true
-                return@Runnable
-            }
-            BlackBox.log("RECENTS", "kick: chiudo recents → HOME (launcher)")
-            // NIENTE endSession preventiva: se goToHomeViaIntent coalizza
-            // l'HOME (guard anti-loop 800ms) le recents restano aperte — con
-            // lo stato sessione intatto una re-emissione recents ri-schedula
-            // il kick (retry naturale). A kick riuscito è il window event di
-            // ritorno al launcher a chiudere la sessione.
-            // forceHome + suppressLauncherNavigationUntilMs: preserva la
-            // sub-pagina del launcher Flutter (stesso helper dello strict).
+            BlackBox.log("RECENTS", "BACK insufficiente → fallback HOME")
             service.performGoHomeForBlock(forceHome = true)
         }
-        pendingKick = r
-        mainHandler.postDelayed(r, KICK_VERIFY_DELAY_MS)
+        pendingKick = fallback
+        mainHandler.postDelayed(fallback, KICK_FALLBACK_DELAY_MS)
     }
 
     private fun onNonRecentsWindow(service: KoruAccessibilityService, pkg: String) {
         pendingKick?.let {
             mainHandler.removeCallbacks(it)
             pendingKick = null
-            BlackBox.log("RECENTS", "kick annullato: finestra reale $pkg prima del verify")
+            BlackBox.log("RECENTS", "fallback HOME annullato: finestra reale $pkg")
         }
         if (recentsVisible) {
             BlackBox.log("RECENTS", "sessione recents chiusa (foreground → $pkg)")
