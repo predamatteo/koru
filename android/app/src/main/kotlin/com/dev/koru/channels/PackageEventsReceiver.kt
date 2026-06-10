@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import com.dev.koru.service.OpenAppsTracker
 import org.json.JSONObject
 
 /**
@@ -40,6 +41,10 @@ class PackageEventsReceiver : BroadcastReceiver() {
             Intent.ACTION_PACKAGE_REPLACED -> "replaced"
             else -> return
         }
+        // Prune immediato del contatore "schede aperte" su uninstall
+        // (best-effort: il receiver vive solo con l'Activity visibile;
+        // il prune autoritativo resta quello in OpenAppsTracker.refresh).
+        OpenAppsTracker.onPackageChanged(packageName, removed = kind == "removed")
         val payload = JSONObject()
             .put("type", "PACKAGE_CHANGED")
             .put("kind", kind)
