@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:koru/platform/service_event_channel.dart';
 import 'package:koru/platform/strict_mode_channel.dart';
 import 'package:koru/presentation/providers/open_apps_count_provider.dart';
 import 'package:mocktail/mocktail.dart';
@@ -13,11 +14,34 @@ void main() {
     test('ritorna il conteggio dal canale nativo', () async {
       final h = buildTestContainer();
       addTearDown(h.dispose);
+      when(() => h.events.events())
+          .thenAnswer((_) => const Stream<KoruServiceEvent>.empty());
       when(() => h.blocking.getOpenAppsCount()).thenAnswer((_) async => 5);
 
       final count = await h.container.read(openAppsCountProvider.future);
 
       expect(count, 5);
+      verify(() => h.blocking.getOpenAppsCount()).called(1);
+    });
+
+    test('push nativo OpenAppsCountEvent aggiorna il badge senza refetch',
+        () async {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+      final events = StreamController<KoruServiceEvent>.broadcast();
+      addTearDown(events.close);
+      when(() => h.events.events()).thenAnswer((_) => events.stream);
+      when(() => h.blocking.getOpenAppsCount()).thenAnswer((_) async => 2);
+      keepProviderAlive(h.container, openAppsCountProvider);
+
+      expect(await h.container.read(openAppsCountProvider.future), 2);
+
+      // Il sync nativo (card reali / reset) pusha il nuovo valore: il
+      // provider lo applica direttamente, senza un secondo getOpenAppsCount.
+      events.add(const OpenAppsCountEvent(count: 0));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(h.container.read(openAppsCountProvider).valueOrNull, 0);
       verify(() => h.blocking.getOpenAppsCount()).called(1);
     });
 
@@ -27,6 +51,8 @@ void main() {
         () async {
       final h = buildTestContainer();
       addTearDown(h.dispose);
+      when(() => h.events.events())
+          .thenAnswer((_) => const Stream<KoruServiceEvent>.empty());
       // Primo fetch: risponde subito 3. Secondo fetch (post-invalidate):
       // resta in volo finché non completiamo manualmente.
       final second = Completer<int>();

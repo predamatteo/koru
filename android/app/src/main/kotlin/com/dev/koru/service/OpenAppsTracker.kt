@@ -7,7 +7,9 @@ import android.content.Intent
 import android.os.Build
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
+import com.dev.koru.channels.ServiceEventChannel
 import com.dev.koru.diagnostics.BlackBox
+import org.json.JSONObject
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
 
@@ -49,6 +51,22 @@ object OpenAppsTracker {
     /// provider) non hanno senso — la seconda non vedrebbe eventi nuovi.
     private const val MIN_SWEEP_INTERVAL_MS = 2_000L
 
+    /// Dopo un reset (Cancella tutto / long-press) il sync con le card è MUTO
+    /// per questa finestra: le scansioni del burst leggono le card ancora
+    /// attaccate durante l'animazione di chiusura e le ri-aggiungerebbero
+    /// (osservato on-device: clear-all → reset → scan a +300ms → di nuovo 1).
+    private const val SYNC_MUTE_AFTER_RESET_MS = 2_000L
+
+    /// Il prune "fresco" (query PM per ogni pkg tracciato, bypass cache) gira
+    /// al massimo a questo intervallo: farlo a OGNI sweep aggiungeva N binder
+    /// call al pull del conteggio (lentezza percepita del badge). Tra un
+    /// prune fresco e l'altro si usa la cache, che i package events
+    /// invalidano comunque al volo quando il receiver è vivo.
+    private const val PRUNE_FRESH_INTERVAL_MS = 60_000L
+
+    @Volatile private var muteSyncUntilUptimeMs = 0L
+    @Volatile private var lastFreshPruneUptimeMs = 0L
+
     private val tracked: MutableSet<String> = ConcurrentHashMap.newKeySet()
     private val launchableCache = ConcurrentHashMap<String, Boolean>()
 
@@ -70,6 +88,7 @@ object OpenAppsTracker {
     fun refresh(context: Context) {
         val nowUp = SystemClock.uptimeMillis()
         if (lastSweepEndWallMs > 0 && nowUp - lastSweepUptimeMs < MIN_SWEEP_INTERVAL_MS) return
+        val sizeAtStart = tracked.size
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
             ?: return
         val now = System.currentTimeMillis()
@@ -119,15 +138,24 @@ object OpenAppsTracker {
             }
         }
         // Prune: le disinstallate (launch intent sparito) escono dal set al
-        // read — query PM fresca, NON la cache (che esiste per rendere
-        // economico il hot path di noteForeground, non per il prune).
+        // read. Query PM fresca solo a intervalli (PRUNE_FRESH_INTERVAL_MS):
+        // una binder call per pkg a ogni sweep rendeva lento il pull del
+        // badge; tra un prune fresco e l'altro basta la cache.
+        val freshPrune = nowUp - lastFreshPruneUptimeMs >= PRUNE_FRESH_INTERVAL_MS
+        if (freshPrune) lastFreshPruneUptimeMs = nowUp
         tracked.removeAll { pkg ->
-            val launchable = queryLaunchable(context, pkg)
-            launchableCache[pkg] = launchable
+            val launchable = if (freshPrune) {
+                val l = queryLaunchable(context, pkg)
+                launchableCache[pkg] = l
+                l
+            } else {
+                isLaunchable(context, pkg)
+            }
             !launchable
         }
         lastSweepEndWallMs = now
         lastSweepUptimeMs = nowUp
+        if (tracked.size != sizeAtStart) notifyCountChanged()
     }
 
     /// Add opportunistico dal hot path accessibility (TYPE_WINDOW_STATE_CHANGED
@@ -144,6 +172,7 @@ object OpenAppsTracker {
             )
         ) {
             tracked.add(pkg)
+            notifyCountChanged()
         }
     }
 
@@ -154,7 +183,7 @@ object OpenAppsTracker {
     fun onPackageChanged(pkg: String, removed: Boolean) {
         launchableCache.remove(pkg)
         labelToPkg = null
-        if (removed) tracked.remove(pkg)
+        if (removed && tracked.remove(pkg)) notifyCountChanged()
     }
 
     // ─── Sync con le card REALI della schermata recents ──────────────────────
@@ -322,6 +351,10 @@ object OpenAppsTracker {
         visitedNodes: Int,
         rootPkg: String,
     ) {
+        // Post-reset (Cancella tutto / long-press): le card in animazione di
+        // chiusura sono ancora nell'albero — applicare questa scansione le
+        // ri-aggiungerebbe subito dopo l'azzeramento (osservato on-device).
+        if (SystemClock.uptimeMillis() < muteSyncUntilUptimeMs) return
         val self = context.packageName
         val matched = matchedRaw.filterTo(HashSet()) {
             shouldTrack(it, self, KoruAccessibilityService.SKIP_PACKAGES, isLaunchable = true)
@@ -335,6 +368,7 @@ object OpenAppsTracker {
             "sync da recents (root=$rootPkg, nodi=$visitedNodes): ${next.size} schede" +
                 if (next.isEmpty()) " (vuote)" else " [${next.joinToString()}]",
         )
+        notifyCountChanged()
     }
 
     /// Azzera il conteggio e persiste l'ancora: usato dal long-press
@@ -353,6 +387,9 @@ object OpenAppsTracker {
         tracked.clear()
         resetWallMs = now
         lastSweepEndWallMs = now
+        // Le card stanno ancora animando la chiusura: le scansioni del burst
+        // nei prossimi istanti le rileggerebbero e ri-aggiungerebbero.
+        muteSyncUntilUptimeMs = SystemClock.uptimeMillis() + SYNC_MUTE_AFTER_RESET_MS
         try {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit()
@@ -362,6 +399,24 @@ object OpenAppsTracker {
             BlackBox.log("RECENTS", "reset anchor non persistita: ${e.message}")
         }
         BlackBox.log("RECENTS", "tracker reset → count 0")
+        notifyCountChanged()
+    }
+
+    /// Push del conteggio al Dart via EventChannel: il badge del launcher si
+    /// aggiorna appena il set cambia (il sync gira mentre le recents sono
+    /// ancora aperte) invece di aspettare il pull al resume — era la
+    /// "lentezza" percepita. Safe da qualunque thread (sendEvent posta sul
+    /// main handler) e no-op senza listener.
+    private fun notifyCountChanged() {
+        try {
+            ServiceEventChannel.sendEvent(
+                JSONObject()
+                    .put("type", "OPEN_APPS_COUNT")
+                    .put("count", tracked.size)
+                    .toString(),
+            )
+        } catch (_: Exception) {
+        }
     }
 
     private fun readResetAnchor(context: Context): Long {
@@ -427,5 +482,7 @@ object OpenAppsTracker {
         lastSweepEndWallMs = 0L
         lastSweepUptimeMs = 0L
         resetWallMs = -1L
+        muteSyncUntilUptimeMs = 0L
+        lastFreshPruneUptimeMs = 0L
     }
 }

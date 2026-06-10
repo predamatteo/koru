@@ -1,27 +1,41 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/di/providers.dart';
+import '../../platform/service_event_channel.dart';
 import '../../platform/strict_mode_channel.dart';
 
 /// Conteggio approssimato delle "schede aperte in background" per l'icona
 /// top-left del launcher: app portate in foreground dal boot (o dall'ultimo
-/// reset), tracciate lato nativo via UsageStats (OpenAppsTracker). Android
-/// non espone la vera lista recents alle app di terze parti.
+/// reset), tracciate lato nativo via UsageStats + sincronizzate con le card
+/// reali quando le recents sono aperte (OpenAppsTracker). Android non espone
+/// la vera lista recents alle app di terze parti.
 ///
-/// `keepAlive` + lettura con `valueOrNull` (stale-while-revalidate, stesso
-/// pattern di [installedAppsProvider]; MAI `unwrapPrevious()`): durante un
-/// refresh l'icona mostra il valore precedente invece di sparire.
+/// PUSH-FIRST: il nativo emette `OpenAppsCountEvent` a ogni cambiamento del
+/// set (sync con le card, reset, uninstall) e il badge si aggiorna subito,
+/// senza aspettare il pull al resume — era la lentezza percepita del badge.
+/// Il fetch iniziale + gli invalidate nei punti di ritorno del launcher
+/// restano come pull di riallineamento (es. dopo un process restart).
 ///
-/// Refresh PULL-ONLY, niente evento push dedicato: mentre il launcher è
-/// visibile nessun'altra app può andare in foreground, quindi il conteggio
-/// può cambiare solo mentre il launcher è coperto → l'invalidate nei punti di
-/// ritorno (didPush/didPopNext/resume in `_setLauncherActive`, rientro da
-/// openSystemRecents, long-press reset) copre tutti i casi.
-final openAppsCountProvider = FutureProvider<int>((ref) async {
-  ref.keepAlive();
-  final blocking = ref.watch(platformChannelServiceProvider).blocking;
-  return blocking.getOpenAppsCount();
-});
+/// keepAlive (non-autoDispose) + lettura con `valueOrNull`
+/// (stale-while-revalidate, pattern di installedAppsProvider; MAI
+/// `unwrapPrevious()`): durante un refresh l'icona mostra il valore
+/// precedente invece di sparire.
+class OpenAppsCountNotifier extends AsyncNotifier<int> {
+  @override
+  Future<int> build() async {
+    final svc = ref.watch(platformChannelServiceProvider);
+    final sub = svc.events.events().listen((event) {
+      if (event is OpenAppsCountEvent) {
+        state = AsyncData(event.count);
+      }
+    });
+    ref.onDispose(sub.cancel);
+    return svc.blocking.getOpenAppsCount();
+  }
+}
+
+final openAppsCountProvider =
+    AsyncNotifierProvider<OpenAppsCountNotifier, int>(OpenAppsCountNotifier.new);
 
 /// Capability dell'icona recents del launcher: determina visibilità, badge e
 /// tap (vedi `_RecentsShortcut` in launcher_home_screen.dart).

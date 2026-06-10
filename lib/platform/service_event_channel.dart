@@ -32,6 +32,10 @@ sealed class KoruServiceEvent {
           kind: json['kind'] as String? ?? '',
           packageName: json['packageName'] as String? ?? '',
         );
+      case 'OPEN_APPS_COUNT':
+        return OpenAppsCountEvent(
+          count: (json['count'] as num?)?.toInt() ?? 0,
+        );
       default:
         return UnknownServiceEvent(raw: json);
     }
@@ -78,6 +82,14 @@ class PackageChangedEvent extends KoruServiceEvent {
   /// 'added' | 'removed' | 'replaced'
   final String kind;
   final String packageName;
+}
+
+/// Push del contatore "schede aperte" dal nativo (OpenAppsTracker): emesso
+/// ogni volta che il set cambia (sync con le card reali, reset, uninstall,
+/// noteForeground). Il badge del launcher si aggiorna senza round-trip.
+class OpenAppsCountEvent extends KoruServiceEvent {
+  const OpenAppsCountEvent({required this.count});
+  final int count;
 }
 
 class UnknownServiceEvent extends KoruServiceEvent {
