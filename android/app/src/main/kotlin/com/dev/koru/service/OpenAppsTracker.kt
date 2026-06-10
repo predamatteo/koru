@@ -3,8 +3,12 @@ package com.dev.koru.service
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.content.Intent
+import android.os.Build
 import android.os.SystemClock
+import android.view.accessibility.AccessibilityNodeInfo
 import com.dev.koru.diagnostics.BlackBox
+import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
 
 /// Conteggio approssimato delle "schede aperte in background" mostrato
@@ -149,7 +153,188 @@ object OpenAppsTracker {
     /// cambiamento del package.
     fun onPackageChanged(pkg: String, removed: Boolean) {
         launchableCache.remove(pkg)
+        labelToPkg = null
         if (removed) tracked.remove(pkg)
+    }
+
+    // ─── Sync con le card REALI della schermata recents ──────────────────────
+    //
+    // Lo swipe-dismiss di una SINGOLA scheda nelle recents non genera alcun
+    // evento osservabile (né a11y né UsageStats) → il set derivato dalla sola
+    // sweep sovra-conta ("dice 1 app ma in background non c'è niente"). La
+    // sola ground-truth accessibile è l'albero accessibility della schermata
+    // recents MENTRE è aperta: a sessione legittima [LauncherRecentsGate]
+    // chiama [syncFromRecents] (scansione iniziale + content-changed
+    // throttlati) e il set viene RIMPIAZZATO con le card riconosciute.
+    //
+    // Limite documentato: con molte schede la RecyclerView dell'overview può
+    // virtualizzare le card fuori schermo → possibile under-count dopo il
+    // sync; le app tornano nel set appena usate (sweep/noteForeground).
+    // Direzione di errore scelta apposta: meglio un conteggio momentaneamente
+    // basso che un "1 fantasma" permanente.
+
+    /// Label (lowercase) → package delle app launchable. Costruita off-main
+    /// ([prewarmLabelMap], lanciata all'apertura di una sessione recents),
+    /// invalidata sui package events. Serve a tradurre le contentDescription
+    /// delle card (= label dell'app su quickstep) in package name.
+    @Volatile private var labelToPkg: Map<String, String>? = null
+    @Volatile private var labelMapBuilding = false
+
+    /// Sotto questa soglia di nodi visitati un albero senza card NON è
+    /// considerato prova di "recents vuote". Bassa di proposito: il guard sul
+    /// root garantisce già che stiamo leggendo la finestra recents, e
+    /// l'overview VUOTO è genuinamente un albero piccolo (scaffolding +
+    /// testo "Nessun elemento recente") — una soglia alta impediva di
+    /// leggere proprio lo zero che il sync esiste per catturare.
+    internal const val MIN_NODES_FOR_EMPTY_TRUTH = 4
+
+    /// Cap di sicurezza sul BFS dell'albero recents.
+    private const val MAX_SCAN_NODES = 500
+
+    fun prewarmLabelMap(context: Context) {
+        if (labelToPkg != null || labelMapBuilding) return
+        labelMapBuilding = true
+        Thread {
+            try {
+                val pm = context.packageManager
+                val self = context.packageName
+                val m = HashMap<String, String>()
+                val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                @Suppress("DEPRECATION")
+                for (ri in pm.queryIntentActivities(main, 0)) {
+                    val pkg = ri.activityInfo?.packageName ?: continue
+                    if (pkg == self) continue
+                    val label = ri.loadLabel(pm)?.toString()?.trim()?.lowercase() ?: continue
+                    if (label.isNotEmpty()) m[label] = pkg
+                }
+                labelToPkg = m
+            } catch (_: Exception) {
+            } finally {
+                labelMapBuilding = false
+            }
+        }.start()
+    }
+
+    /// Scansiona l'albero della schermata recents e riallinea il set. Da
+    /// chiamare SOLO a sessione recents legittima (gate). Main thread (stessa
+    /// classe di costo dei detector in-app esistenti; cap [MAX_SCAN_NODES]).
+    fun syncFromRecents(service: KoruAccessibilityService) {
+        val map = labelToPkg
+        if (map == null) {
+            // Mappa non pronta: avviala e riprova al prossimo content-change.
+            prewarmLabelMap(service.applicationContext)
+            return
+        }
+        service.withRootInActiveWindow { root ->
+            if (root == null) return@withRootInActiveWindow
+            // GUARD: la finestra ATTIVA deve essere davvero l'host recents.
+            // Lo scan può partire durante l'animazione di apertura/chiusura
+            // (o dopo l'auto-exit delle recents vuote): in quel momento il
+            // root è l'app precedente o il launcher Koru — scansionare QUEL
+            // albero produce falsi "vuoto" (osservato on-device: "0 schede"
+            // con Chrome appena aperto) o falsi match sulle label dei
+            // preferiti del launcher stesso.
+            val rootPkg = root.packageName?.toString()
+            if (rootPkg == null || rootPkg == service.packageName ||
+                !RecentsDetector.isPlausibleRecentsHostPackage(
+                    rootPkg, KoruAccessibilityService.SKIP_PACKAGES,
+                )
+            ) {
+                return@withRootInActiveWindow
+            }
+            val matched = HashSet<String>()
+            var sawClearAll = false
+            var visited = 0
+            val queue = ArrayDeque<AccessibilityNodeInfo>()
+            queue.add(root)
+            while (queue.isNotEmpty() && visited < MAX_SCAN_NODES) {
+                val node = queue.poll() ?: continue
+                visited++
+                try {
+                    val desc = node.contentDescription?.toString()
+                    if (!desc.isNullOrBlank()) {
+                        matchCardDescription(desc, map)?.let { matched.add(it) }
+                    }
+                    val viewId = try {
+                        node.viewIdResourceName
+                    } catch (_: Exception) {
+                        null
+                    }
+                    if (!sawClearAll &&
+                        RecentsDetector.isClearAllNode(viewId, desc ?: node.text)
+                    ) {
+                        sawClearAll = true
+                    }
+                    for (i in 0 until node.childCount) {
+                        node.getChild(i)?.let { queue.add(it) }
+                    }
+                } finally {
+                    // Il root lo ricicla withRootInActiveWindow; i figli sono
+                    // caller-owned sotto API 33.
+                    if (node !== root && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                        @Suppress("DEPRECATION")
+                        try {
+                            node.recycle()
+                        } catch (_: Throwable) {
+                        }
+                    }
+                }
+            }
+            applyRecentsScan(service.applicationContext, matched, sawClearAll, visited, rootPkg)
+        }
+    }
+
+    /// Traduce la contentDescription di una card in package: match esatto
+    /// sulla label, oppure prefisso "label, ..." (alcune build accodano stato
+    /// o timestamp alla description della TaskView).
+    internal fun matchCardDescription(desc: String, labelMap: Map<String, String>): String? {
+        val d = desc.trim().lowercase()
+        labelMap[d]?.let { return it }
+        val prefix = d.substringBefore(',').trim()
+        if (prefix != d) labelMap[prefix]?.let { return it }
+        return null
+    }
+
+    /// Regole di applicazione PURE (testabili): ritorna il nuovo set, o null
+    /// per no-op. Zero card riconosciute è "verità di vuoto" SOLO se l'albero
+    /// era sostanzioso E manca il bottone clear-all (quickstep lo nasconde a
+    /// recents vuote): zero match con clear-all presente = card esistenti ma
+    /// non mappate (label sconosciute) → non toccare il conteggio.
+    internal fun computeRecentsSync(
+        current: Set<String>,
+        matched: Set<String>,
+        sawClearAll: Boolean,
+        visitedNodes: Int,
+    ): Set<String>? {
+        if (matched.isEmpty()) {
+            val emptyIsTruth = !sawClearAll && visitedNodes >= MIN_NODES_FOR_EMPTY_TRUTH
+            return if (emptyIsTruth && current.isNotEmpty()) emptySet() else null
+        }
+        if (current.size == matched.size && current.containsAll(matched)) return null
+        return matched
+    }
+
+    @Synchronized
+    private fun applyRecentsScan(
+        context: Context,
+        matchedRaw: Set<String>,
+        sawClearAll: Boolean,
+        visitedNodes: Int,
+        rootPkg: String,
+    ) {
+        val self = context.packageName
+        val matched = matchedRaw.filterTo(HashSet()) {
+            shouldTrack(it, self, KoruAccessibilityService.SKIP_PACKAGES, isLaunchable = true)
+        }
+        val next = computeRecentsSync(tracked.toSet(), matched, sawClearAll, visitedNodes)
+            ?: return
+        tracked.clear()
+        tracked.addAll(next)
+        BlackBox.log(
+            "RECENTS",
+            "sync da recents (root=$rootPkg, nodi=$visitedNodes): ${next.size} schede" +
+                if (next.isEmpty()) " (vuote)" else " [${next.joinToString()}]",
+        )
     }
 
     /// Azzera il conteggio e persiste l'ancora: usato dal long-press

@@ -838,6 +838,11 @@ class KoruAccessibilityService : AccessibilityService() {
         // più rumoroso — throttle serve a non saturare l'albero accessibility.
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
             event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
+            // Sync del contatore schede con le card REALI mentre le recents
+            // sono aperte (sessione legittima): lo swipe-dismiss di una
+            // singola scheda non genera altri eventi osservabili — questa è
+            // l'unica finestra in cui esiste una ground-truth.
+            if (LauncherRecentsGate.maybeSyncOpenApps(this, pkg)) return
             if (!BrowserConfigLoader.isBrowser(applicationContext, pkg)) return
             val now = System.currentTimeMillis()
             val samePkg = pkg == lastBrowserContentPkg
@@ -975,7 +980,7 @@ class KoruAccessibilityService : AccessibilityService() {
     /// safe). Necessario per evitare leak di AccessibilityNodeInfo nel buffer
     /// del binder accessibility — sintomi: log "Suspicious node" e fps drop
     /// dopo qualche minuto di attività.
-    private inline fun withRootInActiveWindow(block: (AccessibilityNodeInfo?) -> Unit) {
+    internal inline fun withRootInActiveWindow(block: (AccessibilityNodeInfo?) -> Unit) {
         val root = try { rootInActiveWindow } catch (_: Exception) { null }
         try {
             block(root)

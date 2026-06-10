@@ -104,4 +104,100 @@ class OpenAppsTrackerTest {
         )
         assertThat(start).isEqualTo(BOOT)
     }
+
+    // ─── computeRecentsSync (sync con le card reali delle recents) ──────────
+
+    private val BIG_TREE = OpenAppsTracker.MIN_NODES_FOR_EMPTY_TRUTH + 10
+
+    @Test
+    fun emptyRecents_clearsTheCount() {
+        // Il bug riportato: count=1 (WhatsApp) ma recents svuotate con lo
+        // swipe della singola card. Scan: albero sostanzioso, zero card,
+        // niente bottone clear-all (quickstep lo nasconde a recents vuote).
+        val next = OpenAppsTracker.computeRecentsSync(
+            current = setOf("com.whatsapp"),
+            matched = emptySet(),
+            sawClearAll = false,
+            visitedNodes = BIG_TREE,
+        )
+        assertThat(next).isEmpty()
+    }
+
+    @Test
+    fun zeroMatchesButClearAllPresent_isNotEmptinessTruth() {
+        // Card esistenti ma label non mappate: il bottone clear-all c'è →
+        // NON azzerare (meglio stale che falso zero).
+        val next = OpenAppsTracker.computeRecentsSync(
+            current = setOf("com.whatsapp"),
+            matched = emptySet(),
+            sawClearAll = true,
+            visitedNodes = BIG_TREE,
+        )
+        assertThat(next).isNull()
+    }
+
+    @Test
+    fun zeroMatchesOnTinyTree_isNotEmptinessTruth() {
+        // Scan partito troppo presto (albero non popolato): no-op.
+        val next = OpenAppsTracker.computeRecentsSync(
+            current = setOf("com.whatsapp"),
+            matched = emptySet(),
+            sawClearAll = false,
+            visitedNodes = OpenAppsTracker.MIN_NODES_FOR_EMPTY_TRUTH - 1,
+        )
+        assertThat(next).isNull()
+    }
+
+    @Test
+    fun matchedCards_replaceTheSet_bothDirections() {
+        // Dismiss di una card su due → shrink; card presente ma non tracciata
+        // (es. aperta prima di un reset manuale) → re-add: la verità vince.
+        val shrunk = OpenAppsTracker.computeRecentsSync(
+            current = setOf("com.whatsapp", "com.spotify.music"),
+            matched = setOf("com.spotify.music"),
+            sawClearAll = true,
+            visitedNodes = BIG_TREE,
+        )
+        assertThat(shrunk).containsExactly("com.spotify.music")
+
+        val readded = OpenAppsTracker.computeRecentsSync(
+            current = emptySet(),
+            matched = setOf("com.whatsapp"),
+            sawClearAll = true,
+            visitedNodes = BIG_TREE,
+        )
+        assertThat(readded).containsExactly("com.whatsapp")
+    }
+
+    @Test
+    fun unchangedSet_isNoOp() {
+        val next = OpenAppsTracker.computeRecentsSync(
+            current = setOf("com.whatsapp"),
+            matched = setOf("com.whatsapp"),
+            sawClearAll = true,
+            visitedNodes = BIG_TREE,
+        )
+        assertThat(next).isNull()
+    }
+
+    // ─── matchCardDescription ────────────────────────────────────────────────
+
+    private val LABELS = mapOf("whatsapp" to "com.whatsapp", "spotify" to "com.spotify.music")
+
+    @Test
+    fun cardDescription_exactAndCommaSuffixed_match() {
+        assertThat(OpenAppsTracker.matchCardDescription("WhatsApp", LABELS))
+            .isEqualTo("com.whatsapp")
+        assertThat(OpenAppsTracker.matchCardDescription("  Spotify  ", LABELS))
+            .isEqualTo("com.spotify.music")
+        // Alcune build accodano stato/timestamp alla description della card.
+        assertThat(OpenAppsTracker.matchCardDescription("WhatsApp, ultimo utilizzo 14:10", LABELS))
+            .isEqualTo("com.whatsapp")
+    }
+
+    @Test
+    fun cardDescription_unknownLabel_doesNotMatch() {
+        assertThat(OpenAppsTracker.matchCardDescription("Cancella tutto", LABELS)).isNull()
+        assertThat(OpenAppsTracker.matchCardDescription("Screenshot", LABELS)).isNull()
+    }
 }

@@ -66,6 +66,21 @@ object LauncherRecentsGate {
     private const val PREV_FG_LOOKBACK_SHORT_MS = 300_000L
     private const val PREV_FG_LOOKBACK_LONG_MS = 3_600_000L
 
+    /// Sync del contatore con le card reali delle recents: throttle dei
+    /// content-changed (l'overview ne emette a raffica durante animazioni e
+    /// scroll) + BURST di scansioni iniziali. Il burst (e non una singola
+    /// scansione ritardata) è essenziale per le recents VUOTE: non emettono
+    /// content-change e si auto-chiudono in ~650ms (misurato on-device) —
+    /// una scansione sola a +550ms arrivava spesso a finestra già chiusa e
+    /// lo stato "0 schede" non veniva mai letto (contatore inchiodato).
+    /// Ogni scansione è protetta dal guard sul root (OpenAppsTracker): una
+    /// partita troppo presto/tardi è un no-op, e un'eventuale lettura
+    /// transitoria sbagliata viene corretta dalle successive del burst.
+    private const val RECENTS_SCAN_THROTTLE_MS = 300L
+    private const val RECENTS_INITIAL_SCAN_FIRST_DELAY_MS = 150L
+    private const val RECENTS_INITIAL_SCAN_REPEAT_DELAY_MS = 250L
+    private const val RECENTS_INITIAL_SCAN_ATTEMPTS = 3
+
     internal enum class Decision {
         ALLOW_TOKEN, ALLOW_IN_SESSION, ALLOW_SHIELD_OFF, ALLOW_NOT_FROM_KORU, BLOCK,
     }
@@ -82,6 +97,9 @@ object LauncherRecentsGate {
     /// Accesso confinato al main thread (callback a11y + channel handler).
     private var pendingKick: Runnable? = null
     private var pendingSessionSanity: Runnable? = null
+    private var pendingInitialScan: Runnable? = null
+
+    @Volatile private var lastRecentsScanUptimeMs = 0L
 
     fun setShieldActive(active: Boolean) {
         if (shieldActive == active) return
@@ -154,19 +172,69 @@ object LauncherRecentsGate {
         when (decision) {
             Decision.ALLOW_TOKEN -> {
                 allowUntilUptimeMs = 0L // consumato
-                sessionAllowed = true
                 BlackBox.log("RECENTS", "recents aperta via token → sessione allowed")
+                onSessionAllowed(service)
             }
             Decision.ALLOW_IN_SESSION -> { /* re-emissione interna alle recents */ }
             Decision.ALLOW_SHIELD_OFF, Decision.ALLOW_NOT_FROM_KORU -> {
-                sessionAllowed = true
                 BlackBox.log(
                     "RECENTS",
                     "recents allowed ($decision): aperta fuori dal launcher Koru",
                 )
+                onSessionAllowed(service)
             }
             Decision.BLOCK -> performImmediateKick(service, pkg, className)
         }
+        return true
+    }
+
+    /// Sessione legittima appena aperta: arma il sync del contatore con le
+    /// card reali. Prewarm della label map (off-main) + scansione iniziale
+    /// ritardata — copre le recents VUOTE, che possono non emettere alcun
+    /// content-change (è il caso "dice 1 app ma non c'è niente": senza
+    /// scansione lo zero non verrebbe mai letto).
+    private fun onSessionAllowed(service: KoruAccessibilityService) {
+        val firstAllow = !sessionAllowed
+        sessionAllowed = true
+        if (!firstAllow) return
+        OpenAppsTracker.prewarmLabelMap(service.applicationContext)
+        pendingInitialScan?.let { mainHandler.removeCallbacks(it) }
+        val r = object : Runnable {
+            private var attempt = 0
+            override fun run() {
+                pendingInitialScan = null
+                if (KoruAccessibilityService.instance !== service) return
+                if (!recentsVisible || !sessionAllowed) return
+                lastRecentsScanUptimeMs = SystemClock.uptimeMillis()
+                OpenAppsTracker.syncFromRecents(service)
+                attempt++
+                if (attempt < RECENTS_INITIAL_SCAN_ATTEMPTS) {
+                    pendingInitialScan = this
+                    mainHandler.postDelayed(this, RECENTS_INITIAL_SCAN_REPEAT_DELAY_MS)
+                }
+            }
+        }
+        pendingInitialScan = r
+        mainHandler.postDelayed(r, RECENTS_INITIAL_SCAN_FIRST_DELAY_MS)
+    }
+
+    /// Chiamato dal service sui TYPE_WINDOW_CONTENT_CHANGED / VIEW_SCROLLED:
+    /// se arrivano dall'host recents durante una sessione legittima, throttla
+    /// e ri-sincronizza il contatore (lo swipe-dismiss di una card cambia il
+    /// contenuto senza altri segnali osservabili). Ritorna true se l'evento
+    /// appartiene alla schermata recents (consumato).
+    fun maybeSyncOpenApps(service: KoruAccessibilityService, pkg: String): Boolean {
+        if (!recentsVisible || !sessionAllowed) return false
+        if (!RecentsDetector.isPlausibleRecentsHostPackage(
+                pkg, KoruAccessibilityService.SKIP_PACKAGES,
+            )
+        ) {
+            return false
+        }
+        val now = SystemClock.uptimeMillis()
+        if (now - lastRecentsScanUptimeMs < RECENTS_SCAN_THROTTLE_MS) return true
+        lastRecentsScanUptimeMs = now
+        OpenAppsTracker.syncFromRecents(service)
         return true
     }
 
@@ -335,6 +403,10 @@ object LauncherRecentsGate {
             mainHandler.removeCallbacks(it)
             pendingSessionSanity = null
         }
+        pendingInitialScan?.let {
+            mainHandler.removeCallbacks(it)
+            pendingInitialScan = null
+        }
         setClickEventsEnabled(service, false)
     }
 
@@ -399,6 +471,8 @@ object LauncherRecentsGate {
         pendingKick = null
         pendingSessionSanity?.let { mainHandler.removeCallbacks(it) }
         pendingSessionSanity = null
+        pendingInitialScan?.let { mainHandler.removeCallbacks(it) }
+        pendingInitialScan = null
         allowUntilUptimeMs = 0L
         sessionAllowed = false
         recentsVisible = false
@@ -429,9 +503,11 @@ object LauncherRecentsGate {
     internal fun debugResetState() {
         pendingKick = null
         pendingSessionSanity = null
+        pendingInitialScan = null
         shieldActive = false
         allowUntilUptimeMs = 0L
         sessionAllowed = false
         recentsVisible = false
+        lastRecentsScanUptimeMs = 0L
     }
 }
