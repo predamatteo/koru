@@ -7,6 +7,7 @@ import android.view.accessibility.AccessibilityEvent
 import com.dev.koru.contract.BlockingContract
 import com.dev.koru.diagnostics.BlackBox
 import com.dev.koru.service.KoruAccessibilityService
+import com.dev.koru.service.RecentsDetector
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -198,6 +199,18 @@ object StrictModeEnforcer {
         }
     }
 
+    /// Lettura no-IO del bit BLOCK_RECENT_APPS, sicura da qualunque thread:
+    /// serve solo la cache @Volatile (mai Keystore). Stessa semantica
+    /// fail-secure di [getMask]: cache non ancora popolata → tutto bloccato.
+    /// Usata dal handler `openSystemRecents` per non fare da bypass dello
+    /// strict mode (con bit 8 attivo il tap sull'icona recents del launcher
+    /// deve fallire, non aprire la schermata che strict richiuderebbe).
+    fun isRecentsBlockedCached(): Boolean {
+        val m = cachedMask
+        val effective = if (m >= 0) m else BlockingContract.ALL_OPTIONS_ENABLED
+        return effective and BLOCK_RECENT_APPS != 0
+    }
+
     fun invalidateCache() {
         version++
         val ctx = appContextRef
@@ -235,15 +248,9 @@ object StrictModeEnforcer {
         }
 
         if (mask and BLOCK_RECENT_APPS != 0) {
-            // Check SOLO su className: il bare match su com.android.systemui
-            // triggerava sul pull-down della notification shade / QS panel
-            // (che hanno package systemui ma NON sono Recents).
-            val isRecents = className.contains("Recents", ignoreCase = true) ||
-                className.contains("RecentTask", ignoreCase = true) ||
-                className.contains("OverviewPanel", ignoreCase = true) ||
-                (packageName.contains("launcher", ignoreCase = true) &&
-                    className.contains("Recent", ignoreCase = true))
-            if (isRecents) {
+            // Pattern condivisi con LauncherRecentsGate via RecentsDetector
+            // (estrazione a comportamento invariato, vedi commenti lì).
+            if (RecentsDetector.isRecentsWindow(packageName, className)) {
                 Log.w(TAG, "STRICT: Blocked recents: $packageName/$className")
                 goHomeSuppressed(service)
                 return true

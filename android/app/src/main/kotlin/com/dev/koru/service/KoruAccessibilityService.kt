@@ -121,6 +121,29 @@ class KoruAccessibilityService : AccessibilityService() {
         /// `StrictModeEnforcer`, tenuto allineato solo da un commento).
         val SETTINGS_PACKAGES: Set<String> = BlockingContract.SETTINGS_PACKAGES
 
+        /// Package da NON trattare mai come "app in foreground da valutare":
+        /// framework, systemui e launcher di sistema. Promosso a companion
+        /// (era property d'istanza) per il riuso da [LauncherRecentsGate],
+        /// [OpenAppsTracker] e [RecentsDetector.isRecentsHostWindow].
+        internal val SKIP_PACKAGES: Set<String> = setOf(
+            // "android" è il pkg del framework: viene attribuito a TYPE_WINDOWS_CHANGED
+            // emessi quando aggiungiamo il nostro overlay via WindowManager.addView.
+            // Senza questo skip, checkAppBlocking("android") cade nel fall-through e
+            // dismissa l'overlay che abbiamo appena mostrato (overlay flash al
+            // primo blocco di un'app a freddo).
+            "android",
+            "com.android.systemui",
+            "com.android.launcher",
+            "com.android.launcher3",
+            "com.google.android.apps.nexuslauncher",
+            "com.miui.home",
+            "com.sec.android.app.launcher",
+            "com.huawei.android.launcher",
+            "com.oppo.launcher",
+            "com.oneplus.launcher",
+            "com.coloros.safecenter",
+        )
+
         @Volatile
         var instance: KoruAccessibilityService? = null
             private set
@@ -409,7 +432,7 @@ class KoruAccessibilityService : AccessibilityService() {
     private fun handleUserPresent() {
         val fg = ForegroundDetector.detect(applicationContext)?.primaryPackage
         Log.d(TAG, "USER_PRESENT: foreground=$fg → re-check if blocked")
-        if (fg == null || skipPackages.contains(fg) || fg == packageName) return
+        if (fg == null || SKIP_PACKAGES.contains(fg) || fg == packageName) return
         mainHandler.post {
             checkAppBlocking(fg, profilesSnapshot.get(), overAppIfBlocked = true)
         }
@@ -437,25 +460,6 @@ class KoruAccessibilityService : AccessibilityService() {
     /// utenti dei limiti temporali non-strict.
     @Volatile
     private var lastBypassedActiveForeground: String? = null
-
-    private val skipPackages = setOf(
-        // "android" è il pkg del framework: viene attribuito a TYPE_WINDOWS_CHANGED
-        // emessi quando aggiungiamo il nostro overlay via WindowManager.addView.
-        // Senza questo skip, checkAppBlocking("android") cade nel fall-through e
-        // dismissa l'overlay che abbiamo appena mostrato (overlay flash al
-        // primo blocco di un'app a freddo).
-        "android",
-        "com.android.systemui",
-        "com.android.launcher",
-        "com.android.launcher3",
-        "com.google.android.apps.nexuslauncher",
-        "com.miui.home",
-        "com.sec.android.app.launcher",
-        "com.huawei.android.launcher",
-        "com.oppo.launcher",
-        "com.oneplus.launcher",
-        "com.coloros.safecenter",
-    )
 
     @Volatile
     private var actionReceiver: BroadcastReceiver? = null
@@ -889,7 +893,7 @@ class KoruAccessibilityService : AccessibilityService() {
         // Strict Mode check (blocks settings/recent/uninstall based on mask)
         if (StrictModeEnforcer.handleEvent(this, event)) return
 
-        if (skipPackages.contains(pkg) || pkg == packageName) {
+        if (SKIP_PACKAGES.contains(pkg) || pkg == packageName) {
             // Launcher o Koru stesso in foreground — NON dismiss overlay:
             // siamo probabilmente qui proprio perché abbiamo fatto HOME dopo
             // aver bloccato un'app. L'overlay deve restare visibile sopra il
@@ -1224,7 +1228,7 @@ class KoruAccessibilityService : AccessibilityService() {
                 eventPackage = packageName,
                 realForegroundPackage = foregroundDetected,
                 isRealForegroundSkippable = foregroundDetected != null &&
-                    skipPackages.contains(foregroundDetected),
+                    SKIP_PACKAGES.contains(foregroundDetected),
             )
         ) {
             Log.d(
@@ -1409,7 +1413,7 @@ class KoruAccessibilityService : AccessibilityService() {
                     val cameFrom = ForegroundDetector.previousForegroundPackage(applicationContext, packageName)
                     val openedFromOtherApp = cameFrom != null &&
                         cameFrom != applicationContext.packageName &&
-                        !skipPackages.contains(cameFrom)
+                        !SKIP_PACKAGES.contains(cameFrom)
                     if (openedFromOtherApp || overAppIfBlocked) {
                         val why = if (openedFromOtherApp) "opened from '$cameFrom'" else "resumed re-check"
                         Log.w(TAG, ">>> BLOCKING APP (overlay-over-app, $why): " +
@@ -1556,7 +1560,7 @@ class KoruAccessibilityService : AccessibilityService() {
      * Eseguito sul main thread (handler del MethodChannel `launchApp`).
      */
     fun showPreLaunchBlockIfNeeded(packageName: String): Boolean {
-        if (packageName == this.packageName || skipPackages.contains(packageName)) return false
+        if (packageName == this.packageName || SKIP_PACKAGES.contains(packageName)) return false
         // Fail-open: senza un overlay host non possiamo mostrare il blocco →
         // meglio lanciare l'app (l'enforcement event-driven la catturerà
         // all'apertura) che lasciare l'utente con né overlay né app aperta.
@@ -1974,7 +1978,7 @@ class KoruAccessibilityService : AccessibilityService() {
                     limitPackages = limitPackages,
                     knownBrowsers = KNOWN_BROWSERS,
                     settingsPackages = SETTINGS_PACKAGES,
-                    skipPackages = skipPackages,
+                    skipPackages = SKIP_PACKAGES,
                     selfPackage = packageName,
                 )
             }
