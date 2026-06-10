@@ -9,6 +9,7 @@ import '../../../core/diagnostics/black_box.dart';
 import '../../../core/router/app_router.dart';
 import '../../providers/app_list_provider.dart';
 import '../../providers/launcher_swipe_actions_provider.dart';
+import '../../providers/open_apps_count_provider.dart';
 import '../home/widgets/circle_clock_widget.dart';
 import '../home/widgets/favorites_list.dart';
 import 'widgets/launcher_shortcut_buttons.dart';
@@ -112,11 +113,25 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
   }
 
   /// Attiva/disattiva gli override "da launcher" (validi solo col launcher in
-  /// cima): esclusione gesture di sistema + nav bar nascosta. Vedi il commento
-  /// RouteAware sopra per lo scoping.
+  /// cima): esclusione gesture di sistema + blocco gesture recents + nav bar
+  /// nascosta. Vedi il commento RouteAware sopra per lo scoping.
   void _setLauncherActive(bool active) {
     _setGestureExclusion(active);
+    // Blocco della gesture recents (swipe-up-and-hold): stesso scoping
+    // RouteAware dell'esclusione. Il flag nativo da solo non basta quando
+    // un'altra app copre Koru (la route Dart resta /launcher): la correttezza
+    // la porta il guard previous-foreground del LauncherRecentsGate.
+    ref
+        .read(platformChannelServiceProvider)
+        .permission
+        .setLauncherRecentsShield(active);
     if (active) {
+      // Conteggio schede + capability dell'icona: refresh a ogni ritorno in
+      // cima / resume. Pull-only: mentre il launcher è visibile nessun'altra
+      // app può andare in foreground, quindi il conteggio cambia solo mentre
+      // siamo coperti — questi sono esattamente i punti di rientro.
+      ref.invalidate(openAppsCountProvider);
+      ref.invalidate(recentsIconCapabilityProvider);
       // Nasconde SOLO la navigation bar (il pill bianco di sistema); la status
       // bar in alto (orologio/batteria) resta visibile.
       SystemChrome.setEnabledSystemUIMode(
@@ -169,12 +184,15 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
           onVerticalDragEnd: _onVerticalDrag,
           child: Column(
             children: [
-            // Top bar con "K" logo-shortcut (rimpiazzabile con icona vera).
+            // Top bar: a sinistra il contatore "schede aperte" (apre il
+            // gestore schede di sistema), a destra il "K" logo-shortcut
+            // (rimpiazzabile con icona vera).
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
+                  const _RecentsShortcut(),
                   _KoruShortcut(
                     onTap: () => context.push(KoruRoutes.home),
                   ),
@@ -416,6 +434,97 @@ class _SwipeHint extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Icona top-left del launcher: numero di "schede aperte in background" +
+/// apertura del gestore schede (le recents di sistema, via
+/// AccessibilityService — vedi `openSystemRecents`). Il conteggio è
+/// l'approssimazione tracciata da OpenAppsTracker (app in foreground dal
+/// boot / ultimo reset). Stati:
+/// - servizio accessibilità OFF → nascosta (GLOBAL_ACTION_RECENTS impossibile
+///   e il blocco gesture non è comunque operativo);
+/// - usage stats OFF → icona senza badge (conteggio non derivabile);
+/// - strict BLOCK_RECENT_APPS → disabilitata (lo strict richiuderebbe la
+///   schermata subito: niente flash-and-kick offerto dall'icona);
+/// - count == 0 → icona visibile senza badge (resta il bottone recents).
+/// Long-press: azzera il contatore (escape hatch dell'approssimazione, es.
+/// dopo aver chiuso le schede una a una senza "Cancella tutto").
+class _RecentsShortcut extends ConsumerWidget {
+  const _RecentsShortcut();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final capability = ref.watch(recentsIconCapabilityProvider).valueOrNull;
+    if (capability == null || !capability.iconVisible) {
+      // Slot della stessa altezza del "K": il layout non salta quando la
+      // capability arriva o cambia.
+      return const SizedBox(width: 40, height: 40);
+    }
+    final count = ref.watch(openAppsCountProvider).valueOrNull ?? 0;
+    final enabled = capability.tapEnabled;
+    final color = enabled ? KoruColors.primary : KoruColors.textSecondary;
+    final showBadge = capability.badgeVisible && count > 0;
+
+    return Material(
+      color: KoruColors.primary.withAlpha(enabled ? 40 : 20),
+      shape: const StadiumBorder(),
+      child: InkWell(
+        onTap: enabled ? () => _openRecents(ref) : null,
+        onLongPress: enabled ? () => _resetCount(context, ref) : null,
+        customBorder: const StadiumBorder(),
+        child: SizedBox(
+          height: 40,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.filter_none, size: 18, color: color),
+                if (showBadge) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    '$count',
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openRecents(WidgetRef ref) async {
+    final blocking = ref.read(platformChannelServiceProvider).blocking;
+    // openSystemRecents emette l'allow-token sul gate nativo prima di
+    // GLOBAL_ACTION_RECENTS (altrimenti il blocco gesture la richiuderebbe).
+    await blocking.openSystemRecents();
+    // Al rientro il conteggio può essere cambiato (clear-all, app chiuse):
+    // il resume del launcher lo rinfresca comunque, questo accorcia l'attesa.
+    ref.invalidate(openAppsCountProvider);
+  }
+
+  Future<void> _resetCount(BuildContext context, WidgetRef ref) async {
+    HapticFeedback.mediumImpact();
+    await ref
+        .read(platformChannelServiceProvider)
+        .blocking
+        .resetOpenAppsCount();
+    ref.invalidate(openAppsCountProvider);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Open apps counter reset'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 }
 

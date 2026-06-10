@@ -178,6 +178,16 @@ void main() {
       setMockHandler((_) async => null);
       expect(await PermissionChannel().isLauncherModeEnabled(), isFalse);
     });
+
+    test('setLauncherRecentsShield sends enabled arg', () async {
+      setMockHandler((_) async => null);
+      await PermissionChannel().setLauncherRecentsShield(true);
+      expect(calls.first.method, 'setLauncherRecentsShield');
+      expect(calls.first.arguments, {'enabled': true});
+
+      await PermissionChannel().setLauncherRecentsShield(false);
+      expect(calls.last.arguments, {'enabled': false});
+    });
   });
 
   group('PermissionChannel - checkAllPermissions', () {

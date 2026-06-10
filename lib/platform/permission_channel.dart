@@ -91,6 +91,16 @@ class PermissionChannel {
         'enabled': enabled,
       });
 
+  /// Attiva/disattiva il blocco della gesture recents (swipe-up-and-hold)
+  /// scopato al launcher: il LauncherRecentsGate nativo richiude la schermata
+  /// recents appena appare se l'utente veniva dal launcher Koru. Cavalca lo
+  /// stesso lifecycle RouteAware di [setLauncherGestureExclusion] — da
+  /// chiamare SOLO da LauncherHomeScreen._setLauncherActive.
+  Future<void> setLauncherRecentsShield(bool enabled) =>
+      _channel.invokeMethod<void>('setLauncherRecentsShield', {
+        'enabled': enabled,
+      });
+
   Future<KoruPermissionStatus> checkAllPermissions() async {
     final raw = await _channel.invokeMethod<Map<dynamic, dynamic>>('checkAllPermissions');
     return KoruPermissionStatus.fromMap(raw ?? const {});

@@ -344,6 +344,43 @@ void main() {
     });
   });
 
+  group('BlockingChannel - recents / contatore schede', () {
+    test('getOpenAppsCount returns native int', () async {
+      setMockHandler((_) async => 7);
+      expect(await BlockingChannel().getOpenAppsCount(), 7);
+      expect(calls.first.method, 'getOpenAppsCount');
+    });
+
+    test('getOpenAppsCount returns 0 on null', () async {
+      setMockHandler((_) async => null);
+      expect(await BlockingChannel().getOpenAppsCount(), 0);
+    });
+
+    test('resetOpenAppsCount returns native bool, false on null', () async {
+      setMockHandler((_) async => true);
+      expect(await BlockingChannel().resetOpenAppsCount(), isTrue);
+      expect(calls.first.method, 'resetOpenAppsCount');
+
+      clearMockHandler();
+      calls = [];
+      setMockHandler((_) async => null);
+      expect(await BlockingChannel().resetOpenAppsCount(), isFalse);
+    });
+
+    test('openSystemRecents returns native bool, false on null', () async {
+      setMockHandler((_) async => true);
+      expect(await BlockingChannel().openSystemRecents(), isTrue);
+      expect(calls.first.method, 'openSystemRecents');
+
+      clearMockHandler();
+      calls = [];
+      // Null = servizio accessibilità spento / strict mode attivo lato
+      // nativo: il Dart deve leggere "non possibile", mai lanciare.
+      setMockHandler((_) async => null);
+      expect(await BlockingChannel().openSystemRecents(), isFalse);
+    });
+  });
+
   group('BlockingChannel - daily limits', () {
     test('getAppDailyLimits parses legacy int format as strict=true', () async {
       setMockHandler((_) async => <String, dynamic>{'com.x': 30});

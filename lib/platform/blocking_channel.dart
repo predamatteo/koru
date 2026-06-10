@@ -358,4 +358,27 @@ class BlockingChannel {
 
   Future<String?> getCurrentWifiSsid() async =>
       _channel.invokeMethod<String>('getCurrentWifiSsid');
+
+  // =========================================================================
+  // Concern: contatore "schede aperte in background" + recents di sistema
+  // (icona top-left del launcher).
+  // =========================================================================
+
+  /// Numero approssimato di app aperte in background: app portate in
+  /// foreground dal boot (o dall'ultimo reset), tracciate lato nativo via
+  /// UsageStats (OpenAppsTracker). Android non espone la vera lista recents
+  /// alle app di terze parti.
+  Future<int> getOpenAppsCount() async =>
+      (await _channel.invokeMethod<int>('getOpenAppsCount')) ?? 0;
+
+  /// Azzera il contatore (long-press sull'icona del launcher).
+  Future<bool> resetOpenAppsCount() async =>
+      (await _channel.invokeMethod<bool>('resetOpenAppsCount')) ?? false;
+
+  /// Apre la schermata recents di sistema via AccessibilityService
+  /// (GLOBAL_ACTION_RECENTS), con allow-token sul LauncherRecentsGate così
+  /// il blocco gesture non la richiude. Ritorna false se non possibile
+  /// (servizio accessibilità spento o strict mode BLOCK_RECENT_APPS attivo).
+  Future<bool> openSystemRecents() async =>
+      (await _channel.invokeMethod<bool>('openSystemRecents')) ?? false;
 }
