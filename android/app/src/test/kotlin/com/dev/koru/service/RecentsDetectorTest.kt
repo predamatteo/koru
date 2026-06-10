@@ -141,6 +141,22 @@ class RecentsDetectorTest {
         assertThat(host("com.vivo.launcher", "VivoRecentsActivity")).isTrue()
     }
 
+    @Test
+    fun plausibleHostPackage_sharedPredicate_consistentWithHostWindow() {
+        // Il verify-before-kick usa QUESTO predicato: deve accettare tutto
+        // ciò che isRecentsHostWindow accetta come host (la divergenza
+        // rendeva il kick sempre abortito sugli OEM fuori da SKIP).
+        assertThat(
+            RecentsDetector.isPlausibleRecentsHostPackage("net.oneplus.launcher", SKIP),
+        ).isTrue()
+        assertThat(
+            RecentsDetector.isPlausibleRecentsHostPackage("com.android.systemui", emptySet()),
+        ).isTrue()
+        assertThat(
+            RecentsDetector.isPlausibleRecentsHostPackage("com.whatsapp", SKIP),
+        ).isFalse()
+    }
+
     // ─── isClearAllNode ──────────────────────────────────────────────────────
 
     @Test

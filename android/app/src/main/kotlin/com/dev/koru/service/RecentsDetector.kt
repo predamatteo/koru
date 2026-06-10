@@ -40,12 +40,23 @@ object RecentsDetector {
     ): Boolean {
         if (packageName.isEmpty() || packageName == selfPackage) return false
         if (!isRecentsWindow(packageName, className)) return false
-        return packageName == "com.android.systemui" ||
-            skipPackages.contains(packageName) ||
-            packageName.contains("launcher", ignoreCase = true) ||
-            packageName.contains("home", ignoreCase = true) ||
-            packageName.contains("quickstep", ignoreCase = true)
+        return isPlausibleRecentsHostPackage(packageName, skipPackages)
     }
+
+    /// Predicato UNICO per "questo package può ospitare la schermata recents"
+    /// (systemui o un launcher). Condiviso da [isRecentsHostWindow], dal
+    /// verify-before-kick e dal filtro click di LauncherRecentsGate: usare
+    /// set diversi nei tre punti li fa divergere (es. il verify che
+    /// classificava un host fuori da skipPackages come "app reale" e
+    /// abortiva ogni kick).
+    fun isPlausibleRecentsHostPackage(
+        packageName: String,
+        skipPackages: Set<String>,
+    ): Boolean = packageName == "com.android.systemui" ||
+        skipPackages.contains(packageName) ||
+        packageName.contains("launcher", ignoreCase = true) ||
+        packageName.contains("home", ignoreCase = true) ||
+        packageName.contains("quickstep", ignoreCase = true)
 
     /// Match best-effort del bottone "Cancella tutto" dentro le recents.
     /// Primario: viewIdResourceName (locale-indipendente, es.

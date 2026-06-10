@@ -1,5 +1,6 @@
 package com.dev.koru.service
 
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -49,6 +50,20 @@ object LauncherRecentsGate {
     /// RecentsActivity): al verify l'app target è già foreground → abort.
     private const val KICK_VERIFY_DELAY_MS = 250L
 
+    /// Sanity-check della sessione: se l'utente esce dalle recents verso
+    /// un'app FUORI dal watched-set dinamico, nessun window event arriva e la
+    /// sessione (con typeViewClicked attivo) resterebbe appesa per ore. Questo
+    /// timer ricontrolla il foreground reale e chiude la sessione orfana.
+    private const val SESSION_SANITY_DELAY_MS = 60_000L
+
+    /// Lookback a due stadi per la provenienza: prima una scansione corta
+    /// (caso comune: uso attivo), poi il fallback lungo per l'utente rimasto
+    /// fermo sul launcher a lungo prima dello swipe. Tutto su main thread
+    /// (evento raro, precedente consolidato nel service) ma il caso comune
+    /// paga solo la scansione corta.
+    private const val PREV_FG_LOOKBACK_SHORT_MS = 300_000L
+    private const val PREV_FG_LOOKBACK_LONG_MS = 3_600_000L
+
     internal enum class Decision {
         ALLOW_TOKEN, ALLOW_IN_SESSION, ALLOW_SHIELD_OFF, ALLOW_NOT_FROM_KORU, BLOCK,
     }
@@ -64,6 +79,7 @@ object LauncherRecentsGate {
 
     /// Accesso confinato al main thread (callback a11y + channel handler).
     private var pendingKick: Runnable? = null
+    private var pendingSessionSanity: Runnable? = null
 
     fun setShieldActive(active: Boolean) {
         if (shieldActive == active) return
@@ -96,10 +112,17 @@ object LauncherRecentsGate {
             skipPackages = KoruAccessibilityService.SKIP_PACKAGES,
         )
         if (!isRecents) {
-            // Finestra REALE non-recents (ignora i ghost del framework, pkg
-            // "android"/className vuoto): chiude la sessione e annulla un
-            // eventuale kick pending (quick-switch commit-ato sull'app target).
-            if (className.isNotEmpty() && pkg != "android") onNonRecentsWindow(service, pkg)
+            // Finestra REALE non-recents: chiude la sessione e annulla un
+            // eventuale kick pending (quick-switch commit-ato sull'app
+            // target). Esclusi i ghost del framework (pkg "android"/className
+            // vuoto) E systemui: la shade/QS/volume hanno window event con
+            // pkg systemui ma NON significano "recents chiusa" — un pull
+            // della shade nei 250ms del verify cancellerebbe un kick
+            // legittimo (vettore di bypass) o chiuderebbe una sessione
+            // allowed a metà (falso kick alla re-emissione successiva).
+            if (className.isNotEmpty() && pkg != "android" && pkg != "com.android.systemui") {
+                onNonRecentsWindow(service, pkg)
+            }
             return false
         }
 
@@ -109,6 +132,7 @@ object LauncherRecentsGate {
             // stesso pattern di mutazione in-place di applyDynamicPackageFilter,
             // costo limitato ai secondi in cui le recents sono aperte.
             setClickEventsEnabled(service, true)
+            scheduleSessionSanityCheck(service)
         }
 
         val tokenValid = SystemClock.uptimeMillis() <= allowUntilUptimeMs
@@ -170,11 +194,16 @@ object LauncherRecentsGate {
         val self = service.packageName
         val ctx = service.applicationContext
         val prev = try {
-            ForegroundDetector.previousForegroundPackage(ctx, recentsPkg, lookbackMs = 3_600_000L)
+            ForegroundDetector.previousForegroundPackage(
+                ctx, recentsPkg, lookbackMs = PREV_FG_LOOKBACK_SHORT_MS,
+            ) ?: ForegroundDetector.previousForegroundPackage(
+                ctx, recentsPkg, lookbackMs = PREV_FG_LOOKBACK_LONG_MS,
+            )
         } catch (_: Exception) {
             null
         }
         if (prev == self) return true
+        if (prev != null) return false
         val primary = try {
             ForegroundDetector.detect(ctx)?.primaryPackage
         } catch (_: Exception) {
@@ -195,21 +224,48 @@ object LauncherRecentsGate {
         )
         val r = Runnable {
             pendingKick = null
-            // Verify: se il foreground reale è già un'app vera (≠ Koru,
-            // ≠ skip-set) siamo in una transizione/quick-switch → abort.
+            // Igiene post-onDestroy (stesso guard degli altri delayed
+            // runnable del service): un kick orfano su un service morto
+            // sparerebbe comunque l'HOME intent e sporcherebbe lo stato
+            // di un'eventuale istanza rebindata.
+            if (KoruAccessibilityService.instance !== service) return@Runnable
+            // Verify 1: foreground reale già un'app vera (≠ Koru, ≠ host
+            // recents plausibile) → transizione/quick-switch commit-ata:
+            // abort + chiusura sessione (le recents non sono più davanti).
+            // NB: il predicato host è lo STESSO usato per classificare la
+            // finestra come recents — usare solo SKIP_PACKAGES qui rendeva
+            // il kick sempre abortito sugli OEM con host fuori dallo skip-set
+            // (l'host stesso veniva classificato come "app reale").
             val fg = try {
                 ForegroundDetector.detect(service.applicationContext)?.primaryPackage
             } catch (_: Exception) {
                 null
             }
-            if (fg != null && fg != service.packageName &&
-                !KoruAccessibilityService.SKIP_PACKAGES.contains(fg)
-            ) {
+            val fgIsRealApp = fg != null && fg != service.packageName &&
+                !RecentsDetector.isPlausibleRecentsHostPackage(
+                    fg, KoruAccessibilityService.SKIP_PACKAGES,
+                )
+            if (fgIsRealApp) {
                 BlackBox.log("RECENTS", "kick ABORT: foreground reale=$fg (transizione)")
+                endSession(service)
+                return@Runnable
+            }
+            // Verify 2: ri-check della provenienza. Il lag di indicizzazione
+            // UsageStats può aver prodotto un BLOCK per uno swipe partito da
+            // dentro un'app appena lanciata dal launcher (X non ancora
+            // indicizzata al decision time): se ora la provenienza legge
+            // non-launcher, le recents sono legittime → sessione allowed.
+            if (!computeCameFromKoru(service, pkg)) {
+                BlackBox.log("RECENTS", "kick ABORT: provenienza non-launcher al re-check")
+                sessionAllowed = true
                 return@Runnable
             }
             BlackBox.log("RECENTS", "kick: chiudo recents → HOME (launcher)")
-            endSession(service)
+            // NIENTE endSession preventiva: se goToHomeViaIntent coalizza
+            // l'HOME (guard anti-loop 800ms) le recents restano aperte — con
+            // lo stato sessione intatto una re-emissione recents ri-schedula
+            // il kick (retry naturale). A kick riuscito è il window event di
+            // ritorno al launcher a chiudere la sessione.
             // forceHome + suppressLauncherNavigationUntilMs: preserva la
             // sub-pagina del launcher Flutter (stesso helper dello strict).
             service.performGoHomeForBlock(forceHome = true)
@@ -230,9 +286,51 @@ object LauncherRecentsGate {
         }
     }
 
+    /// Belt-and-suspenders per la sessione orfana: uscire dalle recents verso
+    /// un'app FUORI dal watched-set dinamico non genera alcun window event →
+    /// recentsVisible/sessionAllowed resterebbero appesi e typeViewClicked
+    /// attivo per ore (e un click "clear"-like in un'app watched con
+    /// "home"/"launcher" nel pkg potrebbe azzerare il contatore a sproposito).
+    /// Ogni SESSION_SANITY_DELAY_MS verifichiamo il foreground reale: se non è
+    /// più un host recents plausibile né Koru, la sessione è orfana → chiusa.
+    private fun scheduleSessionSanityCheck(service: KoruAccessibilityService) {
+        pendingSessionSanity?.let { mainHandler.removeCallbacks(it) }
+        val r = object : Runnable {
+            override fun run() {
+                if (KoruAccessibilityService.instance !== service) return
+                if (!recentsVisible) {
+                    pendingSessionSanity = null
+                    return
+                }
+                val fg = try {
+                    ForegroundDetector.detect(service.applicationContext)?.primaryPackage
+                } catch (_: Exception) {
+                    null
+                }
+                val stillPlausible = fg == null || fg == service.packageName ||
+                    RecentsDetector.isPlausibleRecentsHostPackage(
+                        fg, KoruAccessibilityService.SKIP_PACKAGES,
+                    )
+                if (!stillPlausible) {
+                    BlackBox.log("RECENTS", "sessione orfana chiusa dal sanity-check (fg=$fg)")
+                    pendingSessionSanity = null
+                    endSession(service)
+                } else {
+                    mainHandler.postDelayed(this, SESSION_SANITY_DELAY_MS)
+                }
+            }
+        }
+        pendingSessionSanity = r
+        mainHandler.postDelayed(r, SESSION_SANITY_DELAY_MS)
+    }
+
     private fun endSession(service: KoruAccessibilityService) {
         recentsVisible = false
         sessionAllowed = false
+        pendingSessionSanity?.let {
+            mainHandler.removeCallbacks(it)
+            pendingSessionSanity = null
+        }
         setClickEventsEnabled(service, false)
     }
 
@@ -243,21 +341,36 @@ object LauncherRecentsGate {
         if (!recentsVisible) return
         val pkg = event.packageName?.toString() ?: return
         if (pkg == service.packageName) return
-        val plausibleHost = pkg == "com.android.systemui" ||
-            KoruAccessibilityService.SKIP_PACKAGES.contains(pkg) ||
-            pkg.contains("launcher", ignoreCase = true) ||
-            pkg.contains("home", ignoreCase = true)
-        if (!plausibleHost) return
-        val viewId = try {
-            event.source?.viewIdResourceName
+        if (!RecentsDetector.isPlausibleRecentsHostPackage(
+                pkg, KoruAccessibilityService.SKIP_PACKAGES,
+            )
+        ) {
+            return
+        }
+        // Il nodo source va riciclato pre-Tiramisu (caller-owned sotto API 33)
+        // — stesso pattern di withRootInActiveWindow: i nodi non riciclati
+        // saturano il buffer binder accessibility ("Suspicious node", fps drop).
+        val src = try {
+            event.source
         } catch (_: Exception) {
             null
         }
-        val text = event.text?.filterNotNull()?.joinToString(" ")?.takeIf { it.isNotBlank() }
-            ?: event.contentDescription?.toString()
-        if (RecentsDetector.isClearAllNode(viewId, text)) {
-            BlackBox.log("RECENTS", "\"Cancella tutto\" rilevato (id=$viewId) → reset contatore")
-            OpenAppsTracker.resetAll(service.applicationContext)
+        try {
+            val viewId = src?.viewIdResourceName
+            val text = event.text?.filterNotNull()?.joinToString(" ")?.takeIf { it.isNotBlank() }
+                ?: event.contentDescription?.toString()
+            if (RecentsDetector.isClearAllNode(viewId, text)) {
+                BlackBox.log("RECENTS", "\"Cancella tutto\" rilevato (id=$viewId) → reset contatore")
+                OpenAppsTracker.resetAll(service.applicationContext)
+            }
+        } finally {
+            if (src != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                @Suppress("DEPRECATION")
+                try {
+                    src.recycle()
+                } catch (_: Throwable) {
+                }
+            }
         }
     }
 
@@ -274,9 +387,14 @@ object LauncherRecentsGate {
 
     /// Hook da onDestroy: serviceInfo non è più mutabile qui — il rebind del
     /// service ripristina da solo l'eventTypes del config XML (senza
-    /// typeViewClicked), quindi basta azzerare lo stato in-memory.
+    /// typeViewClicked), quindi basta azzerare lo stato in-memory. I runnable
+    /// pending vanno RIMOSSI dalla queue (non solo nullati): un kick orfano
+    /// post-destroy sparerebbe comunque l'HOME intent.
     fun onServiceDestroyed() {
+        pendingKick?.let { mainHandler.removeCallbacks(it) }
         pendingKick = null
+        pendingSessionSanity?.let { mainHandler.removeCallbacks(it) }
+        pendingSessionSanity = null
         allowUntilUptimeMs = 0L
         sessionAllowed = false
         recentsVisible = false
@@ -306,6 +424,7 @@ object LauncherRecentsGate {
 
     internal fun debugResetState() {
         pendingKick = null
+        pendingSessionSanity = null
         shieldActive = false
         allowUntilUptimeMs = 0L
         sessionAllowed = false

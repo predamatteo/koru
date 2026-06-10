@@ -50,3 +50,6 @@ app.*.map.json
 
 # Local test artifacts
 koru_test.png
+
+# Log e screenshot scaricati dal device durante i test manuali
+_device_logs/

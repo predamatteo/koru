@@ -7,6 +7,7 @@ import '../../../core/constants/koru_colors.dart';
 import '../../../core/di/providers.dart';
 import '../../../core/diagnostics/black_box.dart';
 import '../../../core/router/app_router.dart';
+import '../../../platform/permission_channel.dart';
 import '../../providers/app_list_provider.dart';
 import '../../providers/launcher_swipe_actions_provider.dart';
 import '../../providers/open_apps_count_provider.dart';
@@ -41,6 +42,13 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
     with WidgetsBindingObserver, RouteAware {
   ModalRoute<dynamic>? _subscribedRoute;
 
+  /// Canale permessi cacheato in [initState]: il path di teardown
+  /// (`dispose` → `_setLauncherActive(false)`) NON può usare `ref` —
+  /// Riverpod lancia StateError dopo l'unmount (context.mounted è già
+  /// false durante dispose), il che lasciava l'esclusione gesture e lo
+  /// shield recents nativi accesi e saltava removeObserver/super.dispose.
+  late final PermissionChannel _permission;
+
   /// Overscroll-to-open: oltre questa quantità di overscroll verso il fondo
   /// (px logici, generata da un drag del dito) lo swipe-su SOPRA la lista apre
   /// "All apps". Soglia deliberata per non aprire al solo raggiungere l'ultimo
@@ -52,6 +60,7 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
   @override
   void initState() {
     super.initState();
+    _permission = ref.read(platformChannelServiceProvider).permission;
     WidgetsBinding.instance.addObserver(this);
     if (!_launcherFirstFrameLogged) {
       _launcherFirstFrameLogged = true;
@@ -121,10 +130,7 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
     // RouteAware dell'esclusione. Il flag nativo da solo non basta quando
     // un'altra app copre Koru (la route Dart resta /launcher): la correttezza
     // la porta il guard previous-foreground del LauncherRecentsGate.
-    ref
-        .read(platformChannelServiceProvider)
-        .permission
-        .setLauncherRecentsShield(active);
+    _permission.setLauncherRecentsShield(active);
     if (active) {
       // Conteggio schede + capability dell'icona: refresh a ogni ritorno in
       // cima / resume. Pull-only: mentre il launcher è visibile nessun'altra
@@ -145,10 +151,8 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
   }
 
   void _setGestureExclusion(bool enabled) {
-    ref
-        .read(platformChannelServiceProvider)
-        .permission
-        .setLauncherGestureExclusion(enabled);
+    // Via canale cacheato, NON ref: vedi [_permission] (chiamato da dispose).
+    _permission.setLauncherGestureExclusion(enabled);
   }
 
   @override
@@ -470,7 +474,7 @@ class _RecentsShortcut extends ConsumerWidget {
       color: KoruColors.primary.withAlpha(enabled ? 40 : 20),
       shape: const StadiumBorder(),
       child: InkWell(
-        onTap: enabled ? () => _openRecents(ref) : null,
+        onTap: enabled ? () => _openRecents(context, ref) : null,
         onLongPress: enabled ? () => _resetCount(context, ref) : null,
         customBorder: const StadiumBorder(),
         child: SizedBox(
@@ -500,11 +504,14 @@ class _RecentsShortcut extends ConsumerWidget {
     );
   }
 
-  Future<void> _openRecents(WidgetRef ref) async {
+  Future<void> _openRecents(BuildContext context, WidgetRef ref) async {
     final blocking = ref.read(platformChannelServiceProvider).blocking;
     // openSystemRecents emette l'allow-token sul gate nativo prima di
     // GLOBAL_ACTION_RECENTS (altrimenti il blocco gesture la richiuderebbe).
     await blocking.openSystemRecents();
+    // Dopo l'await il widget può essere stato smontato (es. HOME intent che
+    // rimpiazza la route): usare ref oltre l'unmount lancia StateError.
+    if (!context.mounted) return;
     // Al rientro il conteggio può essere cambiato (clear-all, app chiuse):
     // il resume del launcher lo rinfresca comunque, questo accorcia l'attesa.
     ref.invalidate(openAppsCountProvider);
@@ -516,15 +523,15 @@ class _RecentsShortcut extends ConsumerWidget {
         .read(platformChannelServiceProvider)
         .blocking
         .resetOpenAppsCount();
+    // Mounted guard PRIMA di ri-usare ref (stessa ragione di _openRecents).
+    if (!context.mounted) return;
     ref.invalidate(openAppsCountProvider);
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Open apps counter reset'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Open apps counter reset'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 }
 

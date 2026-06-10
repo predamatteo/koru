@@ -158,7 +158,25 @@ object StrictModeMethodChannel {
                         result.success(null)
                     }
                     "getStrictModeOptions" -> {
-                        result.success(StrictModeStore.readMask(activity))
+                        // Off-main: readMask decritta EncryptedSharedPreferences
+                        // e calcola l'HMAC con chiave Keystore (IPC keymaster) a
+                        // OGNI chiamata — sul platform thread (= main thread)
+                        // sono gli stall 17-1695ms misurati nei black-box (vedi
+                        // StrictModeEnforcer: "il main thread non tocca mai il
+                        // Keystore"). Da quando la capability dell'icona recents
+                        // del launcher lo invoca a ogni ritorno alla home non è
+                        // più un path freddo: Thread + runOnUiThread come gli
+                        // altri handler lenti (AppInventory/Recents).
+                        Thread {
+                            try {
+                                val mask = StrictModeStore.readMask(activity)
+                                activity.runOnUiThread { result.success(mask) }
+                            } catch (e: Exception) {
+                                activity.runOnUiThread {
+                                    result.error("STRICT_READ_ERROR", e.message, null)
+                                }
+                            }
+                        }.start()
                     }
                     "generateBackdoorCode" -> {
                         // SEC-10: può essere null se il Keystore non è disponibile

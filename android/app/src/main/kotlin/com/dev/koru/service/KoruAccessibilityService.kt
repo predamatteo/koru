@@ -36,17 +36,21 @@ import java.util.Calendar
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Koru blocking engine running inside an AccessibilityService process.
+ * Koru blocking engine running inside an AccessibilityService.
  *
  * Event-driven su TYPE_WINDOW_STATE_CHANGED — quando rileva un'app bloccata
  * da un profilo attivo:
  *   1. Mostra l'overlay Koru via [OverlayManager] (ComposeView sopra tutto).
  *   2. Performa GLOBAL_ACTION_HOME per riportare l'utente alla home.
  *
- * L'OverlayManager deve vivere nello stesso processo dell'AccessibilityService
- * (cioè `:accessibility`) perché entrambi usano WindowManager attached a
- * quel processo. È un proprio OverlayManager distinto da quello di
- * LockForegroundService (che gira nel main process).
+ * INVARIANTE LOAD-BEARING: il service gira nel processo MAIN (il manifest NON
+ * dichiara `android:process` — vedi il commento lì). I singleton in-memory
+ * condivisi con engine Flutter e channel handler ([LauncherRecentsGate],
+ * [OpenAppsTracker], la cache di StrictModeEnforcer) funzionano SOLO perché
+ * tutto vive in un processo: spostare il service in un `:accessibility`
+ * separato li romperebbe in silenzio (flag mai visibili cross-process,
+ * mask sempre fail-secure). L'OverlayManager qui è distinto da quello di
+ * LockForegroundService per ownership del lifecycle, non per processo.
  */
 /// Snapshot atomico dello stato profili caricato dal DB. Il foreground thread
 /// di AccessibilityService scrive (via [KoruAccessibilityService.loadProfiles])
@@ -141,6 +145,18 @@ class KoruAccessibilityService : AccessibilityService() {
             "com.huawei.android.launcher",
             "com.oppo.launcher",
             "com.oneplus.launcher",
+            // OnePlus OxygenOS ≤11 usa net.oneplus.launcher (l'entry sopra
+            // non esiste su device reali ma resta per sicurezza). Questo set
+            // è anche il canale di CONSEGNA degli eventi recents: un host
+            // fuori da qui non entra nel watched-set dinamico e il blocco
+            // gesture/clear-all muore in silenzio su quegli OEM.
+            "net.oneplus.launcher",
+            "com.bbk.launcher2", // Vivo
+            "com.hihonor.android.launcher", // Honor
+            "com.mi.android.globallauncher", // Xiaomi POCO/global
+            "com.sonymobile.home", // Sony
+            "com.asus.launcher", // Asus
+            "com.nothing.launcher", // Nothing
             "com.coloros.safecenter",
         )
 

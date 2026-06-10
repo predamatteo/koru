@@ -70,12 +70,30 @@ object OpenAppsTracker {
             ?: return
         val now = System.currentTimeMillis()
         val bootWallMs = now - SystemClock.elapsedRealtime()
-        val start = sweepWindowStartMs(
+        var start = sweepWindowStartMs(
             bootWallMs = bootWallMs,
             resetWallMs = readResetAnchor(context),
             lastSweepEndWallMs = lastSweepEndWallMs,
             overlapMs = SWEEP_OVERLAP_MS,
         )
+        if (start > now) {
+            // Orologio spostato all'indietro (manuale/NITZ) dopo una sweep o
+            // un reset: senza clamp la finestra resterebbe nel futuro e il
+            // contatore congelato finché il wall clock non la raggiunge.
+            // Ri-ancoriamo a `now` (costo: una sola ri-scansione overlap) e
+            // correggiamo l'ancora persistita se anch'essa nel futuro.
+            start = now - SWEEP_OVERLAP_MS
+            if (resetWallMs > now) {
+                resetWallMs = now
+                try {
+                    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                        .edit()
+                        .putLong(KEY_RESET_WALL_MS, now)
+                        .apply()
+                } catch (_: Exception) {
+                }
+            }
+        }
         if (start < now) {
             val events = usm.queryEvents(start, now) ?: return
             val event = UsageEvents.Event()
@@ -137,6 +155,14 @@ object OpenAppsTracker {
     /// Azzera il conteggio e persiste l'ancora: usato dal long-press
     /// sull'icona del launcher e dal rilevamento best-effort di "Cancella
     /// tutto" nelle recents ([LauncherRecentsGate]).
+    ///
+    /// @Synchronized: serializza con [refresh] (che gira sul thread di
+    /// background del channel handler). Senza, un clear() a metà di una sweep
+    /// in volo si fa ri-aggiungere package pre-reset dagli add successivi
+    /// dell'iterazione — e la finestra incrementale non li rivaluta mai →
+    /// conteggio non-zero permanente dopo il reset. Il blocco è accettabile:
+    /// azione user-initiated, durata sweep limitata.
+    @Synchronized
     fun resetAll(context: Context) {
         val now = System.currentTimeMillis()
         tracked.clear()
