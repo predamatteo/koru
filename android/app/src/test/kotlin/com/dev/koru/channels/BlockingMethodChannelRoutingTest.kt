@@ -6,6 +6,7 @@ import com.dev.koru.channels.blocking.DeviceInfoCallHandler
 import com.dev.koru.channels.blocking.LimitsCallHandler
 import com.dev.koru.channels.blocking.NotificationFilterCallHandler
 import com.dev.koru.channels.blocking.QuickBlockCallHandler
+import com.dev.koru.channels.blocking.RecentsCallHandler
 import com.dev.koru.channels.blocking.ServiceLifecycleCallHandler
 import com.dev.koru.channels.blocking.UsageStatsCallHandler
 import com.dev.koru.channels.blocking.WifiCallHandler
@@ -76,6 +77,10 @@ class BlockingMethodChannelRoutingTest {
         "openNotificationAccessSettings",
         // wifi
         "getCurrentWifiSsid",
+        // recents / contatore schede launcher
+        "getOpenAppsCount",
+        "resetOpenAppsCount",
+        "openSystemRecents",
     )
 
     @Test
@@ -85,12 +90,14 @@ class BlockingMethodChannelRoutingTest {
     }
 
     @Test
-    fun routingTable_hasExactly30Methods() {
+    fun routingTable_hasExactly33Methods() {
         // Sentinella sul numero: se un futuro metodo viene aggiunto senza
         // aggiornare questo test, il count diverge e il test fallisce,
         // forzando una rivisitazione consapevole del wire-contract.
-        // 30 = 29 storici + `getAppIcon` (Fase 2: decode lazy delle icone).
-        assertThat(BlockingMethodChannel.routingTable).hasSize(30)
+        // 33 = 29 storici + `getAppIcon` (Fase 2: decode lazy delle icone)
+        // + i 3 del contatore schede launcher (getOpenAppsCount /
+        // resetOpenAppsCount / openSystemRecents).
+        assertThat(BlockingMethodChannel.routingTable).hasSize(33)
     }
 
     @Test
@@ -144,6 +151,11 @@ class BlockingMethodChannelRoutingTest {
 
         // wifi
         assertThat(table["getCurrentWifiSsid"]).isEqualTo(WifiCallHandler)
+
+        // recents / contatore schede launcher
+        assertThat(table["getOpenAppsCount"]).isEqualTo(RecentsCallHandler)
+        assertThat(table["resetOpenAppsCount"]).isEqualTo(RecentsCallHandler)
+        assertThat(table["openSystemRecents"]).isEqualTo(RecentsCallHandler)
     }
 
     @Test
