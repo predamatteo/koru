@@ -361,6 +361,16 @@ class KoruAccessibilityService : AccessibilityService() {
     /// fallback BACK→HOME): scattare a schermo off e' no-op nel migliore
     /// dei casi e disturbo nel peggiore. checkAppBlocking li rischedula
     /// al prossimo window-state-change utile.
+    ///
+    /// Il lock chiude anche la SESSIONE di bypass: stessa semantica
+    /// dell'uscita dall'app ("una sessione = una scelta"). Revoca ALL invece
+    /// di clearBypass(lastBypassedActiveForeground) perche' il tracker puo'
+    /// essere andato perso (service restart a meta' sessione: onDestroy lo
+    /// nulla e viene ri-popolato solo al prossimo window event) — e per
+    /// l'invariante dell'exit-revoke al massimo un package ha bypass attivi,
+    /// quindi "all" e il pkg tracciato coincidono quando il tracking c'e'.
+    /// Al re-sblocco handleUserPresent ri-esegue checkAppBlocking sul
+    /// foreground reale → l'overlay ricompare senza altro codice.
     private fun handleScreenOff() {
         Log.d(TAG, "SCREEN_OFF: dismiss overlay + cancel pending runnables")
         mainHandler.post {
@@ -378,6 +388,9 @@ class KoruAccessibilityService : AccessibilityService() {
             pendingLimitChecks.clear()
             pendingWindowBoundaryChecks.values.forEach { mainHandler.removeCallbacks(it) }
             pendingWindowBoundaryChecks.clear()
+            Log.i(TAG, "BYPASS-REVOKE-DO: screen off → revoke session bypasses (was tracking $lastBypassedActiveForeground)")
+            OverlayManager.revokeAllBypasses()
+            lastBypassedActiveForeground = null
         }
     }
 

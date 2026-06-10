@@ -159,4 +159,24 @@ class OverlayManagerBypassTest {
         assertThat(OverlayManager.isLimitBypassActive(pkg, "b.com")).isFalse()
         assertThat(OverlayManager.isLimitBypassActive(pkg)).isFalse()
     }
+
+    @Test
+    fun revokeAllBypasses_clearsAppDomainAndSectionKeys() {
+        // revokeAllBypasses è la revoca di sessione allo screen-off (oltre che
+        // del toggle strict): deve azzerare OGNI variante di chiave — app-wide
+        // (pkg), per-dominio (pkg|sito), per-sezione (pkg|section:*) — e anche
+        // i bypass di package diversi da quello tracciato (il tracking può
+        // essere andato perso dopo un service restart).
+        val otherPkg = "com.google.android.youtube"
+        OverlayManager.markBypassed(pkg, 5 * 60_000L, reason = BlockReason.APP_BLOCKED)
+        OverlayManager.markBypassed(pkg, 5 * 60_000L, domain = "reddit.com", reason = BlockReason.WEBSITE_BLOCKED)
+        OverlayManager.markBypassed(pkg, 5 * 60_000L, domain = "section:reels", reason = BlockReason.SECTION_BLOCKED)
+        OverlayManager.markBypassed(otherPkg, 5 * 60_000L, reason = BlockReason.USAGE_LIMIT)
+        OverlayManager.revokeAllBypasses()
+        assertThat(OverlayManager.isBypassed(pkg)).isFalse()
+        assertThat(OverlayManager.isBypassed(pkg, "reddit.com")).isFalse()
+        assertThat(OverlayManager.isBypassed(pkg, "section:reels")).isFalse()
+        assertThat(OverlayManager.isBypassed(otherPkg)).isFalse()
+        assertThat(OverlayManager.isLimitBypassActive(otherPkg)).isFalse()
+    }
 }

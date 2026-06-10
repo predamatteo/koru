@@ -64,6 +64,11 @@ class LockRunnable(
     /// revocato. Garantisce che il backup polling abbia lo stesso behavior
     /// del path primario quando l'AccessibilityService è morto.
     /// Granularità: limitata al periodo di poll (300ms/5s/10s).
+    /// Anche lo screen-off chiude la sessione: la transizione
+    /// interactive→off viene edge-detectata nel loop di run() (checkAndBlock
+    /// non gira a schermo spento) e revoca TUTTI i bypass — non solo questo
+    /// tracker, che resta null finché accessibility è vivo (early-return
+    /// backup-only prima del tracking).
     private var lastBypassedForegroundPkg: String? = null
 
     private val skipPackages = mutableSetOf<String>().apply {
@@ -87,9 +92,26 @@ class LockRunnable(
         // è gratis (lookup ServiceManager) e qui era nel hot loop.
         val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
 
+        // Parte true di proposito: se il processo (ri)parte a schermo già
+        // spento, la prima iterazione "vede" la transizione e fa catch-up
+        // dei bypass orfani di un kill avvenuto durante il doze.
+        var wasInteractive = true
+
         while (isRunning) {
             try {
                 val interactive = pm.isInteractive
+                // Screen-off = fine sessione, come l'uscita dall'app. Va
+                // edge-detectato qui perché checkAndBlock non gira a schermo
+                // spento. revokeAll (non per-pkg): il tracker è null finché
+                // accessibility è vivo, ma il bypass nel BypassStore esiste
+                // comunque e non deve sopravvivere al lock. Idempotente
+                // rispetto alla stessa revoca nel path primario.
+                if (!interactive && wasInteractive) {
+                    Log.i(TAG, "[BACKUP] Screen off → revoke session bypasses (was tracking $lastBypassedForegroundPkg)")
+                    OverlayManager.revokeAllBypasses()
+                    lastBypassedForegroundPkg = null
+                }
+                wasInteractive = interactive
                 if (interactive) checkAndBlock()
 
                 iterationCount++

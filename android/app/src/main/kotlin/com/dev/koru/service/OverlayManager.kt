@@ -194,9 +194,14 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
             BypassStore.removePackage(ctx, packageName)
         }
 
-        /// Revoca tutti i bypass attivi. Esposto per strict mode toggle:
-        /// quando l'utente attiva strict, eventuali bypass timed pendenti
-        /// non hanno più senso e vanno azzerati.
+        /// Revoca tutti i bypass attivi. Caller:
+        ///  - strict mode toggle: quando l'utente attiva strict, eventuali
+        ///    bypass timed pendenti non hanno più senso e vanno azzerati;
+        ///  - screen-off (KoruAccessibilityService.handleScreenOff e
+        ///    LockRunnable sulla transizione interactive→off): il lock chiude
+        ///    la sessione come l'uscita dall'app. "All" e non per-pkg perche'
+        ///    il tracking del pkg bypassato puo' essere perso (service
+        ///    restart) e per invariante al massimo un package ha bypass vivi.
         fun revokeAllBypasses() {
             val ctx = appContext ?: return
             BypassStore.clearAll(ctx)
