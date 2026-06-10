@@ -13,6 +13,7 @@ import android.os.PowerManager
 import android.os.Process
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
+import com.dev.koru.service.LauncherRecentsGate
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
@@ -83,6 +84,14 @@ activity.startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
                     "setLauncherGestureExclusion" -> {
                         val enabled = call.argument<Boolean>("enabled") ?: false
                         setLauncherGestureExclusion(activity, enabled)
+                        result.success(null)
+                    }
+                    "setLauncherRecentsShield" -> {
+                        // Blocco della gesture recents scopato al launcher:
+                        // cavalca lo stesso lifecycle RouteAware dell'esclusione
+                        // gesture (LauncherHomeScreen._setLauncherActive).
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        LauncherRecentsGate.setShieldActive(enabled)
                         result.success(null)
                     }
                     "checkAllPermissions" -> {

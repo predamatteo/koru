@@ -414,6 +414,9 @@ class KoruAccessibilityService : AccessibilityService() {
             Log.i(TAG, "BYPASS-REVOKE-DO: screen off → revoke session bypasses (was tracking $lastBypassedActiveForeground)")
             OverlayManager.revokeAllBypasses()
             lastBypassedActiveForeground = null
+            // Niente recents visibili a schermo spento: chiudi sessione/token
+            // del gate e l'eventuale kick pending.
+            LauncherRecentsGate.onScreenOff(this)
         }
     }
 
@@ -796,6 +799,16 @@ class KoruAccessibilityService : AccessibilityService() {
         if (event == null) return
         val pkg = event.packageName?.toString() ?: return
 
+        // Click events: consegnati SOLO mentre una sessione recents è attiva
+        // (LauncherRecentsGate abilita typeViewClicked dinamicamente via
+        // serviceInfo, come applyDynamicPackageFilter fa con packageNames).
+        // Rileva "Cancella tutto" → reset del contatore schede. Early-return:
+        // mai sul path di blocking.
+        if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+            LauncherRecentsGate.onViewClicked(this, event)
+            return
+        }
+
         // Snapshot atomico in cima all'event: tutti i check successivi
         // useranno questa view consistente, anche se loadProfiles() viene
         // richiamato concorrentemente dal Refresh receiver. Se in un branch
@@ -893,6 +906,13 @@ class KoruAccessibilityService : AccessibilityService() {
         // Strict Mode check (blocks settings/recent/uninstall based on mask)
         if (StrictModeEnforcer.handleEvent(this, event)) return
 
+        // Gate launcher-scoped sulle recents (gesture swipe-up-hold bloccata
+        // mentre il launcher Koru è in cima; allow-token per l'apertura via
+        // icona). DEVE stare DOPO lo strict check (strict vince: il token non
+        // può fare da bypass di BLOCK_RECENT_APPS) e PRIMA del return
+        // SKIP_PACKAGES (l'host delle recents È nello skip-set).
+        if (LauncherRecentsGate.handleEvent(this, event)) return
+
         if (SKIP_PACKAGES.contains(pkg) || pkg == packageName) {
             // Launcher o Koru stesso in foreground — NON dismiss overlay:
             // siamo probabilmente qui proprio perché abbiamo fatto HOME dopo
@@ -903,6 +923,10 @@ class KoruAccessibilityService : AccessibilityService() {
         }
 
         lastForegroundPackage = pkg
+        // Add opportunistico al contatore "schede aperte" (la fonte di verità
+        // resta la sweep UsageStats in OpenAppsTracker.refresh — il watched-set
+        // dinamico filtra questi eventi alle sole app con profilo/limite).
+        OpenAppsTracker.noteForeground(applicationContext, pkg)
 
         val now = System.currentTimeMillis()
         if (now - lastProfileLoadTime > 10_000) loadProfiles()
@@ -2048,6 +2072,7 @@ class KoruAccessibilityService : AccessibilityService() {
         pendingWindowBoundaryChecks.clear()
         pendingBackFallbacks.values.forEach { mainHandler.removeCallbacks(it) }
         pendingBackFallbacks.clear()
+        LauncherRecentsGate.onServiceDestroyed()
         lastBypassedActiveForeground = null
         preLaunchOverlayPackage = null
         endOverlayOverApp()
