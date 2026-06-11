@@ -73,6 +73,16 @@ object OpenAppsTracker {
     @Volatile private var lastSweepEndWallMs = 0L
     @Volatile private var lastSweepUptimeMs = 0L
 
+    /// Floor della finestra di sweep dopo un sync con le card reali: a
+    /// differenza di [lastSweepEndWallMs] NON subisce l'overlap. Il replace
+    /// del set È la verità a quell'istante — senza questo floor la sweep
+    /// successiva (al resume del launcher) rilegge gli ACTIVITY_RESUMED
+    /// precedenti al sync e "resuscita" una scheda appena swipe-ata via
+    /// (count vecchio finché non si rientra/riesce dalle recents). Non
+    /// persistito di proposito: dopo un process restart la sweep ri-deriva
+    /// tutto dal boot by design.
+    @Volatile private var recentsSyncFloorWallMs = 0L
+
     /// -1 = ancora mai letto dalle prefs (lazy load alla prima sweep).
     @Volatile private var resetWallMs = -1L
 
@@ -98,6 +108,7 @@ object OpenAppsTracker {
             resetWallMs = readResetAnchor(context),
             lastSweepEndWallMs = lastSweepEndWallMs,
             overlapMs = SWEEP_OVERLAP_MS,
+            recentsSyncFloorWallMs = recentsSyncFloorWallMs,
         )
         if (start > now) {
             // Orologio spostato all'indietro (manuale/NITZ) dopo una sweep o
@@ -106,6 +117,7 @@ object OpenAppsTracker {
             // Ri-ancoriamo a `now` (costo: una sola ri-scansione overlap) e
             // correggiamo l'ancora persistita se anch'essa nel futuro.
             start = now - SWEEP_OVERLAP_MS
+            if (recentsSyncFloorWallMs > now) recentsSyncFloorWallMs = now
             if (resetWallMs > now) {
                 resetWallMs = now
                 try {
@@ -361,13 +373,25 @@ object OpenAppsTracker {
         }
         val next = computeRecentsSync(tracked.toSet(), matched, sawClearAll, visitedNodes)
             ?: return
-        tracked.clear()
-        tracked.addAll(next)
         BlackBox.log(
             "RECENTS",
             "sync da recents (root=$rootPkg, nodi=$visitedNodes): ${next.size} schede" +
                 if (next.isEmpty()) " (vuote)" else " [${next.joinToString()}]",
         )
+        applyRecentsResult(next, System.currentTimeMillis())
+    }
+
+    /// Replace del set + avanzamento delle ancore di sweep (anti-resurrezione:
+    /// vedi [recentsSyncFloorWallMs]). Estratta da [applyRecentsScan] per
+    /// essere testabile in JUnit puro — il wrapper Context-bound filtra e
+    /// decide, qui solo la transizione di stato. @Synchronized rientrante:
+    /// la chiamata annidata dal wrapper è sicura.
+    @Synchronized
+    internal fun applyRecentsResult(next: Set<String>, nowWallMs: Long) {
+        tracked.clear()
+        tracked.addAll(next)
+        lastSweepEndWallMs = nowWallMs
+        recentsSyncFloorWallMs = nowWallMs
         notifyCountChanged()
     }
 
@@ -446,15 +470,20 @@ object OpenAppsTracker {
 
     /// Inizio della finestra di sweep: mai prima del boot corrente (così
     /// un'ancora di reset di un boot precedente è innocua), mai prima del
-    /// reset, e incrementale rispetto all'ultima sweep (con overlap anti-gap).
+    /// reset, mai prima dell'ultimo sync con le card (floor SENZA overlap:
+    /// il sync è verità puntuale, l'overlap lo bucherebbe di 2s e gli
+    /// ACTIVITY_RESUMED appena precedenti risusciterebbero le schede chiuse),
+    /// e incrementale rispetto all'ultima sweep (con overlap anti-gap).
     internal fun sweepWindowStartMs(
         bootWallMs: Long,
         resetWallMs: Long,
         lastSweepEndWallMs: Long,
         overlapMs: Long,
+        recentsSyncFloorWallMs: Long,
     ): Long = maxOf(
         bootWallMs,
         resetWallMs,
+        recentsSyncFloorWallMs,
         if (lastSweepEndWallMs > 0) lastSweepEndWallMs - overlapMs else 0L,
     )
 
@@ -484,5 +513,10 @@ object OpenAppsTracker {
         resetWallMs = -1L
         muteSyncUntilUptimeMs = 0L
         lastFreshPruneUptimeMs = 0L
+        recentsSyncFloorWallMs = 0L
     }
+
+    internal fun debugTrackedSnapshot(): Set<String> = tracked.toSet()
+    internal fun debugLastSweepEndWallMs(): Long = lastSweepEndWallMs
+    internal fun debugRecentsSyncFloorWallMs(): Long = recentsSyncFloorWallMs
 }

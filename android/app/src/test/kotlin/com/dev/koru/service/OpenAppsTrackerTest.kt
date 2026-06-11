@@ -59,50 +59,58 @@ class OpenAppsTrackerTest {
 
     private val BOOT = 1_000_000L
 
+    private fun sweepStart(
+        resetWallMs: Long = 0L,
+        lastSweepEndWallMs: Long = 0L,
+        recentsSyncFloorWallMs: Long = 0L,
+    ) = OpenAppsTracker.sweepWindowStartMs(
+        bootWallMs = BOOT,
+        resetWallMs = resetWallMs,
+        lastSweepEndWallMs = lastSweepEndWallMs,
+        overlapMs = 2_000L,
+        recentsSyncFloorWallMs = recentsSyncFloorWallMs,
+    )
+
     @Test
     fun firstSweep_startsAtBoot() {
-        val start = OpenAppsTracker.sweepWindowStartMs(
-            bootWallMs = BOOT, resetWallMs = 0L, lastSweepEndWallMs = 0L, overlapMs = 2_000L,
-        )
-        assertThat(start).isEqualTo(BOOT)
+        assertThat(sweepStart()).isEqualTo(BOOT)
     }
 
     @Test
     fun incrementalSweep_overlapsPreviousWindow() {
-        val start = OpenAppsTracker.sweepWindowStartMs(
-            bootWallMs = BOOT, resetWallMs = 0L, lastSweepEndWallMs = BOOT + 60_000L, overlapMs = 2_000L,
-        )
-        assertThat(start).isEqualTo(BOOT + 58_000L)
+        assertThat(sweepStart(lastSweepEndWallMs = BOOT + 60_000L))
+            .isEqualTo(BOOT + 58_000L)
     }
 
     @Test
     fun resetAnchor_winsOverBootAndIncrement() {
         val reset = BOOT + 100_000L
-        val start = OpenAppsTracker.sweepWindowStartMs(
-            bootWallMs = BOOT, resetWallMs = reset, lastSweepEndWallMs = BOOT + 60_000L, overlapMs = 2_000L,
-        )
-        assertThat(start).isEqualTo(reset)
+        assertThat(sweepStart(resetWallMs = reset, lastSweepEndWallMs = BOOT + 60_000L))
+            .isEqualTo(reset)
     }
 
     @Test
     fun staleResetAnchorFromPreviousBoot_isNeutralizedByBootTime() {
         // Reboot DOPO il reset: bootTime corrente > vecchia ancora → vince il
         // boot, l'ancora persistita del boot precedente è innocua.
-        val staleReset = BOOT - 500_000L
-        val start = OpenAppsTracker.sweepWindowStartMs(
-            bootWallMs = BOOT, resetWallMs = staleReset, lastSweepEndWallMs = 0L, overlapMs = 2_000L,
-        )
-        assertThat(start).isEqualTo(BOOT)
+        assertThat(sweepStart(resetWallMs = BOOT - 500_000L)).isEqualTo(BOOT)
     }
 
     @Test
     fun overlapNeverUnderflowsBeforeBoot() {
         // Sweep incrementale subito dopo il boot: l'overlap non deve far
         // retrocedere la finestra prima del boot.
-        val start = OpenAppsTracker.sweepWindowStartMs(
-            bootWallMs = BOOT, resetWallMs = 0L, lastSweepEndWallMs = BOOT + 1_000L, overlapMs = 2_000L,
-        )
-        assertThat(start).isEqualTo(BOOT)
+        assertThat(sweepStart(lastSweepEndWallMs = BOOT + 1_000L)).isEqualTo(BOOT)
+    }
+
+    @Test
+    fun syncFloor_winsOverIncrementalOverlap() {
+        // Floor e ultima sweep allo stesso istante T: il floor NON subisce
+        // l'overlap — la finestra parte da T, non da T-2s (il buco di 2s
+        // permetteva la resurrezione di una scheda appena swipe-ata via).
+        val t = BOOT + 60_000L
+        assertThat(sweepStart(lastSweepEndWallMs = t, recentsSyncFloorWallMs = t))
+            .isEqualTo(t)
     }
 
     // ─── computeRecentsSync (sync con le card reali delle recents) ──────────
@@ -199,5 +207,41 @@ class OpenAppsTrackerTest {
     fun cardDescription_unknownLabel_doesNotMatch() {
         assertThat(OpenAppsTracker.matchCardDescription("Cancella tutto", LABELS)).isNull()
         assertThat(OpenAppsTracker.matchCardDescription("Screenshot", LABELS)).isNull()
+    }
+
+    // ─── applyRecentsResult (transizione set + ancore) ───────────────────────
+
+    @Test
+    fun applyRecentsResult_replacesSetAndAdvancesAnchors() {
+        OpenAppsTracker.debugResetInMemoryState()
+        val t0 = BOOT + 10_000L
+        val t1 = BOOT + 20_000L
+        OpenAppsTracker.applyRecentsResult(setOf("com.whatsapp"), t0)
+        assertThat(OpenAppsTracker.debugTrackedSnapshot()).containsExactly("com.whatsapp")
+        OpenAppsTracker.applyRecentsResult(emptySet(), t1)
+        assertThat(OpenAppsTracker.debugTrackedSnapshot()).isEmpty()
+        assertThat(OpenAppsTracker.debugLastSweepEndWallMs()).isEqualTo(t1)
+        assertThat(OpenAppsTracker.debugRecentsSyncFloorWallMs()).isEqualTo(t1)
+    }
+
+    @Test
+    fun resurrectionScenario_postSyncSweepExcludesPreSyncEvents() {
+        // Il bug pinnato: WhatsApp RESUMED a t1, swipe-ato via dalle recents
+        // a t2 (sync → set vuoto). La sweep al resume del launcher NON deve
+        // ripartire da prima di t1 (overlap incluso), altrimenti WhatsApp
+        // risuscita e il badge resta sul conteggio vecchio.
+        OpenAppsTracker.debugResetInMemoryState()
+        val t1 = BOOT + 50_000L // ACTIVITY_RESUMED di WhatsApp
+        val t2 = t1 + 30_000L // sync con recents svuotate
+        OpenAppsTracker.applyRecentsResult(emptySet(), t2)
+        val start = OpenAppsTracker.sweepWindowStartMs(
+            bootWallMs = BOOT,
+            resetWallMs = 0L,
+            lastSweepEndWallMs = OpenAppsTracker.debugLastSweepEndWallMs(),
+            overlapMs = OpenAppsTracker.SWEEP_OVERLAP_MS,
+            recentsSyncFloorWallMs = OpenAppsTracker.debugRecentsSyncFloorWallMs(),
+        )
+        assertThat(start).isEqualTo(t2)
+        assertThat(start).isGreaterThan(t1)
     }
 }
