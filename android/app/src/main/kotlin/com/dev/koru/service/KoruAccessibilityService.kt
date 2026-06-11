@@ -87,6 +87,13 @@ class KoruAccessibilityService : AccessibilityService() {
         /// Allineato a [ProfileType.time] in lib/core/constants/profile_types.dart.
         const val PROFILE_TYPE_TIME = 1
 
+        /// Delay del re-check post ghost-skip (vedi [scheduleGhostRecheck]):
+        /// primo tentativo a 800ms (il lag di flush UsageStats osservato
+        /// on-device era ~0.6-1.1s sotto carico unlock/animazione), retry
+        /// singolo a +1.5s — copertura totale ~2.3s.
+        private const val GHOST_RECHECK_DELAY_MS = 800L
+        private const val GHOST_RECHECK_RETRY_DELAY_MS = 1_500L
+
         /// Restriction type log su `restricted_access_events`: valore per gli
         /// eventi BYPASS_EXPIRED (l'utente è stato ri-prompted dopo che il TTL
         /// di un bypass è scaduto mentre era ancora dentro l'app). ARCH-06: i
@@ -427,6 +434,11 @@ class KoruAccessibilityService : AccessibilityService() {
             pendingLimitChecks.clear()
             pendingWindowBoundaryChecks.values.forEach { mainHandler.removeCallbacks(it) }
             pendingWindowBoundaryChecks.clear()
+            // Re-check ghost a schermo spento e' inutile (UsageStats vedrebbe
+            // comunque l'app sotto il keyguard): all'unlock e' handleUserPresent
+            // a rifare il check sul foreground reale.
+            pendingGhostRechecks.values.forEach { mainHandler.removeCallbacks(it) }
+            pendingGhostRechecks.clear()
             Log.i(TAG, "BYPASS-REVOKE-DO: screen off → revoke session bypasses (was tracking $lastBypassedActiveForeground)")
             OverlayManager.revokeAllBypasses()
             lastBypassedActiveForeground = null
@@ -562,6 +574,19 @@ class KoruAccessibilityService : AccessibilityService() {
     /// l'utente non genera un nuovo evento (bug osservato con profilo
     /// 9-13/14-18). Stesso pattern di [pendingLimitChecks].
     private val pendingWindowBoundaryChecks = mutableMapOf<String, Runnable>()
+
+    /// Runnable di RE-CHECK schedulati quando il ghost-guard scarta un evento,
+    /// uno per package scartato. Coprono la race "quick-switch committato ma
+    /// UsageStats non ha ancora flushato il RESUMED": l'evento finestra
+    /// dell'app target arriva PRIMA che ForegroundDetector la veda come
+    /// foreground reale → il guard la classifica ghost e dentro l'app non
+    /// arrivano altri window event → l'intera sessione resterebbe sbloccata
+    /// (bug osservato: WhatsApp→Instagram 6s dopo l'unlock, 30s senza blocco).
+    /// Il re-check ri-legge UsageStats a flush avvenuto: se l'app È il
+    /// foreground reale l'evento era genuino → checkAppBlocking vero; se non
+    /// lo è, era davvero un ghost → no-op. Stesso pattern di
+    /// [pendingLimitChecks]/[scheduleBackFallbackHome].
+    private val pendingGhostRechecks = mutableMapOf<String, Runnable>()
 
     /// Throttle per TYPE_WINDOW_CONTENT_CHANGED nei browser: limita la lettura
     /// della URL bar (operazione relativamente costosa) a max 2/s.
@@ -1154,6 +1179,64 @@ class KoruAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * Pianifica un RE-CHECK di [checkAppBlocking] per [pkg] dopo che il
+     * ghost-guard ne ha scartato l'evento finestra.
+     *
+     * Risolve la race "ingresso genuino scartato come ghost": su un
+     * quick-switch (o tap su notifica) verso un'app bloccata, l'evento
+     * TYPE_WINDOW_STATE_CHANGED dell'app target può arrivare PRIMA che
+     * UsageStats flushi il suo ACTIVITY_RESUMED — ForegroundDetector vede
+     * ancora l'app precedente come foreground reale e il guard classifica
+     * l'evento come ghost di uscita. Dentro l'app non arrivano altri window
+     * event, quindi una singola decisione sbagliata sblocca l'INTERA sessione
+     * (osservato on-device: WhatsApp→Instagram subito dopo l'unlock).
+     *
+     * Allo scadere ri-legge UsageStats (a flush ormai avvenuto):
+     *  - foreground reale == [pkg] → l'evento era genuino: rilancia
+     *    checkAppBlocking con overAppIfBlocked=true (l'utente è GIÀ dentro,
+     *    stessa semantica del re-check post-unlock di [handleUserPresent]:
+     *    overlay sopra l'app, niente kick).
+     *  - foreground reale != [pkg] al primo giro → ritenta una volta a
+     *    [GHOST_RECHECK_RETRY_DELAY_MS] (il flush può laggare oltre il primo
+     *    delay sotto carico, es. animazione di unlock).
+     *  - ancora diverso al secondo giro → era davvero un ghost: no-op.
+     *
+     * Anti-loop: il checkAppBlocking rilanciato ri-esegue il ghost-guard, che
+     * a quel punto vede foreground == pkg e procede alla valutazione vera. Un
+     * evento genuino sopravvenuto nel frattempo cancella il re-check pendente
+     * (vedi hook nel guard), quindi niente doppia valutazione.
+     *
+     * Stesso pattern di [scheduleBackFallbackHome] / [scheduleLimitCheck].
+     */
+    private fun scheduleGhostRecheck(pkg: String) {
+        pendingGhostRechecks.remove(pkg)?.let { mainHandler.removeCallbacks(it) }
+        val r = object : Runnable {
+            private var attempt = 0
+            override fun run() {
+                // Service hygiene: skip se il service e' stato distrutto.
+                if (instance != this@KoruAccessibilityService) return
+                val fg = ForegroundDetector.detect(applicationContext)?.primaryPackage
+                if (fg == pkg) {
+                    pendingGhostRechecks.remove(pkg)
+                    Log.i(TAG, "Ghost re-check: $pkg IS the real foreground → re-evaluating")
+                    BlackBox.log("A11Y", "ghost re-check: $pkg è foreground reale → re-evaluate")
+                    checkAppBlocking(pkg, profilesSnapshot.get(), overAppIfBlocked = true)
+                    return
+                }
+                if (attempt == 0) {
+                    attempt = 1
+                    mainHandler.postDelayed(this, GHOST_RECHECK_RETRY_DELAY_MS)
+                    return
+                }
+                pendingGhostRechecks.remove(pkg)
+                Log.d(TAG, "Ghost re-check: $pkg never became foreground (fg=$fg) — real ghost")
+            }
+        }
+        pendingGhostRechecks[pkg] = r
+        mainHandler.postDelayed(r, GHOST_RECHECK_DELAY_MS)
+    }
+
+    /**
      * Mostra l'overlay di estensione (time-up prompt) sopra l'app ancora
      * in foreground. A differenza del blocco "entry", NON facciamo HOME:
      * l'overlay vive sopra l'app; se l'utente sceglie un'estensione,
@@ -1281,8 +1364,20 @@ class KoruAccessibilityService : AccessibilityService() {
                 "checkAppBlocking: pkg=$packageName but real foreground=" +
                     "$foregroundDetected (ghost transition event) — skip",
             )
+            // Lo skip puo' essere un FALSO ghost: su quick-switch/notifica
+            // l'evento dell'app target arriva prima che UsageStats flushi il
+            // suo RESUMED (il foreground "reale" e' ancora l'app precedente).
+            // Senza re-check l'intera sessione resterebbe sbloccata — dentro
+            // l'app non arrivano altri window event. Il re-check differito
+            // discrimina a flush avvenuto: vero ghost → no-op.
+            scheduleGhostRecheck(packageName)
             return false
         }
+
+        // Evento genuino: un re-check ghost pendente per questo pkg e' superato
+        // da questa valutazione (evitiamo doppio overlay / doppio log quando il
+        // runnable scatterebbe a blocco gia' applicato).
+        pendingGhostRechecks.remove(packageName)?.let { mainHandler.removeCallbacks(it) }
 
         // Un evento app REALE (superato il ghost-guard) rende obsoleto lo stato
         // "pre-lancio": l'app è ora davvero in foreground — aperta dall'esterno
@@ -2093,6 +2188,8 @@ class KoruAccessibilityService : AccessibilityService() {
         pendingWindowBoundaryChecks.clear()
         pendingBackFallbacks.values.forEach { mainHandler.removeCallbacks(it) }
         pendingBackFallbacks.clear()
+        pendingGhostRechecks.values.forEach { mainHandler.removeCallbacks(it) }
+        pendingGhostRechecks.clear()
         LauncherRecentsGate.onServiceDestroyed()
         lastBypassedActiveForeground = null
         preLaunchOverlayPackage = null
