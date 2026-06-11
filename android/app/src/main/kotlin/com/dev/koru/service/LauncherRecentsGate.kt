@@ -85,6 +85,14 @@ object LauncherRecentsGate {
     /// differito parte appena FUORI dalla finestra, non sul bordo.
     private const val TRAILING_SCAN_MARGIN_MS = 50L
 
+    /// Retry su scan ambiguo ("0 card mappate ma clear-all presente", vedi
+    /// [OpenAppsTracker.RecentsSyncDecision.RetryLater]): delay breve — a
+    /// fine animazione del clear il bottone è sparito — e budget per
+    /// sessione: senza, una recents statica con label non mappate e
+    /// clear-all visibile farebbe scan→retry→scan ogni 250ms a vita.
+    private const val CLEAR_ALL_RETRY_DELAY_MS = 250L
+    private const val CLEAR_ALL_RETRY_MAX_PER_SESSION = 2
+
     internal enum class Decision {
         ALLOW_TOKEN, ALLOW_IN_SESSION, ALLOW_SHIELD_OFF, ALLOW_NOT_FROM_KORU, BLOCK,
     }
@@ -109,6 +117,9 @@ object LauncherRecentsGate {
     /// vicina in [requestDelayedScan].
     private var pendingOneShotScan: Runnable? = null
     private var pendingOneShotScanDueUptimeMs = 0L
+
+    /// Retry residui per la sessione corrente (vedi CLEAR_ALL_RETRY_*).
+    private var clearAllRetryBudget = 0
 
     @Volatile private var lastRecentsScanUptimeMs = 0L
 
@@ -209,6 +220,7 @@ object LauncherRecentsGate {
         sessionAllowed = true
         if (!firstAllow) return
         OpenAppsTracker.prewarmLabelMap(service.applicationContext)
+        clearAllRetryBudget = CLEAR_ALL_RETRY_MAX_PER_SESSION
         pendingInitialScan?.let { mainHandler.removeCallbacks(it) }
         val r = object : Runnable {
             private var attempt = 0
@@ -278,10 +290,19 @@ object LauncherRecentsGate {
 
     /// Esecuzione centralizzata di uno scan: TUTTE le sorgenti (burst
     /// iniziale, leading-edge, one-shot differiti) passano da qui, così
-    /// [lastRecentsScanUptimeMs] — e quindi il throttle — resta onesto.
-    private fun performScan(service: KoruAccessibilityService) {
+    /// [lastRecentsScanUptimeMs] — e quindi il throttle — resta onesto, e
+    /// l'esito ambiguo (RETRY_SUGGESTED) arma un retry qualunque sia la
+    /// sorgente dello scan.
+    private fun performScan(service: KoruAccessibilityService): OpenAppsTracker.RecentsScanOutcome {
         lastRecentsScanUptimeMs = SystemClock.uptimeMillis()
-        OpenAppsTracker.syncFromRecents(service)
+        val outcome = OpenAppsTracker.syncFromRecents(service)
+        if (outcome == OpenAppsTracker.RecentsScanOutcome.RETRY_SUGGESTED &&
+            clearAllRetryBudget > 0
+        ) {
+            clearAllRetryBudget--
+            requestDelayedScan(service, CLEAR_ALL_RETRY_DELAY_MS)
+        }
+        return outcome
     }
 
     /// Scan one-shot differito sullo slot unico [pendingOneShotScan]:
@@ -538,6 +559,16 @@ object LauncherRecentsGate {
             val viewId = src?.viewIdResourceName
             val text = event.text?.filterNotNull()?.joinToString(" ")?.takeIf { it.isNotBlank() }
                 ?: event.contentDescription?.toString()
+            // Diagnostica: id e testi di OGNI click in sessione (non solo i
+            // match) — serve a pinnare l'id del bottone clear-all sugli OEM
+            // non coperti (es. net.oneplus.launcher su OxygenOS 11) leggendo
+            // la BlackBox dopo una prova on-device. Volume limitato: i click
+            // arrivano solo a sessione recents attiva e da host plausibile.
+            BlackBox.log(
+                "RECENTS",
+                "click in recents ($pkg): id=$viewId text=$text" +
+                    " desc=${event.contentDescription}",
+            )
             if (RecentsDetector.isClearAllNode(viewId, text)) {
                 BlackBox.log("RECENTS", "\"Cancella tutto\" rilevato (id=$viewId) → reset contatore")
                 OpenAppsTracker.resetAll(service.applicationContext)
@@ -612,6 +643,7 @@ object LauncherRecentsGate {
         pendingInitialScan = null
         pendingOneShotScan = null
         pendingOneShotScanDueUptimeMs = 0L
+        clearAllRetryBudget = 0
         shieldActive = false
         allowUntilUptimeMs = 0L
         sessionAllowed = false

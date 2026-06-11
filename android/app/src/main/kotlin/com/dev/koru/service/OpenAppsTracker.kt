@@ -256,16 +256,23 @@ object OpenAppsTracker {
         }.start()
     }
 
+    /// Esito di [syncFromRecents] per il gate: gli SKIPPED non hanno letto
+    /// l'albero recents (non consumano tentativi del burst né throttle);
+    /// RETRY_SUGGESTED = scansione ambigua (zero card mappate ma clear-all
+    /// presente) — un re-scan ravvicinato può disambiguare.
+    internal enum class RecentsScanOutcome { SKIPPED_NO_MAP, SKIPPED_NOT_RECENTS, DONE, RETRY_SUGGESTED }
+
     /// Scansiona l'albero della schermata recents e riallinea il set. Da
     /// chiamare SOLO a sessione recents legittima (gate). Main thread (stessa
     /// classe di costo dei detector in-app esistenti; cap [MAX_SCAN_NODES]).
-    fun syncFromRecents(service: KoruAccessibilityService) {
+    internal fun syncFromRecents(service: KoruAccessibilityService): RecentsScanOutcome {
         val map = labelToPkg
         if (map == null) {
             // Mappa non pronta: avviala e riprova al prossimo content-change.
             prewarmLabelMap(service.applicationContext)
-            return
+            return RecentsScanOutcome.SKIPPED_NO_MAP
         }
+        var outcome = RecentsScanOutcome.SKIPPED_NOT_RECENTS
         service.withRootInActiveWindow { root ->
             if (root == null) return@withRootInActiveWindow
             // GUARD: la finestra ATTIVA deve essere davvero l'host recents.
@@ -321,8 +328,9 @@ object OpenAppsTracker {
                     }
                 }
             }
-            applyRecentsScan(service.applicationContext, matched, sawClearAll, visited, rootPkg)
+            outcome = applyRecentsScan(service.applicationContext, matched, sawClearAll, visited, rootPkg)
         }
+        return outcome
     }
 
     /// Traduce la contentDescription di una card in package: match esatto
@@ -336,23 +344,43 @@ object OpenAppsTracker {
         return null
     }
 
-    /// Regole di applicazione PURE (testabili): ritorna il nuovo set, o null
-    /// per no-op. Zero card riconosciute è "verità di vuoto" SOLO se l'albero
-    /// era sostanzioso E manca il bottone clear-all (quickstep lo nasconde a
-    /// recents vuote): zero match con clear-all presente = card esistenti ma
-    /// non mappate (label sconosciute) → non toccare il conteggio.
+    /// Esito PURO del confronto set/card (testabile).
+    internal sealed interface RecentsSyncDecision {
+        data class Apply(val next: Set<String>) : RecentsSyncDecision
+        object NoOp : RecentsSyncDecision
+
+        /// Zero card mappate ma clear-all presente con set non vuoto: o label
+        /// sconosciute (no-op definitivo) o animazione di "Cancella tutto" in
+        /// corso — le card spariscono dall'albero PRIMA del bottone, quindi
+        /// in quel transitorio lo zero è reale ma vetato. Un re-scan
+        /// ravvicinato distingue i due casi: a bottone sparito lo zero
+        /// diventa leggibile, a card ricomparse resta no-op.
+        object RetryLater : RecentsSyncDecision
+    }
+
+    /// Regole di applicazione PURE (testabili). Zero card riconosciute è
+    /// "verità di vuoto" SOLO se l'albero era sostanzioso E manca il bottone
+    /// clear-all (quickstep lo nasconde a recents vuote): zero match con
+    /// clear-all presente = ambiguo → [RecentsSyncDecision.RetryLater].
     internal fun computeRecentsSync(
         current: Set<String>,
         matched: Set<String>,
         sawClearAll: Boolean,
         visitedNodes: Int,
-    ): Set<String>? {
+    ): RecentsSyncDecision {
         if (matched.isEmpty()) {
-            val emptyIsTruth = !sawClearAll && visitedNodes >= MIN_NODES_FOR_EMPTY_TRUTH
-            return if (emptyIsTruth && current.isNotEmpty()) emptySet() else null
+            if (current.isEmpty()) return RecentsSyncDecision.NoOp
+            if (sawClearAll) return RecentsSyncDecision.RetryLater
+            return if (visitedNodes >= MIN_NODES_FOR_EMPTY_TRUTH) {
+                RecentsSyncDecision.Apply(emptySet())
+            } else {
+                RecentsSyncDecision.NoOp
+            }
         }
-        if (current.size == matched.size && current.containsAll(matched)) return null
-        return matched
+        if (current.size == matched.size && current.containsAll(matched)) {
+            return RecentsSyncDecision.NoOp
+        }
+        return RecentsSyncDecision.Apply(matched)
     }
 
     @Synchronized
@@ -362,23 +390,30 @@ object OpenAppsTracker {
         sawClearAll: Boolean,
         visitedNodes: Int,
         rootPkg: String,
-    ) {
+    ): RecentsScanOutcome {
         // Post-reset (Cancella tutto / long-press): le card in animazione di
         // chiusura sono ancora nell'albero — applicare questa scansione le
         // ri-aggiungerebbe subito dopo l'azzeramento (osservato on-device).
-        if (SystemClock.uptimeMillis() < muteSyncUntilUptimeMs) return
+        // DONE e non RETRY_SUGGESTED: dopo un resetAll il conteggio è già
+        // zero, un retry sprecherebbe solo budget.
+        if (SystemClock.uptimeMillis() < muteSyncUntilUptimeMs) return RecentsScanOutcome.DONE
         val self = context.packageName
         val matched = matchedRaw.filterTo(HashSet()) {
             shouldTrack(it, self, KoruAccessibilityService.SKIP_PACKAGES, isLaunchable = true)
         }
-        val next = computeRecentsSync(tracked.toSet(), matched, sawClearAll, visitedNodes)
-            ?: return
-        BlackBox.log(
-            "RECENTS",
-            "sync da recents (root=$rootPkg, nodi=$visitedNodes): ${next.size} schede" +
-                if (next.isEmpty()) " (vuote)" else " [${next.joinToString()}]",
-        )
-        applyRecentsResult(next, System.currentTimeMillis())
+        return when (val decision = computeRecentsSync(tracked.toSet(), matched, sawClearAll, visitedNodes)) {
+            is RecentsSyncDecision.NoOp -> RecentsScanOutcome.DONE
+            is RecentsSyncDecision.RetryLater -> RecentsScanOutcome.RETRY_SUGGESTED
+            is RecentsSyncDecision.Apply -> {
+                BlackBox.log(
+                    "RECENTS",
+                    "sync da recents (root=$rootPkg, nodi=$visitedNodes): ${decision.next.size} schede" +
+                        if (decision.next.isEmpty()) " (vuote)" else " [${decision.next.joinToString()}]",
+                )
+                applyRecentsResult(decision.next, System.currentTimeMillis())
+                RecentsScanOutcome.DONE
+            }
+        }
     }
 
     /// Replace del set + avanzamento delle ancore di sweep (anti-resurrezione:

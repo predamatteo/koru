@@ -122,38 +122,54 @@ class OpenAppsTrackerTest {
         // Il bug riportato: count=1 (WhatsApp) ma recents svuotate con lo
         // swipe della singola card. Scan: albero sostanzioso, zero card,
         // niente bottone clear-all (quickstep lo nasconde a recents vuote).
-        val next = OpenAppsTracker.computeRecentsSync(
+        val decision = OpenAppsTracker.computeRecentsSync(
             current = setOf("com.whatsapp"),
             matched = emptySet(),
             sawClearAll = false,
             visitedNodes = BIG_TREE,
         )
-        assertThat(next).isEmpty()
+        assertThat(decision)
+            .isEqualTo(OpenAppsTracker.RecentsSyncDecision.Apply(emptySet()))
     }
 
     @Test
-    fun zeroMatchesButClearAllPresent_isNotEmptinessTruth() {
-        // Card esistenti ma label non mappate: il bottone clear-all c'è →
-        // NON azzerare (meglio stale che falso zero).
-        val next = OpenAppsTracker.computeRecentsSync(
+    fun zeroMatchesWithClearAll_suggestsRetry() {
+        // Ambiguo: o card con label non mappate (no-op definitivo) o
+        // animazione di "Cancella tutto" in corso (le card spariscono PRIMA
+        // del bottone). Non si tocca il set MA si suggerisce un re-scan
+        // ravvicinato che disambigua a bottone sparito.
+        val decision = OpenAppsTracker.computeRecentsSync(
             current = setOf("com.whatsapp"),
             matched = emptySet(),
             sawClearAll = true,
             visitedNodes = BIG_TREE,
         )
-        assertThat(next).isNull()
+        assertThat(decision).isEqualTo(OpenAppsTracker.RecentsSyncDecision.RetryLater)
     }
 
     @Test
-    fun zeroMatchesOnTinyTree_isNotEmptinessTruth() {
-        // Scan partito troppo presto (albero non popolato): no-op.
-        val next = OpenAppsTracker.computeRecentsSync(
+    fun zeroMatchesWithClearAll_currentEmpty_isNoOp() {
+        // Set già vuoto: niente da azzerare, niente retry da sprecare.
+        val decision = OpenAppsTracker.computeRecentsSync(
+            current = emptySet(),
+            matched = emptySet(),
+            sawClearAll = true,
+            visitedNodes = BIG_TREE,
+        )
+        assertThat(decision).isEqualTo(OpenAppsTracker.RecentsSyncDecision.NoOp)
+    }
+
+    @Test
+    fun tinyTree_isNoOp_notRetry() {
+        // Scan partito troppo presto (albero non popolato, niente clear-all
+        // visto): no-op, non retry — il burst/trailing copre già il seguito.
+        val decision = OpenAppsTracker.computeRecentsSync(
             current = setOf("com.whatsapp"),
             matched = emptySet(),
             sawClearAll = false,
             visitedNodes = OpenAppsTracker.MIN_NODES_FOR_EMPTY_TRUTH - 1,
         )
-        assertThat(next).isNull()
+        assertThat(decision).isEqualTo(OpenAppsTracker.RecentsSyncDecision.NoOp)
     }
 
     @Test
@@ -166,7 +182,8 @@ class OpenAppsTrackerTest {
             sawClearAll = true,
             visitedNodes = BIG_TREE,
         )
-        assertThat(shrunk).containsExactly("com.spotify.music")
+        assertThat(shrunk)
+            .isEqualTo(OpenAppsTracker.RecentsSyncDecision.Apply(setOf("com.spotify.music")))
 
         val readded = OpenAppsTracker.computeRecentsSync(
             current = emptySet(),
@@ -174,18 +191,19 @@ class OpenAppsTrackerTest {
             sawClearAll = true,
             visitedNodes = BIG_TREE,
         )
-        assertThat(readded).containsExactly("com.whatsapp")
+        assertThat(readded)
+            .isEqualTo(OpenAppsTracker.RecentsSyncDecision.Apply(setOf("com.whatsapp")))
     }
 
     @Test
     fun unchangedSet_isNoOp() {
-        val next = OpenAppsTracker.computeRecentsSync(
+        val decision = OpenAppsTracker.computeRecentsSync(
             current = setOf("com.whatsapp"),
             matched = setOf("com.whatsapp"),
             sawClearAll = true,
             visitedNodes = BIG_TREE,
         )
-        assertThat(next).isNull()
+        assertThat(decision).isEqualTo(OpenAppsTracker.RecentsSyncDecision.NoOp)
     }
 
     // ─── matchCardDescription ────────────────────────────────────────────────
