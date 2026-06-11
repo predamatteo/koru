@@ -85,6 +85,10 @@ object LauncherRecentsGate {
     /// non pronta): chiude il loop anche se il prewarm non finisce mai.
     private const val RECENTS_INITIAL_SCAN_MAX_RUNS = 8
 
+    /// Idle minimo dall'ultimo scan per ri-armare il burst su un window
+    /// event recents a sessione già attiva (anti scan-storm sul rearm).
+    private const val BURST_REARM_MIN_IDLE_MS = 500L
+
     /// Margine del trailing scan oltre il residuo del throttle: lo scan
     /// differito parte appena FUORI dalla finestra, non sul bordo.
     private const val TRAILING_SCAN_MARGIN_MS = 50L
@@ -201,7 +205,14 @@ object LauncherRecentsGate {
                 BlackBox.log("RECENTS", "recents aperta via token → sessione allowed")
                 onSessionAllowed(service)
             }
-            Decision.ALLOW_IN_SESSION -> { /* re-emissione interna alle recents */ }
+            Decision.ALLOW_IN_SESSION -> {
+                // Re-emissione interna alle recents — oppure RIENTRO nelle
+                // recents con una sessione sopravvissuta a un'uscita persa
+                // (app fuori dal watched-set → nessun window event di
+                // chiusura): se il burst non è in coda e l'ultimo scan è
+                // vecchio, ri-armalo (idempotente, vedi shouldRearmInitialBurst).
+                maybeRearmInitialBurst(service)
+            }
             Decision.ALLOW_SHIELD_OFF, Decision.ALLOW_NOT_FROM_KORU -> {
                 BlackBox.log(
                     "RECENTS",
@@ -222,8 +233,21 @@ object LauncherRecentsGate {
     private fun onSessionAllowed(service: KoruAccessibilityService) {
         val firstAllow = !sessionAllowed
         sessionAllowed = true
-        if (!firstAllow) return
+        if (!firstAllow) {
+            // Sessione già attiva ri-confermata (es. nuovo token mentre la
+            // sessione sopravviveva a un'uscita persa verso un'app fuori dal
+            // watched-set): senza ri-armo il burst, recents VUOTE al rientro
+            // non emettono content-changed e lo zero non verrebbe mai letto.
+            maybeRearmInitialBurst(service)
+            return
+        }
         OpenAppsTracker.prewarmLabelMap(service.applicationContext)
+        armInitialScanBurst(service)
+    }
+
+    /// Arma (o ri-arma) il burst di scansioni iniziali e azzera il budget
+    /// retry: una nuova "schermata" recents riparte pulita.
+    private fun armInitialScanBurst(service: KoruAccessibilityService) {
         clearAllRetryBudget = CLEAR_ALL_RETRY_MAX_PER_SESSION
         pendingInitialScan?.let { mainHandler.removeCallbacks(it) }
         val r = object : Runnable {
@@ -249,6 +273,18 @@ object LauncherRecentsGate {
         }
         pendingInitialScan = r
         mainHandler.postDelayed(r, RECENTS_INITIAL_SCAN_FIRST_DELAY_MS)
+    }
+
+    /// Rearm condizionato del burst (vedi [shouldRearmInitialBurst]).
+    private fun maybeRearmInitialBurst(service: KoruAccessibilityService) {
+        if (shouldRearmInitialBurst(
+                burstPending = pendingInitialScan != null,
+                nowUptimeMs = SystemClock.uptimeMillis(),
+                lastScanUptimeMs = lastRecentsScanUptimeMs,
+            )
+        ) {
+            armInitialScanBurst(service)
+        }
     }
 
     /// Chiamato dal service sui TYPE_WINDOW_CONTENT_CHANGED / VIEW_SCROLLED:
@@ -376,6 +412,34 @@ object LauncherRecentsGate {
         throttleMs: Long,
         marginMs: Long,
     ): Long = (lastScanUptimeMs + throttleMs - nowUptimeMs).coerceAtLeast(0L) + marginMs
+
+    /// PURO: ri-armare il burst su un window event recents a sessione già
+    /// attiva? Solo se non c'è già un burst in coda e l'ultimo scan è
+    /// "vecchio": il caso coperto è il RIENTRO nelle recents con sessione
+    /// sopravvissuta (uscita verso app fuori dal watched-set = nessun window
+    /// event di chiusura) — firstAllow è ormai false e senza ri-armo le
+    /// recents vuote non verrebbero mai scansionate.
+    internal fun shouldRearmInitialBurst(
+        burstPending: Boolean,
+        nowUptimeMs: Long,
+        lastScanUptimeMs: Long,
+        minIdleMs: Long = BURST_REARM_MIN_IDLE_MS,
+    ): Boolean = !burstPending && nowUptimeMs - lastScanUptimeMs >= minIdleMs
+
+    /// PURO: la sessione recents è ancora plausibilmente aperta dato il
+    /// foreground reale? fg == null resta fail-open (UsageStats muto).
+    /// fg == Koru NON è plausibile: a recents aperte il foreground UsageStats
+    /// è l'HOST (la RecentsActivity OEM emette il proprio ACTIVITY_RESUMED),
+    /// non il launcher Koru sottostante — a 60s dal check, fg==Koru significa
+    /// "recents chiuse senza window event" (uscita verso un'app fuori dal
+    /// watched-set, o ritorno al launcher assorbito): sessione orfana.
+    internal fun isSessionStillPlausible(
+        foregroundPkg: String?,
+        selfPackage: String,
+        skipPackages: Set<String>,
+    ): Boolean = foregroundPkg == null ||
+        (foregroundPkg != selfPackage &&
+            RecentsDetector.isPlausibleRecentsHostPackage(foregroundPkg, skipPackages))
 
     internal data class BurstStep(val attemptsConsumed: Int, val repost: Boolean)
 
@@ -520,8 +584,10 @@ object LauncherRecentsGate {
     /// recentsVisible/sessionAllowed resterebbero appesi e typeViewClicked
     /// attivo per ore (e un click "clear"-like in un'app watched con
     /// "home"/"launcher" nel pkg potrebbe azzerare il contatore a sproposito).
-    /// Ogni SESSION_SANITY_DELAY_MS verifichiamo il foreground reale: se non è
-    /// più un host recents plausibile né Koru, la sessione è orfana → chiusa.
+    /// Ogni SESSION_SANITY_DELAY_MS verifichiamo il foreground reale con
+    /// [isSessionStillPlausible]: se non è più un host recents plausibile
+    /// (incluso fg == Koru: vedi doc della funzione), la sessione è orfana
+    /// → chiusa.
     private fun scheduleSessionSanityCheck(service: KoruAccessibilityService) {
         pendingSessionSanity?.let { mainHandler.removeCallbacks(it) }
         val r = object : Runnable {
@@ -536,10 +602,9 @@ object LauncherRecentsGate {
                 } catch (_: Exception) {
                     null
                 }
-                val stillPlausible = fg == null || fg == service.packageName ||
-                    RecentsDetector.isPlausibleRecentsHostPackage(
-                        fg, KoruAccessibilityService.SKIP_PACKAGES,
-                    )
+                val stillPlausible = isSessionStillPlausible(
+                    fg, service.packageName, KoruAccessibilityService.SKIP_PACKAGES,
+                )
                 if (!stillPlausible) {
                     BlackBox.log("RECENTS", "sessione orfana chiusa dal sanity-check (fg=$fg)")
                     pendingSessionSanity = null

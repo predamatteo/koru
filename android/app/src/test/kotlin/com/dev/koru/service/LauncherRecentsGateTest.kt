@@ -200,4 +200,71 @@ class LauncherRecentsGateTest {
         assertThat(step.attemptsConsumed).isEqualTo(0)
         assertThat(step.repost).isFalse()
     }
+
+    // ─── shouldRearmInitialBurst (rientro nelle recents a sessione viva) ────
+
+    @Test
+    fun rearm_blockedWhileBurstPending() {
+        assertThat(
+            LauncherRecentsGate.shouldRearmInitialBurst(
+                burstPending = true, nowUptimeMs = 10_000L, lastScanUptimeMs = 1_000L,
+                minIdleMs = 500L,
+            ),
+        ).isFalse()
+    }
+
+    @Test
+    fun rearm_blockedWithinIdleWindow() {
+        // Scan recentissimo (re-emissione della stessa apertura): no rearm.
+        assertThat(
+            LauncherRecentsGate.shouldRearmInitialBurst(
+                burstPending = false, nowUptimeMs = 1_300L, lastScanUptimeMs = 1_000L,
+                minIdleMs = 500L,
+            ),
+        ).isFalse()
+    }
+
+    @Test
+    fun rearm_allowedAfterIdle() {
+        // Rientro vero: nessun burst in coda, ultimo scan vecchio.
+        assertThat(
+            LauncherRecentsGate.shouldRearmInitialBurst(
+                burstPending = false, nowUptimeMs = 60_000L, lastScanUptimeMs = 1_000L,
+                minIdleMs = 500L,
+            ),
+        ).isTrue()
+    }
+
+    // ─── isSessionStillPlausible (sanity-check sessione orfana) ─────────────
+
+    private val SELF = "com.dev.koru"
+    private val SKIP = setOf("android", "com.android.systemui", "net.oneplus.launcher")
+
+    @Test
+    fun sanity_nullForeground_keepsSession() {
+        // UsageStats muto: fail-open, coerente col resto del gate.
+        assertThat(LauncherRecentsGate.isSessionStillPlausible(null, SELF, SKIP)).isTrue()
+    }
+
+    @Test
+    fun sanity_recentsHostForeground_keepsSession() {
+        assertThat(
+            LauncherRecentsGate.isSessionStillPlausible("net.oneplus.launcher", SELF, SKIP),
+        ).isTrue()
+    }
+
+    @Test
+    fun sanity_realAppForeground_closesSession() {
+        assertThat(
+            LauncherRecentsGate.isSessionStillPlausible("com.whatsapp", SELF, SKIP),
+        ).isFalse()
+    }
+
+    @Test
+    fun sanity_koruForeground_closesSession() {
+        // Nuovo comportamento pinnato: a recents aperte il fg UsageStats è
+        // l'HOST, non Koru sottostante → a 60s fg==Koru = recents chiuse
+        // senza window event = sessione orfana da chiudere.
+        assertThat(LauncherRecentsGate.isSessionStillPlausible(SELF, SELF, SKIP)).isFalse()
+    }
 }
