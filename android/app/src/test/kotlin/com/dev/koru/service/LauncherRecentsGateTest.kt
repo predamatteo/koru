@@ -157,4 +157,47 @@ class LauncherRecentsGateTest {
             ),
         ).isEqualTo(50L)
     }
+
+    // ─── advanceInitialBurst (burst robusto a label map non pronta) ─────────
+
+    @Test
+    fun burst_mapNotReady_doesNotConsumeAttempt() {
+        // Prewarm ancora in corso: il run è un no-op a costo zero e NON
+        // brucia il tentativo — il burst deve poter leggere lo zero quando
+        // la mappa arriva (prima sessione dopo un process restart).
+        val step = LauncherRecentsGate.advanceInitialBurst(
+            attemptsConsumed = 0, totalRuns = 1, scanExecuted = false,
+            maxAttempts = 3, maxRuns = 8,
+        )
+        assertThat(step.attemptsConsumed).isEqualTo(0)
+        assertThat(step.repost).isTrue()
+    }
+
+    @Test
+    fun burst_scanExecuted_consumesAttempt_stopsAtMaxAttempts() {
+        val mid = LauncherRecentsGate.advanceInitialBurst(
+            attemptsConsumed = 1, totalRuns = 2, scanExecuted = true,
+            maxAttempts = 3, maxRuns = 8,
+        )
+        assertThat(mid.attemptsConsumed).isEqualTo(2)
+        assertThat(mid.repost).isTrue()
+
+        val last = LauncherRecentsGate.advanceInitialBurst(
+            attemptsConsumed = 2, totalRuns = 3, scanExecuted = true,
+            maxAttempts = 3, maxRuns = 8,
+        )
+        assertThat(last.attemptsConsumed).isEqualTo(3)
+        assertThat(last.repost).isFalse()
+    }
+
+    @Test
+    fun burst_totalRunsCap_stopsEvenIfMapNeverReady() {
+        // 8° run ancora senza mappa: il cap totale chiude il loop.
+        val step = LauncherRecentsGate.advanceInitialBurst(
+            attemptsConsumed = 0, totalRuns = 8, scanExecuted = false,
+            maxAttempts = 3, maxRuns = 8,
+        )
+        assertThat(step.attemptsConsumed).isEqualTo(0)
+        assertThat(step.repost).isFalse()
+    }
 }

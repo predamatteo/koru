@@ -81,6 +81,10 @@ object LauncherRecentsGate {
     private const val RECENTS_INITIAL_SCAN_REPEAT_DELAY_MS = 250L
     private const val RECENTS_INITIAL_SCAN_ATTEMPTS = 3
 
+    /// Cap sui RUN totali del burst (tentativi consumati + no-op a label map
+    /// non pronta): chiude il loop anche se il prewarm non finisce mai.
+    private const val RECENTS_INITIAL_SCAN_MAX_RUNS = 8
+
     /// Margine del trailing scan oltre il residuo del throttle: lo scan
     /// differito parte appena FUORI dalla finestra, non sul bordo.
     private const val TRAILING_SCAN_MARGIN_MS = 50L
@@ -224,13 +228,20 @@ object LauncherRecentsGate {
         pendingInitialScan?.let { mainHandler.removeCallbacks(it) }
         val r = object : Runnable {
             private var attempt = 0
+            private var totalRuns = 0
             override fun run() {
                 pendingInitialScan = null
                 if (KoruAccessibilityService.instance !== service) return
                 if (!recentsVisible || !sessionAllowed) return
-                performScan(service)
-                attempt++
-                if (attempt < RECENTS_INITIAL_SCAN_ATTEMPTS) {
+                totalRuns++
+                val outcome = performScan(service)
+                val step = advanceInitialBurst(
+                    attemptsConsumed = attempt,
+                    totalRuns = totalRuns,
+                    scanExecuted = outcome != OpenAppsTracker.RecentsScanOutcome.SKIPPED_NO_MAP,
+                )
+                attempt = step.attemptsConsumed
+                if (step.repost) {
                     pendingInitialScan = this
                     mainHandler.postDelayed(this, RECENTS_INITIAL_SCAN_REPEAT_DELAY_MS)
                 }
@@ -294,8 +305,13 @@ object LauncherRecentsGate {
     /// l'esito ambiguo (RETRY_SUGGESTED) arma un retry qualunque sia la
     /// sorgente dello scan.
     private fun performScan(service: KoruAccessibilityService): OpenAppsTracker.RecentsScanOutcome {
-        lastRecentsScanUptimeMs = SystemClock.uptimeMillis()
         val outcome = OpenAppsTracker.syncFromRecents(service)
+        // Uno skip a costo zero (label map non pronta) NON consuma la
+        // finestra di throttle: il prossimo content-changed deve poter
+        // scansionare appena la mappa è pronta.
+        if (outcome != OpenAppsTracker.RecentsScanOutcome.SKIPPED_NO_MAP) {
+            lastRecentsScanUptimeMs = SystemClock.uptimeMillis()
+        }
         if (outcome == OpenAppsTracker.RecentsScanOutcome.RETRY_SUGGESTED &&
             clearAllRetryBudget > 0
         ) {
@@ -360,6 +376,24 @@ object LauncherRecentsGate {
         throttleMs: Long,
         marginMs: Long,
     ): Long = (lastScanUptimeMs + throttleMs - nowUptimeMs).coerceAtLeast(0L) + marginMs
+
+    internal data class BurstStep(val attemptsConsumed: Int, val repost: Boolean)
+
+    /// Passo PURO del burst iniziale: il tentativo è consumato solo se lo
+    /// scan è avvenuto davvero (label map pronta) — il prewarm asincrono può
+    /// superare i ~650ms di vita delle recents vuote, e bruciare i tentativi
+    /// su no-op lasciava lo zero illeggibile alla prima sessione dopo un
+    /// process restart. Il cap sui run totali chiude comunque il loop.
+    internal fun advanceInitialBurst(
+        attemptsConsumed: Int,
+        totalRuns: Int,
+        scanExecuted: Boolean,
+        maxAttempts: Int = RECENTS_INITIAL_SCAN_ATTEMPTS,
+        maxRuns: Int = RECENTS_INITIAL_SCAN_MAX_RUNS,
+    ): BurstStep {
+        val attempts = if (scanExecuted) attemptsConsumed + 1 else attemptsConsumed
+        return BurstStep(attempts, attempts < maxAttempts && totalRuns < maxRuns)
+    }
 
     /// Matrice di decisione PURA (unit-testabile). Ordine dei guard:
     /// token > sessione > shield > provenienza.

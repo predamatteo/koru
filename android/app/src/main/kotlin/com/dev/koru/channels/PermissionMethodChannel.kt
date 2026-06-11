@@ -14,6 +14,7 @@ import android.os.Process
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
 import com.dev.koru.service.LauncherRecentsGate
+import com.dev.koru.service.OpenAppsTracker
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
@@ -92,6 +93,15 @@ activity.startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
                         // gesture (LauncherHomeScreen._setLauncherActive).
                         val enabled = call.argument<Boolean>("enabled") ?: false
                         LauncherRecentsGate.setShieldActive(enabled)
+                        if (enabled) {
+                            // Prewarm anticipato della label map: shield ON =
+                            // launcher in cima = recents apribili a breve. A
+                            // freddo il prewarm (query PM + loadLabel) può
+                            // superare i ~650ms di vita delle recents VUOTE:
+                            // partire solo all'apertura della sessione brucia
+                            // il burst iniziale. Idempotente e off-main.
+                            OpenAppsTracker.prewarmLabelMap(activity.applicationContext)
+                        }
                         result.success(null)
                     }
                     "checkAllPermissions" -> {
