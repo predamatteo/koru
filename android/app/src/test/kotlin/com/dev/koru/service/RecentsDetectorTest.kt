@@ -170,6 +170,20 @@ class RecentsDetectorTest {
     }
 
     @Test
+    fun clearAllByViewId_oxygenOsBtnClear_matches() {
+        // OnePlus OxygenOS: id osservato on-device — prima matchava solo via
+        // testo localizzato (fragile al cambio lingua di sistema).
+        assertThat(
+            RecentsDetector.isClearAllNode("net.oneplus.launcher:id/btn_clear", null),
+        ).isTrue()
+        // Suffisso esatto: un id che CONTIENE btn_clear ma con altra coda
+        // (es. btn_clear_anim) non deve matchare.
+        assertThat(
+            RecentsDetector.isClearAllNode("net.oneplus.launcher:id/btn_clear_anim", null),
+        ).isFalse()
+    }
+
+    @Test
     fun clearAllByText_matchesKnownLocales() {
         assertThat(RecentsDetector.isClearAllNode(null, "Clear all")).isTrue()
         assertThat(RecentsDetector.isClearAllNode(null, "Cancella tutto")).isTrue()

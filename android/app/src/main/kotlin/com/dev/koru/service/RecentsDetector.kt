@@ -67,7 +67,11 @@ object RecentsDetector {
     fun isClearAllNode(viewIdResourceName: String?, text: CharSequence?): Boolean {
         val id = viewIdResourceName ?: ""
         if (id.contains("clear_all", ignoreCase = true) ||
-            id.contains("clearAll", ignoreCase = true)
+            id.contains("clearAll", ignoreCase = true) ||
+            // OxygenOS (net.oneplus.launcher): id osservato on-device =
+            // "…:id/btn_clear" — senza questo match il rilevamento dipendeva
+            // solo dal testo localizzato (fragile al cambio lingua).
+            id.endsWith("/btn_clear", ignoreCase = true)
         ) {
             return true
         }
