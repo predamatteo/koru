@@ -86,4 +86,75 @@ class LauncherRecentsGateTest {
     fun everythingOff_allowsViaShieldOff() {
         assertThat(decide()).isEqualTo(Decision.ALLOW_SHIELD_OFF)
     }
+
+    // ─── decideScanThrottle / trailingScanDelayMs (throttle trailing-edge) ──
+
+    private val THROTTLE = 300L
+
+    @Test
+    fun scanThrottle_outsideWindow_scansNow() {
+        assertThat(
+            LauncherRecentsGate.decideScanThrottle(
+                nowUptimeMs = 1_000L, lastScanUptimeMs = 700L,
+                throttleMs = THROTTLE, scanAlreadyPending = false,
+            ),
+        ).isEqualTo(LauncherRecentsGate.ScanThrottle.SCAN_NOW)
+    }
+
+    @Test
+    fun scanThrottle_insideWindow_schedulesTrailing() {
+        // Il caso che il leading-edge puro perdeva: l'ultimo content-changed
+        // della raffica (overview svuotata) cadeva nel throttle e veniva
+        // scartato — lo zero non veniva mai letto.
+        assertThat(
+            LauncherRecentsGate.decideScanThrottle(
+                nowUptimeMs = 1_000L, lastScanUptimeMs = 900L,
+                throttleMs = THROTTLE, scanAlreadyPending = false,
+            ),
+        ).isEqualTo(LauncherRecentsGate.ScanThrottle.SCHEDULE_TRAILING)
+    }
+
+    @Test
+    fun scanThrottle_insideWindowWithPendingScan_coalesces() {
+        assertThat(
+            LauncherRecentsGate.decideScanThrottle(
+                nowUptimeMs = 1_000L, lastScanUptimeMs = 900L,
+                throttleMs = THROTTLE, scanAlreadyPending = true,
+            ),
+        ).isEqualTo(LauncherRecentsGate.ScanThrottle.ALREADY_PENDING)
+    }
+
+    @Test
+    fun scanThrottle_outsideWindowEvenWithPendingScan_scansNow() {
+        // Il pending non sopprime lo scan fuori finestra: è il wrapper a
+        // cancellare l'one-shot ridondante dopo lo scan immediato.
+        assertThat(
+            LauncherRecentsGate.decideScanThrottle(
+                nowUptimeMs = 2_000L, lastScanUptimeMs = 700L,
+                throttleMs = THROTTLE, scanAlreadyPending = true,
+            ),
+        ).isEqualTo(LauncherRecentsGate.ScanThrottle.SCAN_NOW)
+    }
+
+    @Test
+    fun trailingDelay_isResidualPlusMargin() {
+        // Ultimo scan a 900, ora 1000, throttle 300 → residuo 200 + 50.
+        assertThat(
+            LauncherRecentsGate.trailingScanDelayMs(
+                nowUptimeMs = 1_000L, lastScanUptimeMs = 900L,
+                throttleMs = THROTTLE, marginMs = 50L,
+            ),
+        ).isEqualTo(250L)
+    }
+
+    @Test
+    fun trailingDelay_neverNegative() {
+        // Residuo già scaduto (clock al bordo): resta il solo margine.
+        assertThat(
+            LauncherRecentsGate.trailingScanDelayMs(
+                nowUptimeMs = 5_000L, lastScanUptimeMs = 900L,
+                throttleMs = THROTTLE, marginMs = 50L,
+            ),
+        ).isEqualTo(50L)
+    }
 }

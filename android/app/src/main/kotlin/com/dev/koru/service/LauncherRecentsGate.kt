@@ -81,6 +81,10 @@ object LauncherRecentsGate {
     private const val RECENTS_INITIAL_SCAN_REPEAT_DELAY_MS = 250L
     private const val RECENTS_INITIAL_SCAN_ATTEMPTS = 3
 
+    /// Margine del trailing scan oltre il residuo del throttle: lo scan
+    /// differito parte appena FUORI dalla finestra, non sul bordo.
+    private const val TRAILING_SCAN_MARGIN_MS = 50L
+
     internal enum class Decision {
         ALLOW_TOKEN, ALLOW_IN_SESSION, ALLOW_SHIELD_OFF, ALLOW_NOT_FROM_KORU, BLOCK,
     }
@@ -98,6 +102,13 @@ object LauncherRecentsGate {
     private var pendingKick: Runnable? = null
     private var pendingSessionSanity: Runnable? = null
     private var pendingInitialScan: Runnable? = null
+
+    /// Slot UNICO per gli scan ritardati one-shot (trailing del throttle;
+    /// dal fix clear-all anche il retry post-scan ambiguo): mai più di uno
+    /// scan extra in coda oltre al burst — coalescenza sulla deadline più
+    /// vicina in [requestDelayedScan].
+    private var pendingOneShotScan: Runnable? = null
+    private var pendingOneShotScanDueUptimeMs = 0L
 
     @Volatile private var lastRecentsScanUptimeMs = 0L
 
@@ -205,8 +216,7 @@ object LauncherRecentsGate {
                 pendingInitialScan = null
                 if (KoruAccessibilityService.instance !== service) return
                 if (!recentsVisible || !sessionAllowed) return
-                lastRecentsScanUptimeMs = SystemClock.uptimeMillis()
-                OpenAppsTracker.syncFromRecents(service)
+                performScan(service)
                 attempt++
                 if (attempt < RECENTS_INITIAL_SCAN_ATTEMPTS) {
                     pendingInitialScan = this
@@ -221,7 +231,12 @@ object LauncherRecentsGate {
     /// Chiamato dal service sui TYPE_WINDOW_CONTENT_CHANGED / VIEW_SCROLLED:
     /// se arrivano dall'host recents durante una sessione legittima, throttla
     /// e ri-sincronizza il contatore (lo swipe-dismiss di una card cambia il
-    /// contenuto senza altri segnali osservabili). Ritorna true se l'evento
+    /// contenuto senza altri segnali osservabili). Throttle leading+TRAILING:
+    /// l'ULTIMO evento di una raffica è quello che porta lo stato finale —
+    /// es. l'overview vuota dopo lo swipe dell'ultima card, che si
+    /// auto-chiude ~650ms dopo: col solo leading-edge quell'evento veniva
+    /// scartato e lo zero non veniva mai letto (badge inchiodato finché non
+    /// si rientrava/usciva dalle recents). Ritorna true se l'evento
     /// appartiene alla schermata recents (consumato).
     fun maybeSyncOpenApps(service: KoruAccessibilityService, pkg: String): Boolean {
         if (!recentsVisible || !sessionAllowed) return false
@@ -232,11 +247,98 @@ object LauncherRecentsGate {
             return false
         }
         val now = SystemClock.uptimeMillis()
-        if (now - lastRecentsScanUptimeMs < RECENTS_SCAN_THROTTLE_MS) return true
-        lastRecentsScanUptimeMs = now
-        OpenAppsTracker.syncFromRecents(service)
+        val decision = decideScanThrottle(
+            nowUptimeMs = now,
+            lastScanUptimeMs = lastRecentsScanUptimeMs,
+            throttleMs = RECENTS_SCAN_THROTTLE_MS,
+            scanAlreadyPending = pendingOneShotScan != null || pendingInitialScan != null,
+        )
+        when (decision) {
+            ScanThrottle.SCAN_NOW -> {
+                // Un one-shot ancora in coda sarebbe ridondante a pochi ms
+                // dallo scan appena eseguito.
+                cancelOneShotScan()
+                performScan(service)
+            }
+            ScanThrottle.SCHEDULE_TRAILING -> requestDelayedScan(
+                service,
+                trailingScanDelayMs(
+                    nowUptimeMs = now,
+                    lastScanUptimeMs = lastRecentsScanUptimeMs,
+                    throttleMs = RECENTS_SCAN_THROTTLE_MS,
+                    marginMs = TRAILING_SCAN_MARGIN_MS,
+                ),
+            )
+            ScanThrottle.ALREADY_PENDING -> {
+                // Coalescenza: lo scan già in coda leggerà lo stato finale.
+            }
+        }
         return true
     }
+
+    /// Esecuzione centralizzata di uno scan: TUTTE le sorgenti (burst
+    /// iniziale, leading-edge, one-shot differiti) passano da qui, così
+    /// [lastRecentsScanUptimeMs] — e quindi il throttle — resta onesto.
+    private fun performScan(service: KoruAccessibilityService) {
+        lastRecentsScanUptimeMs = SystemClock.uptimeMillis()
+        OpenAppsTracker.syncFromRecents(service)
+    }
+
+    /// Scan one-shot differito sullo slot unico [pendingOneShotScan]:
+    /// se ce n'è già uno in coda vince la deadline più VICINA (un trailing
+    /// non deve posticipare un retry già armato, e viceversa). Stessi guard
+    /// di igiene degli altri runnable del gate.
+    private fun requestDelayedScan(service: KoruAccessibilityService, delayMs: Long) {
+        val due = SystemClock.uptimeMillis() + delayMs
+        pendingOneShotScan?.let {
+            if (pendingOneShotScanDueUptimeMs <= due) return
+            mainHandler.removeCallbacks(it)
+        }
+        val r = Runnable {
+            pendingOneShotScan = null
+            pendingOneShotScanDueUptimeMs = 0L
+            if (KoruAccessibilityService.instance !== service) return@Runnable
+            if (!recentsVisible || !sessionAllowed) return@Runnable
+            performScan(service)
+        }
+        pendingOneShotScan = r
+        pendingOneShotScanDueUptimeMs = due
+        mainHandler.postDelayed(r, delayMs)
+    }
+
+    private fun cancelOneShotScan() {
+        pendingOneShotScan?.let { mainHandler.removeCallbacks(it) }
+        pendingOneShotScan = null
+        pendingOneShotScanDueUptimeMs = 0L
+    }
+
+    /// Esito PURO del throttle degli scan content-changed (vedi
+    /// [maybeSyncOpenApps]).
+    internal enum class ScanThrottle { SCAN_NOW, SCHEDULE_TRAILING, ALREADY_PENDING }
+
+    /// Decisione PURA del throttle leading+trailing: fuori finestra → scan
+    /// subito; dentro finestra con uno scan già in arrivo (one-shot O burst)
+    /// → coalescenza; dentro finestra senza nulla in coda → trailing
+    /// one-shot. Il pending NON sopprime lo SCAN_NOW: fuori finestra si
+    /// scansiona comunque (è il wrapper a cancellare l'one-shot ridondante).
+    internal fun decideScanThrottle(
+        nowUptimeMs: Long,
+        lastScanUptimeMs: Long,
+        throttleMs: Long,
+        scanAlreadyPending: Boolean,
+    ): ScanThrottle = when {
+        nowUptimeMs - lastScanUptimeMs >= throttleMs -> ScanThrottle.SCAN_NOW
+        scanAlreadyPending -> ScanThrottle.ALREADY_PENDING
+        else -> ScanThrottle.SCHEDULE_TRAILING
+    }
+
+    /// Delay del trailing scan: residuo del throttle (mai negativo) + margine.
+    internal fun trailingScanDelayMs(
+        nowUptimeMs: Long,
+        lastScanUptimeMs: Long,
+        throttleMs: Long,
+        marginMs: Long,
+    ): Long = (lastScanUptimeMs + throttleMs - nowUptimeMs).coerceAtLeast(0L) + marginMs
 
     /// Matrice di decisione PURA (unit-testabile). Ordine dei guard:
     /// token > sessione > shield > provenienza.
@@ -407,6 +509,7 @@ object LauncherRecentsGate {
             mainHandler.removeCallbacks(it)
             pendingInitialScan = null
         }
+        cancelOneShotScan()
         setClickEventsEnabled(service, false)
     }
 
@@ -473,6 +576,9 @@ object LauncherRecentsGate {
         pendingSessionSanity = null
         pendingInitialScan?.let { mainHandler.removeCallbacks(it) }
         pendingInitialScan = null
+        pendingOneShotScan?.let { mainHandler.removeCallbacks(it) }
+        pendingOneShotScan = null
+        pendingOneShotScanDueUptimeMs = 0L
         allowUntilUptimeMs = 0L
         sessionAllowed = false
         recentsVisible = false
@@ -504,6 +610,8 @@ object LauncherRecentsGate {
         pendingKick = null
         pendingSessionSanity = null
         pendingInitialScan = null
+        pendingOneShotScan = null
+        pendingOneShotScanDueUptimeMs = 0L
         shieldActive = false
         allowUntilUptimeMs = 0L
         sessionAllowed = false
