@@ -13,9 +13,11 @@ import io.flutter.plugin.common.MethodChannel
  * Concern: contatore "schede aperte in background" del launcher + apertura
  * delle recents di sistema via AccessibilityService.
  *
- * - `getOpenAppsCount` → Int. Fa una sweep incrementale UsageStats
- *   ([OpenAppsTracker.count]), quindi gira off-main col pattern
- *   Thread + runOnUiThread di [AppInventoryCallHandler].
+ * - `getOpenAppsCount` → Map {count: Int, seq: Long}. Fa una sweep
+ *   incrementale UsageStats ([OpenAppsTracker.countWithSeq]), quindi gira
+ *   off-main col pattern Thread + runOnUiThread di [AppInventoryCallHandler].
+ *   Il seq monotono permette al Dart di scartare un pull stale che arrivi
+ *   dopo un push più fresco.
  * - `resetOpenAppsCount` → true. Long-press sull'icona del launcher.
  * - `openSystemRecents` → Boolean (false = non possibile). Emette
  *   l'allow-token sul [LauncherRecentsGate] PRIMA di
@@ -35,8 +37,10 @@ internal object RecentsCallHandler : BlockingCallHandler {
             "getOpenAppsCount" -> {
                 Thread {
                     try {
-                        val count = OpenAppsTracker.count(activity.applicationContext)
-                        activity.runOnUiThread { result.success(count) }
+                        val (count, seq) = OpenAppsTracker.countWithSeq(activity.applicationContext)
+                        activity.runOnUiThread {
+                            result.success(mapOf("count" to count, "seq" to seq))
+                        }
                     } catch (e: Exception) {
                         activity.runOnUiThread {
                             result.error("OPEN_APPS_COUNT_ERROR", e.message, null)
@@ -45,8 +49,19 @@ internal object RecentsCallHandler : BlockingCallHandler {
                 }.start()
             }
             "resetOpenAppsCount" -> {
-                OpenAppsTracker.resetAll(activity.applicationContext)
-                result.success(true)
+                // Off-main: resetAll prende lo stateLock del tracker, che una
+                // sweep UsageStats in volo può tenere per decine di ms — mai
+                // bloccare il platform thread.
+                Thread {
+                    try {
+                        OpenAppsTracker.resetAll(activity.applicationContext)
+                        activity.runOnUiThread { result.success(true) }
+                    } catch (e: Exception) {
+                        activity.runOnUiThread {
+                            result.error("OPEN_APPS_RESET_ERROR", e.message, null)
+                        }
+                    }
+                }.start()
             }
             "openSystemRecents" -> {
                 // Difesa in profondità: con BLOCK_RECENT_APPS attivo il tap

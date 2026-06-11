@@ -12,6 +12,9 @@ import com.dev.koru.diagnostics.BlackBox
 import org.json.JSONObject
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /// Conteggio approssimato delle "schede aperte in background" mostrato
 /// dall'icona top-left del launcher. Android non espone la vera lista recents
@@ -67,7 +70,26 @@ object OpenAppsTracker {
     @Volatile private var muteSyncUntilUptimeMs = 0L
     @Volatile private var lastFreshPruneUptimeMs = 0L
 
-    private val tracked: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    /// Set IMMUTABILE swappato copy-on-write sotto [stateLock]: i reader
+    /// (push, pull, fast-path di noteForeground) leggono il volatile senza
+    /// lock e vedono sempre uno snapshot coerente — il vecchio pattern
+    /// clear()+addAll() esponeva lo stato a metà replace (pull transitorio
+    /// sotto-stimato, push col size sbagliato).
+    @Volatile private var tracked: Set<String> = emptySet()
+
+    /// Serializza TUTTI i writer del set e delle ancore. ReentrantLock
+    /// esplicito (non @Synchronized) così [noteForeground] può fare tryLock:
+    /// è il hot path a11y sul main thread e il lock può essere tenuto da una
+    /// sweep UsageStats per decine di ms (prima sweep post-restart).
+    private val stateLock = ReentrantLock()
+
+    /// Seq monotono delle mutazioni del set: incluso nel push E nel pull,
+    /// il Dart scarta i valori con seq più vecchio di quello già visto
+    /// (race "pull stale sovrascrive push più fresco"). Riparte da 0 solo
+    /// con la morte del processo — che uccide anche il Dart (stesso
+    /// processo, nessun android:process) → confronto monotono safe.
+    private val mutationSeq = AtomicLong(0)
+
     private val launchableCache = ConcurrentHashMap<String, Boolean>()
 
     @Volatile private var lastSweepEndWallMs = 0L
@@ -86,19 +108,20 @@ object OpenAppsTracker {
     /// -1 = ancora mai letto dalle prefs (lazy load alla prima sweep).
     @Volatile private var resetWallMs = -1L
 
-    /// Conteggio corrente, preceduto da una sweep incrementale (throttled).
-    /// Chiamare OFF-MAIN (la sweep fa una query UsageStats): il channel
-    /// handler usa il pattern Thread + runOnUiThread.
-    fun count(context: Context): Int {
+    /// Conteggio + seq per il pull, preceduti da una sweep incrementale
+    /// (throttled) e letti ATOMICAMENTE sotto lock: un pull non deve poter
+    /// accoppiare un count vecchio con un seq nuovo — il Dart lo accetterebbe
+    /// e scarterebbe il push genuino successivo. Chiamare OFF-MAIN (la sweep
+    /// fa una query UsageStats): il channel handler usa il pattern
+    /// Thread + runOnUiThread.
+    fun countWithSeq(context: Context): Pair<Int, Long> {
         refresh(context)
-        return tracked.size
+        return stateLock.withLock { tracked.size to mutationSeq.get() }
     }
 
-    @Synchronized
-    fun refresh(context: Context) {
+    fun refresh(context: Context): Unit = stateLock.withLock {
         val nowUp = SystemClock.uptimeMillis()
         if (lastSweepEndWallMs > 0 && nowUp - lastSweepUptimeMs < MIN_SWEEP_INTERVAL_MS) return
-        val sizeAtStart = tracked.size
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
             ?: return
         val now = System.currentTimeMillis()
@@ -129,6 +152,9 @@ object OpenAppsTracker {
                 }
             }
         }
+        // Copy-on-write: la sweep lavora su una copia e pubblica lo swap
+        // solo a fine lavoro — i reader non vedono mai stati intermedi.
+        val next = HashSet(tracked)
         if (start < now) {
             val events = usm.queryEvents(start, now) ?: return
             val event = UsageEvents.Event()
@@ -137,7 +163,7 @@ object OpenAppsTracker {
                 events.getNextEvent(event)
                 if (event.eventType != UsageEvents.Event.ACTIVITY_RESUMED) continue
                 val pkg = event.packageName ?: continue
-                if (tracked.contains(pkg)) continue
+                if (next.contains(pkg)) continue
                 if (shouldTrack(
                         pkg = pkg,
                         selfPackage = self,
@@ -145,7 +171,7 @@ object OpenAppsTracker {
                         isLaunchable = isLaunchable(context, pkg),
                     )
                 ) {
-                    tracked.add(pkg)
+                    next.add(pkg)
                 }
             }
         }
@@ -155,7 +181,7 @@ object OpenAppsTracker {
         // badge; tra un prune fresco e l'altro basta la cache.
         val freshPrune = nowUp - lastFreshPruneUptimeMs >= PRUNE_FRESH_INTERVAL_MS
         if (freshPrune) lastFreshPruneUptimeMs = nowUp
-        tracked.removeAll { pkg ->
+        next.removeAll { pkg ->
             val launchable = if (freshPrune) {
                 val l = queryLaunchable(context, pkg)
                 launchableCache[pkg] = l
@@ -167,7 +193,7 @@ object OpenAppsTracker {
         }
         lastSweepEndWallMs = now
         lastSweepUptimeMs = nowUp
-        if (tracked.size != sizeAtStart) notifyCountChanged()
+        if (next != tracked) publishLocked(next)
     }
 
     /// Add opportunistico dal hot path accessibility (TYPE_WINDOW_STATE_CHANGED
@@ -175,16 +201,27 @@ object OpenAppsTracker {
     /// verità (vedi doc dell'object). Costo: un lookup nel set + (solo alla
     /// prima vista di un pkg) una query PM cache-ata.
     fun noteForeground(context: Context, pkg: String) {
+        // Fast-path lock-free sul volatile: il caso comune (pkg già contato)
+        // non paga nulla.
         if (tracked.contains(pkg)) return
-        if (shouldTrack(
+        if (!shouldTrack(
                 pkg = pkg,
                 selfPackage = context.packageName,
                 skipPackages = KoruAccessibilityService.SKIP_PACKAGES,
                 isLaunchable = isLaunchable(context, pkg),
             )
         ) {
-            tracked.add(pkg)
-            notifyCountChanged()
+            return
+        }
+        // tryLock e non lock: siamo sul main thread a11y e il lock può
+        // essere tenuto da una sweep UsageStats per decine di ms. Perdere
+        // l'add sotto contesa è nel contratto ("opportunistico, NON fonte
+        // di verità"): la sweep in corso lo recupera lei stessa.
+        if (!stateLock.tryLock()) return
+        try {
+            if (!tracked.contains(pkg)) publishLocked(tracked + pkg)
+        } finally {
+            stateLock.unlock()
         }
     }
 
@@ -195,7 +232,10 @@ object OpenAppsTracker {
     fun onPackageChanged(pkg: String, removed: Boolean) {
         launchableCache.remove(pkg)
         labelToPkg = null
-        if (removed && tracked.remove(pkg)) notifyCountChanged()
+        if (!removed) return
+        stateLock.withLock {
+            if (pkg in tracked) publishLocked(tracked - pkg)
+        }
     }
 
     // ─── Sync con le card REALI della schermata recents ──────────────────────
@@ -383,14 +423,13 @@ object OpenAppsTracker {
         return RecentsSyncDecision.Apply(matched)
     }
 
-    @Synchronized
     private fun applyRecentsScan(
         context: Context,
         matchedRaw: Set<String>,
         sawClearAll: Boolean,
         visitedNodes: Int,
         rootPkg: String,
-    ): RecentsScanOutcome {
+    ): RecentsScanOutcome = stateLock.withLock {
         // Post-reset (Cancella tutto / long-press): le card in animazione di
         // chiusura sono ancora nell'albero — applicare questa scansione le
         // ri-aggiungerebbe subito dopo l'azzeramento (osservato on-device).
@@ -401,7 +440,7 @@ object OpenAppsTracker {
         val matched = matchedRaw.filterTo(HashSet()) {
             shouldTrack(it, self, KoruAccessibilityService.SKIP_PACKAGES, isLaunchable = true)
         }
-        return when (val decision = computeRecentsSync(tracked.toSet(), matched, sawClearAll, visitedNodes)) {
+        return when (val decision = computeRecentsSync(tracked, matched, sawClearAll, visitedNodes)) {
             is RecentsSyncDecision.NoOp -> RecentsScanOutcome.DONE
             is RecentsSyncDecision.RetryLater -> RecentsScanOutcome.RETRY_SUGGESTED
             is RecentsSyncDecision.Apply -> {
@@ -419,46 +458,54 @@ object OpenAppsTracker {
     /// Replace del set + avanzamento delle ancore di sweep (anti-resurrezione:
     /// vedi [recentsSyncFloorWallMs]). Estratta da [applyRecentsScan] per
     /// essere testabile in JUnit puro — il wrapper Context-bound filtra e
-    /// decide, qui solo la transizione di stato. @Synchronized rientrante:
+    /// decide, qui solo la transizione di stato. ReentrantLock rientrante:
     /// la chiamata annidata dal wrapper è sicura.
-    @Synchronized
     internal fun applyRecentsResult(next: Set<String>, nowWallMs: Long) {
-        tracked.clear()
-        tracked.addAll(next)
-        lastSweepEndWallMs = nowWallMs
-        recentsSyncFloorWallMs = nowWallMs
-        notifyCountChanged()
+        stateLock.withLock {
+            lastSweepEndWallMs = nowWallMs
+            recentsSyncFloorWallMs = nowWallMs
+            publishLocked(next.toSet())
+        }
     }
 
     /// Azzera il conteggio e persiste l'ancora: usato dal long-press
     /// sull'icona del launcher e dal rilevamento best-effort di "Cancella
     /// tutto" nelle recents ([LauncherRecentsGate]).
     ///
-    /// @Synchronized: serializza con [refresh] (che gira sul thread di
-    /// background del channel handler). Senza, un clear() a metà di una sweep
-    /// in volo si fa ri-aggiungere package pre-reset dagli add successivi
-    /// dell'iterazione — e la finestra incrementale non li rivaluta mai →
-    /// conteggio non-zero permanente dopo il reset. Il blocco è accettabile:
-    /// azione user-initiated, durata sweep limitata.
-    @Synchronized
+    /// [stateLock]: serializza con [refresh] (che gira sul thread di
+    /// background del channel handler). Senza, un azzeramento a metà di una
+    /// sweep in volo si fa ri-aggiungere package pre-reset dal publish
+    /// successivo della sweep — e la finestra incrementale non li rivaluta
+    /// mai → conteggio non-zero permanente dopo il reset. Chiamare OFF-MAIN
+    /// (il lock può essere dietro una sweep UsageStats).
     fun resetAll(context: Context) {
-        val now = System.currentTimeMillis()
-        tracked.clear()
-        resetWallMs = now
-        lastSweepEndWallMs = now
-        // Le card stanno ancora animando la chiusura: le scansioni del burst
-        // nei prossimi istanti le rileggerebbero e ri-aggiungerebbero.
-        muteSyncUntilUptimeMs = SystemClock.uptimeMillis() + SYNC_MUTE_AFTER_RESET_MS
-        try {
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putLong(KEY_RESET_WALL_MS, now)
-                .apply()
-        } catch (e: Exception) {
-            BlackBox.log("RECENTS", "reset anchor non persistita: ${e.message}")
+        stateLock.withLock {
+            val now = System.currentTimeMillis()
+            resetWallMs = now
+            lastSweepEndWallMs = now
+            // Le card stanno ancora animando la chiusura: le scansioni del
+            // burst nei prossimi istanti le rileggerebbero e ri-aggiungerebbero.
+            muteSyncUntilUptimeMs = SystemClock.uptimeMillis() + SYNC_MUTE_AFTER_RESET_MS
+            try {
+                context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    .edit()
+                    .putLong(KEY_RESET_WALL_MS, now)
+                    .apply()
+            } catch (e: Exception) {
+                BlackBox.log("RECENTS", "reset anchor non persistita: ${e.message}")
+            }
+            BlackBox.log("RECENTS", "tracker reset → count 0")
+            publishLocked(emptySet())
         }
-        BlackBox.log("RECENTS", "tracker reset → count 0")
-        notifyCountChanged()
+    }
+
+    /// Punto UNICO di pubblicazione del set (chiamare SOTTO [stateLock]):
+    /// swap del volatile + push con seq monotono nello stesso punto — count
+    /// e seq del payload sono catturati atomicamente, mai un count vecchio
+    /// con un seq nuovo.
+    private fun publishLocked(next: Set<String>) {
+        tracked = next
+        notifyCountChanged(next.size, mutationSeq.incrementAndGet())
     }
 
     /// Push del conteggio al Dart via EventChannel: il badge del launcher si
@@ -466,12 +513,13 @@ object OpenAppsTracker {
     /// ancora aperte) invece di aspettare il pull al resume — era la
     /// "lentezza" percepita. Safe da qualunque thread (sendEvent posta sul
     /// main handler) e no-op senza listener.
-    private fun notifyCountChanged() {
+    private fun notifyCountChanged(count: Int, seq: Long) {
         try {
             ServiceEventChannel.sendEvent(
                 JSONObject()
                     .put("type", "OPEN_APPS_COUNT")
-                    .put("count", tracked.size)
+                    .put("count", count)
+                    .put("seq", seq)
                     .toString(),
             )
         } catch (_: Exception) {
@@ -541,7 +589,8 @@ object OpenAppsTracker {
     // ─── Solo per i test: reset dello stato in-memory ────────────────────────
 
     internal fun debugResetInMemoryState() {
-        tracked.clear()
+        tracked = emptySet()
+        mutationSeq.set(0)
         launchableCache.clear()
         lastSweepEndWallMs = 0L
         lastSweepUptimeMs = 0L
@@ -551,7 +600,8 @@ object OpenAppsTracker {
         recentsSyncFloorWallMs = 0L
     }
 
-    internal fun debugTrackedSnapshot(): Set<String> = tracked.toSet()
+    internal fun debugTrackedSnapshot(): Set<String> = tracked
     internal fun debugLastSweepEndWallMs(): Long = lastSweepEndWallMs
     internal fun debugRecentsSyncFloorWallMs(): Long = recentsSyncFloorWallMs
+    internal fun debugMutationSeq(): Long = mutationSeq.get()
 }

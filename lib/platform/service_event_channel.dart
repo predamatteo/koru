@@ -35,6 +35,7 @@ sealed class KoruServiceEvent {
       case 'OPEN_APPS_COUNT':
         return OpenAppsCountEvent(
           count: (json['count'] as num?)?.toInt() ?? 0,
+          seq: (json['seq'] as num?)?.toInt() ?? 0,
         );
       default:
         return UnknownServiceEvent(raw: json);
@@ -88,8 +89,13 @@ class PackageChangedEvent extends KoruServiceEvent {
 /// ogni volta che il set cambia (sync con le card reali, reset, uninstall,
 /// noteForeground). Il badge del launcher si aggiorna senza round-trip.
 class OpenAppsCountEvent extends KoruServiceEvent {
-  const OpenAppsCountEvent({required this.count});
+  const OpenAppsCountEvent({required this.count, required this.seq});
   final int count;
+
+  /// Sequence number monotono della mutazione nativa: il provider scarta i
+  /// payload con seq più vecchio di quello già applicato (anti-race con il
+  /// pull di getOpenAppsCount).
+  final int seq;
 }
 
 class UnknownServiceEvent extends KoruServiceEvent {

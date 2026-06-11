@@ -121,15 +121,18 @@ void main() {
       expect(p.packageName, '');
     });
 
-    test('OPEN_APPS_COUNT parses count, defaults to 0', () {
+    test('OPEN_APPS_COUNT parses count+seq, defaults to 0', () {
       final event = KoruServiceEvent.fromJson({
         'type': 'OPEN_APPS_COUNT',
         'count': 4,
+        'seq': 9,
       });
       expect((event as OpenAppsCountEvent).count, 4);
+      expect(event.seq, 9);
 
       final empty = KoruServiceEvent.fromJson({'type': 'OPEN_APPS_COUNT'});
       expect((empty as OpenAppsCountEvent).count, 0);
+      expect(empty.seq, 0);
     });
 
     test('Unknown type → UnknownServiceEvent containing raw map', () {

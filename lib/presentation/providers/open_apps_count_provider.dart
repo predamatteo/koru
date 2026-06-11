@@ -16,21 +16,41 @@ import '../../platform/strict_mode_channel.dart';
 /// Il fetch iniziale + gli invalidate nei punti di ritorno del launcher
 /// restano come pull di riallineamento (es. dopo un process restart).
 ///
+/// SEQ MONOTONO: push e pull portano il sequence number della mutazione
+/// nativa — un pull partito prima di un reset ma completato dopo
+/// sovrascriverebbe il push più fresco con un valore stale (race osservata
+/// in review); qualunque valore con seq più vecchio dell'ultimo applicato
+/// viene scartato. Il seq nativo riparte da 0 solo con la morte del processo,
+/// che uccide anche questo isolate (stesso processo) → confronto safe.
+///
 /// keepAlive (non-autoDispose) + lettura con `valueOrNull`
 /// (stale-while-revalidate, pattern di installedAppsProvider; MAI
 /// `unwrapPrevious()`): durante un refresh l'icona mostra il valore
 /// precedente invece di sparire.
 class OpenAppsCountNotifier extends AsyncNotifier<int> {
+  /// Ultimo seq applicato (push o pull). Campo d'istanza: il Notifier
+  /// sopravvive agli invalidate (solo build() ri-esegue), quindi il filtro
+  /// resta armato attraverso i refresh.
+  int _lastSeenSeq = 0;
+
   @override
   Future<int> build() async {
     final svc = ref.watch(platformChannelServiceProvider);
     final sub = svc.events.events().listen((event) {
-      if (event is OpenAppsCountEvent) {
+      if (event is OpenAppsCountEvent && event.seq >= _lastSeenSeq) {
+        _lastSeenSeq = event.seq;
         state = AsyncData(event.count);
       }
     });
     ref.onDispose(sub.cancel);
-    return svc.blocking.getOpenAppsCount();
+    final snap = await svc.blocking.getOpenAppsCount();
+    if (snap.seq < _lastSeenSeq) {
+      // Pull stale: un push più recente è arrivato durante il round-trip —
+      // non sovrascrivere il valore più fresco.
+      return state.valueOrNull ?? snap.count;
+    }
+    _lastSeenSeq = snap.seq;
+    return snap.count;
   }
 }
 

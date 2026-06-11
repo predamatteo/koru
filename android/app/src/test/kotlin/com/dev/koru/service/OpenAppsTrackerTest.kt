@@ -243,6 +243,27 @@ class OpenAppsTrackerTest {
     }
 
     @Test
+    fun applyRecentsResult_bumpsMutationSeq() {
+        // Ogni publish incrementa il seq monotono: è il contratto su cui il
+        // Dart si appoggia per scartare pull stale rispetto ai push.
+        OpenAppsTracker.debugResetInMemoryState()
+        assertThat(OpenAppsTracker.debugMutationSeq()).isEqualTo(0)
+        OpenAppsTracker.applyRecentsResult(setOf("com.whatsapp"), 1_000L)
+        val afterFirst = OpenAppsTracker.debugMutationSeq()
+        OpenAppsTracker.applyRecentsResult(emptySet(), 2_000L)
+        assertThat(afterFirst).isGreaterThan(0)
+        assertThat(OpenAppsTracker.debugMutationSeq()).isGreaterThan(afterFirst)
+    }
+
+    @Test
+    fun debugReset_zeroesSeqAndSet() {
+        OpenAppsTracker.applyRecentsResult(setOf("com.whatsapp"), 1_000L)
+        OpenAppsTracker.debugResetInMemoryState()
+        assertThat(OpenAppsTracker.debugTrackedSnapshot()).isEmpty()
+        assertThat(OpenAppsTracker.debugMutationSeq()).isEqualTo(0)
+    }
+
+    @Test
     fun resurrectionScenario_postSyncSweepExcludesPreSyncEvents() {
         // Il bug pinnato: WhatsApp RESUMED a t1, swipe-ato via dalle recents
         // a t2 (sync → set vuoto). La sweep al resume del launcher NON deve

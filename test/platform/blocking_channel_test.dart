@@ -345,15 +345,20 @@ void main() {
   });
 
   group('BlockingChannel - recents / contatore schede', () {
-    test('getOpenAppsCount returns native int', () async {
-      setMockHandler((_) async => 7);
-      expect(await BlockingChannel().getOpenAppsCount(), 7);
+    test('getOpenAppsCount returns count+seq snapshot from native map',
+        () async {
+      setMockHandler((_) async => {'count': 7, 'seq': 42});
+      final snap = await BlockingChannel().getOpenAppsCount();
+      expect(snap.count, 7);
+      expect(snap.seq, 42);
       expect(calls.first.method, 'getOpenAppsCount');
     });
 
-    test('getOpenAppsCount returns 0 on null', () async {
+    test('getOpenAppsCount defaults to 0/0 on null payload', () async {
       setMockHandler((_) async => null);
-      expect(await BlockingChannel().getOpenAppsCount(), 0);
+      final snap = await BlockingChannel().getOpenAppsCount();
+      expect(snap.count, 0);
+      expect(snap.seq, 0);
     });
 
     test('resetOpenAppsCount returns native bool, false on null', () async {

@@ -367,9 +367,18 @@ class BlockingChannel {
   /// Numero approssimato di app aperte in background: app portate in
   /// foreground dal boot (o dall'ultimo reset), tracciate lato nativo via
   /// UsageStats (OpenAppsTracker). Android non espone la vera lista recents
-  /// alle app di terze parti.
-  Future<int> getOpenAppsCount() async =>
-      (await _channel.invokeMethod<int>('getOpenAppsCount')) ?? 0;
+  /// alle app di terze parti. Il seq monotono nativo permette al provider
+  /// di scartare un pull stale arrivato dopo un push più fresco.
+  Future<OpenAppsCountSnapshot> getOpenAppsCount() async {
+    // invokeMapMethod, non invokeMethod<Map>: il codec standard ritorna
+    // Map<Object?, Object?> e il cast diretto fallirebbe.
+    final raw =
+        await _channel.invokeMapMethod<String, dynamic>('getOpenAppsCount');
+    return OpenAppsCountSnapshot(
+      count: (raw?['count'] as num?)?.toInt() ?? 0,
+      seq: (raw?['seq'] as num?)?.toInt() ?? 0,
+    );
+  }
 
   /// Azzera il contatore (long-press sull'icona del launcher).
   Future<bool> resetOpenAppsCount() async =>
@@ -381,4 +390,12 @@ class BlockingChannel {
   /// (servizio accessibilità spento o strict mode BLOCK_RECENT_APPS attivo).
   Future<bool> openSystemRecents() async =>
       (await _channel.invokeMethod<bool>('openSystemRecents')) ?? false;
+}
+
+/// Snapshot del contatore "schede aperte" + sequence number monotono della
+/// mutazione nativa (vedi OpenAppsCountNotifier per l'uso anti-race).
+class OpenAppsCountSnapshot {
+  const OpenAppsCountSnapshot({required this.count, required this.seq});
+  final int count;
+  final int seq;
 }
