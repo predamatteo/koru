@@ -60,6 +60,17 @@ object OpenAppsTracker {
     /// (osservato on-device: clear-all → reset → scan a +300ms → di nuovo 1).
     private const val SYNC_MUTE_AFTER_RESET_MS = 2_000L
 
+    /// Grazia post-reset per i RESUME FANTASMA: su OxygenOS il clear-all fa
+    /// transitare le app appena chiuse per un vero ACTIVITY_RESUMED 1-2s DOPO
+    /// il click (osservato via dumpsys usagestats: reset a 11:25:04.96,
+    /// com.whatsapp RESUMED a 11:25:06 e 11:25:07) → la sweep successiva,
+    /// la cui finestra parte proprio dal reset, le ri-aggiungeva e il badge
+    /// tornava al valore vecchio. Entro questa finestra gli eventi dei SOLI
+    /// package azzerati dal reset ([clearedAtReset]) vengono ignorati, sia
+    /// dalla sweep sia da noteForeground: un'app diversa aperta subito dopo
+    /// il reset resta contata normalmente.
+    internal const val RESET_EVENT_GRACE_MS = 3_500L
+
     /// Il prune "fresco" (query PM per ogni pkg tracciato, bypass cache) gira
     /// al massimo a questo intervallo: farlo a OGNI sweep aggiungeva N binder
     /// call al pull del conteggio (lentezza percepita del badge). Tra un
@@ -69,6 +80,12 @@ object OpenAppsTracker {
 
     @Volatile private var muteSyncUntilUptimeMs = 0L
     @Volatile private var lastFreshPruneUptimeMs = 0L
+
+    /// Package azzerati dall'ultimo [resetAll] + fine della grazia anti
+    /// resume-fantasma (wall per la sweep, uptime per noteForeground).
+    @Volatile private var clearedAtReset: Set<String> = emptySet()
+    @Volatile private var resetGraceEndWallMs = 0L
+    @Volatile private var resetGraceEndUptimeMs = 0L
 
     /// Set IMMUTABILE swappato copy-on-write sotto [stateLock]: i reader
     /// (push, pull, fast-path di noteForeground) leggono il volatile senza
@@ -164,6 +181,15 @@ object OpenAppsTracker {
                 if (event.eventType != UsageEvents.Event.ACTIVITY_RESUMED) continue
                 val pkg = event.packageName ?: continue
                 if (next.contains(pkg)) continue
+                if (isPostResetGhost(
+                        pkg = pkg,
+                        eventWallMs = event.timeStamp,
+                        graceEndWallMs = resetGraceEndWallMs,
+                        clearedAtReset = clearedAtReset,
+                    )
+                ) {
+                    continue
+                }
                 if (shouldTrack(
                         pkg = pkg,
                         selfPackage = self,
@@ -204,6 +230,13 @@ object OpenAppsTracker {
         // Fast-path lock-free sul volatile: il caso comune (pkg già contato)
         // non paga nulla.
         if (tracked.contains(pkg)) return
+        // Resume fantasma post clear-all (vedi RESET_EVENT_GRACE_MS): i
+        // window event delle app appena azzerate non devono ri-contarle.
+        if (SystemClock.uptimeMillis() < resetGraceEndUptimeMs &&
+            clearedAtReset.contains(pkg)
+        ) {
+            return
+        }
         if (!shouldTrack(
                 pkg = pkg,
                 selfPackage = context.packageName,
@@ -481,11 +514,17 @@ object OpenAppsTracker {
     fun resetAll(context: Context) {
         stateLock.withLock {
             val now = System.currentTimeMillis()
+            val nowUp = SystemClock.uptimeMillis()
             resetWallMs = now
             lastSweepEndWallMs = now
+            // Grazia anti resume-fantasma sui package appena azzerati (vedi
+            // RESET_EVENT_GRACE_MS): snapshot del set PRIMA del clear.
+            clearedAtReset = tracked
+            resetGraceEndWallMs = now + RESET_EVENT_GRACE_MS
+            resetGraceEndUptimeMs = nowUp + RESET_EVENT_GRACE_MS
             // Le card stanno ancora animando la chiusura: le scansioni del
             // burst nei prossimi istanti le rileggerebbero e ri-aggiungerebbero.
-            muteSyncUntilUptimeMs = SystemClock.uptimeMillis() + SYNC_MUTE_AFTER_RESET_MS
+            muteSyncUntilUptimeMs = nowUp + SYNC_MUTE_AFTER_RESET_MS
             try {
                 context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                     .edit()
@@ -570,6 +609,17 @@ object OpenAppsTracker {
         if (lastSweepEndWallMs > 0) lastSweepEndWallMs - overlapMs else 0L,
     )
 
+    /// PURO: l'evento RESUMED va ignorato come "resume fantasma" post
+    /// clear-all? Solo entro la grazia e solo per i package che il reset ha
+    /// appena azzerato — un'app diversa aperta subito dopo il reset conta,
+    /// e la stessa app ri-aperta DOPO la grazia torna a contare.
+    internal fun isPostResetGhost(
+        pkg: String,
+        eventWallMs: Long,
+        graceEndWallMs: Long,
+        clearedAtReset: Set<String>,
+    ): Boolean = eventWallMs < graceEndWallMs && clearedAtReset.contains(pkg)
+
     /// Esclusioni del conteggio: self (Koru), framework/systemui/launcher
     /// (skip-set del service — copre anche l'host delle recents) e package
     /// senza launch intent (IME, permission dialogs, resolver/share sheet;
@@ -598,6 +648,9 @@ object OpenAppsTracker {
         muteSyncUntilUptimeMs = 0L
         lastFreshPruneUptimeMs = 0L
         recentsSyncFloorWallMs = 0L
+        clearedAtReset = emptySet()
+        resetGraceEndWallMs = 0L
+        resetGraceEndUptimeMs = 0L
     }
 
     internal fun debugTrackedSnapshot(): Set<String> = tracked

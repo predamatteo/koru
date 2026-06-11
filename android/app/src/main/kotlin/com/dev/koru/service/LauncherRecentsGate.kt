@@ -114,10 +114,17 @@ object LauncherRecentsGate {
     // dove Looper non esiste — l'handler serve solo a runtime per il kick.
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
 
+    /// Ri-verifica differita della chiusura sessione su evento di Koru con
+    /// root ancora sull'host recents: copre l'uscita reale colta a metà
+    /// animazione (root non ancora commutato) senza lasciare sessioni
+    /// appese fino al sanity-check dei 60s.
+    private const val SESSION_END_RECHECK_DELAY_MS = 400L
+
     /// Accesso confinato al main thread (callback a11y + channel handler).
     private var pendingKick: Runnable? = null
     private var pendingSessionSanity: Runnable? = null
     private var pendingInitialScan: Runnable? = null
+    private var pendingSessionEndRecheck: Runnable? = null
 
     /// Slot UNICO per gli scan ritardati one-shot (trailing del throttle;
     /// dal fix clear-all anche il retry post-scan ambiguo): mai più di uno
@@ -171,6 +178,24 @@ object LauncherRecentsGate {
             // legittimo (vettore di bypass) o chiuderebbe una sessione
             // allowed a metà (falso kick alla re-emissione successiva).
             if (className.isNotEmpty() && pkg != "android" && pkg != "com.android.systemui") {
+                // Eventi di KORU STESSO a sessione aperta: su quickstep con
+                // launcher terzo l'overview NON tiene paused il launcher
+                // sottostante — ~700ms dopo l'apertura MainActivity RESUME
+                // e arriva un window event di Koru CON LE RECENTS ANCORA
+                // APERTE (osservato on-device, dumpsys usagestats: overview
+                // 11:25:04, Koru RESUMED 11:25:05). Chiudere la sessione qui
+                // spegneva typeViewClicked e il tap su "Cancella tutto"
+                // oltre i ~700ms non veniva mai visto. La sessione si chiude
+                // solo se l'overview NON è più la finestra attiva (root
+                // check, autoritativo e senza il lag di UsageStats); se lo
+                // è ancora, una ri-verifica differita copre l'animazione di
+                // uscita in corso (root non ancora commutato su Koru).
+                if (pkg == service.packageName && recentsVisible &&
+                    isRecentsStillActiveWindow(service)
+                ) {
+                    scheduleSessionEndRecheck(service)
+                    return false
+                }
                 onNonRecentsWindow(service, pkg)
             }
             return false
@@ -567,6 +592,41 @@ object LauncherRecentsGate {
         mainHandler.postDelayed(fallback, KICK_FALLBACK_DELAY_MS)
     }
 
+    /// "L'overview recents è ANCORA la finestra attiva?" — root check
+    /// autoritativo (riflette lo stato finestre corrente, niente lag
+    /// UsageStats). Usato per distinguere il RESUME di MainActivity SOTTO
+    /// l'overview aperto (ignorare) dall'uscita reale verso il launcher
+    /// (chiudere la sessione).
+    private fun isRecentsStillActiveWindow(service: KoruAccessibilityService): Boolean {
+        var stillRecents = false
+        service.withRootInActiveWindow { root ->
+            val rootPkg = root?.packageName?.toString() ?: return@withRootInActiveWindow
+            stillRecents = rootPkg != service.packageName &&
+                RecentsDetector.isPlausibleRecentsHostPackage(
+                    rootPkg, KoruAccessibilityService.SKIP_PACKAGES,
+                )
+        }
+        return stillRecents
+    }
+
+    /// One-shot (coalescente) post evento-self ignorato: se alla ri-verifica
+    /// l'overview non è più attivo, l'evento era un'uscita reale colta a
+    /// metà animazione → chiudi adesso la sessione.
+    private fun scheduleSessionEndRecheck(service: KoruAccessibilityService) {
+        if (pendingSessionEndRecheck != null) return
+        val r = Runnable {
+            pendingSessionEndRecheck = null
+            if (KoruAccessibilityService.instance !== service) return@Runnable
+            if (!recentsVisible) return@Runnable
+            if (!isRecentsStillActiveWindow(service)) {
+                BlackBox.log("RECENTS", "sessione chiusa al recheck (overview non più attivo)")
+                endSession(service)
+            }
+        }
+        pendingSessionEndRecheck = r
+        mainHandler.postDelayed(r, SESSION_END_RECHECK_DELAY_MS)
+    }
+
     private fun onNonRecentsWindow(service: KoruAccessibilityService, pkg: String) {
         pendingKick?.let {
             mainHandler.removeCallbacks(it)
@@ -595,6 +655,15 @@ object LauncherRecentsGate {
                 if (KoruAccessibilityService.instance !== service) return
                 if (!recentsVisible) {
                     pendingSessionSanity = null
+                    return
+                }
+                // Root check PRIMA di UsageStats: con l'overview aperto su
+                // launcher terzo il fg UsageStats può essere Koru (la
+                // MainActivity RESUME sotto le recents) — senza questo guard
+                // una permanenza legittima >60s nelle recents verrebbe
+                // chiusa come orfana.
+                if (isRecentsStillActiveWindow(service)) {
+                    mainHandler.postDelayed(this, SESSION_SANITY_DELAY_MS)
                     return
                 }
                 val fg = try {
@@ -628,6 +697,10 @@ object LauncherRecentsGate {
         pendingInitialScan?.let {
             mainHandler.removeCallbacks(it)
             pendingInitialScan = null
+        }
+        pendingSessionEndRecheck?.let {
+            mainHandler.removeCallbacks(it)
+            pendingSessionEndRecheck = null
         }
         cancelOneShotScan()
         setClickEventsEnabled(service, false)
@@ -709,6 +782,8 @@ object LauncherRecentsGate {
         pendingOneShotScan?.let { mainHandler.removeCallbacks(it) }
         pendingOneShotScan = null
         pendingOneShotScanDueUptimeMs = 0L
+        pendingSessionEndRecheck?.let { mainHandler.removeCallbacks(it) }
+        pendingSessionEndRecheck = null
         allowUntilUptimeMs = 0L
         sessionAllowed = false
         recentsVisible = false
@@ -742,6 +817,7 @@ object LauncherRecentsGate {
         pendingInitialScan = null
         pendingOneShotScan = null
         pendingOneShotScanDueUptimeMs = 0L
+        pendingSessionEndRecheck = null
         clearAllRetryBudget = 0
         shieldActive = false
         allowUntilUptimeMs = 0L

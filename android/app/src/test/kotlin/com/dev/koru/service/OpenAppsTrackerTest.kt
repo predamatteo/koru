@@ -227,6 +227,49 @@ class OpenAppsTrackerTest {
         assertThat(OpenAppsTracker.matchCardDescription("Screenshot", LABELS)).isNull()
     }
 
+    // ─── isPostResetGhost (resume fantasma post clear-all, OxygenOS) ────────
+
+    @Test
+    fun postResetGhost_clearedPackageWithinGrace_isIgnored() {
+        // Il bug on-device: clear-all alle T, OxygenOS fa RESUMED delle app
+        // appena chiuse a T+1..2s → la sweep le ri-aggiungeva e il badge
+        // tornava al valore vecchio.
+        assertThat(
+            OpenAppsTracker.isPostResetGhost(
+                pkg = "com.whatsapp",
+                eventWallMs = 1_000L + 1_500L,
+                graceEndWallMs = 1_000L + OpenAppsTracker.RESET_EVENT_GRACE_MS,
+                clearedAtReset = setOf("com.whatsapp", "com.android.chrome"),
+            ),
+        ).isTrue()
+    }
+
+    @Test
+    fun postResetGhost_otherPackageWithinGrace_counts() {
+        // Un'app DIVERSA aperta subito dopo il reset deve contare.
+        assertThat(
+            OpenAppsTracker.isPostResetGhost(
+                pkg = "com.spotify.music",
+                eventWallMs = 1_000L + 1_500L,
+                graceEndWallMs = 1_000L + OpenAppsTracker.RESET_EVENT_GRACE_MS,
+                clearedAtReset = setOf("com.whatsapp"),
+            ),
+        ).isFalse()
+    }
+
+    @Test
+    fun postResetGhost_clearedPackageAfterGrace_counts() {
+        // La stessa app ri-aperta DOPO la grazia torna a contare.
+        assertThat(
+            OpenAppsTracker.isPostResetGhost(
+                pkg = "com.whatsapp",
+                eventWallMs = 1_000L + OpenAppsTracker.RESET_EVENT_GRACE_MS + 1L,
+                graceEndWallMs = 1_000L + OpenAppsTracker.RESET_EVENT_GRACE_MS,
+                clearedAtReset = setOf("com.whatsapp"),
+            ),
+        ).isFalse()
+    }
+
     // ─── applyRecentsResult (transizione set + ancore) ───────────────────────
 
     @Test
