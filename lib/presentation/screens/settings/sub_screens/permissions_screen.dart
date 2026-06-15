@@ -5,6 +5,7 @@ import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
 import '../../../../platform/permission_channel.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
+import '../../home/widgets/accessibility_health_banner.dart';
 
 /// Gestione permessi post-onboarding (utente che aveva premuto "Skip for now"
 /// o vuole verificare lo stato). Riutilizza il pattern di onboarding con
@@ -57,6 +58,10 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen>
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           children: [
+            // Quando l'accessibility è giù, spiega onestamente cosa è ancora
+            // attivo (blocco app/limiti/focus via backup) e cosa è in pausa
+            // (website/sezioni/strict). Auto-nascosto quando tutto ok.
+            const AccessibilityHealthBanner(),
             Text(
               'Koru only runs on your device. Nothing ever leaves it.',
               style: Theme.of(
