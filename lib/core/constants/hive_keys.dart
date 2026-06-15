@@ -25,6 +25,8 @@ class HiveKeys {
   static const String focusSessionsCount = 'FOCUS_SESSIONS_COUNT';
   static const String lastMoodCheckInDay = 'LAST_MOOD_CHECK_IN_DAY';
   static const String firstInstallTimestamp = 'FIRST_INSTALL_TIMESTAMP';
+  /// Funnel milestone locale (write-once): primo a11y-granted. Vedi FUNNEL.md.
+  static const String accessibilityGrantedAt = 'ACCESSIBILITY_GRANTED_AT';
 
   // ─── onboarding box keys ───────────────────────────────────────────────────
   static const String isOnboardingPassed = 'IS_ONBOARDING_PASSED';

@@ -211,6 +211,10 @@ Your blocklists, your overlays, your intentions, your mood check-ins:
 all of it lives in a SQLite file and a few Hive boxes inside the app's
 private storage. Uninstall the app and it is gone.
 
+Even product analytics stay on-device: see [FUNNEL.md](FUNNEL.md) for how
+conversion is measured with **zero custom telemetry** — local milestones for
+QA plus Play Console / Play Billing aggregates, nothing sent from the app.
+
 ## Support
 
 Locked out by Strict Mode, or blocking stopped working? See
