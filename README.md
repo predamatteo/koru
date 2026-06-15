@@ -94,8 +94,12 @@ no certificate install — and it works inside private/incognito tabs.
 
 For when you know you'll try to wriggle out:
 
-- Locks the Settings app, Recent Apps, and Koru's own uninstall flow
-  using Android **Device Admin**.
+- Makes the Settings app, Recent Apps, and Koru's own uninstall flow
+  *harder to reach*, using Android **Device Admin** + Accessibility
+  interception. It is a deterrent, not an unbreakable lock — a motivated
+  user can still remove it (e.g. via `adb`, or if Android revokes the
+  Accessibility permission). See [SECURITY.md](SECURITY.md) for the
+  honest threat model.
 - The bypass code rotates **weekly** and is shown only after a cooling-off
   period — so disabling Koru in a moment of weakness takes long enough
   for the impulse to pass.
@@ -198,7 +202,10 @@ Everything Koru does happens on-device.
   makes (you'll see `INTERNET` in the manifest only because some
   third-party plugins request it transitively — Koru itself does not
   open sockets).
-- **No ads, ever.** There is no monetization layer to build.
+- **No ads, ever.** The minimalist launcher and core blocking are free
+  and open source. An optional one-time **Koru Pro** unlock (advanced
+  blocking depth, unlimited profiles, long-term stats, personalization)
+  funds development — no subscriptions, no data ever sold.
 
 Your blocklists, your overlays, your intentions, your mood check-ins:
 all of it lives in a SQLite file and a few Hive boxes inside the app's

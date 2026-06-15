@@ -324,8 +324,8 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
                     const SizedBox(height: 12),
                     Text(
                       _isEnabled
-                          ? 'Settings, Recent apps and Uninstall are locked. Use the backdoor code if you really need to disable it.'
-                          : 'Enable to lock Settings, Recent apps and Uninstall. Requires Device Admin.',
+                          ? 'Settings, Recent apps and Uninstall are blocked from here. To disable, you will need your weekly backdoor code.'
+                          : 'Enable to make Settings, Recent apps and Uninstall harder to reach (a deterrent, not an unbreakable lock). Requires Device Admin.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: KoruColors.textSecondary,
                         height: 1.4,
@@ -336,7 +336,7 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            _SectionTitle('What to lock'),
+            _SectionTitle('What to block'),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _mask & StrictModeOption.blockSettings != 0,
@@ -344,7 +344,7 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
                   _toggleOption(StrictModeOption.blockSettings, v),
               title: const Text('Block Settings'),
               subtitle: const Text(
-                'Prevents opening the Android Settings app.',
+                'Makes opening the Android Settings app harder (intercepts it via the Accessibility service).',
               ),
             ),
             SwitchListTile(
@@ -353,7 +353,9 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
               onChanged: (v) =>
                   _toggleOption(StrictModeOption.blockRecentApps, v),
               title: const Text('Block Recent apps'),
-              subtitle: const Text('Prevents opening the Recent apps view.'),
+              subtitle: const Text(
+                'Makes opening the Recent apps view harder (intercepts it via the Accessibility service).',
+              ),
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -361,7 +363,9 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
               onChanged: (v) =>
                   _toggleOption(StrictModeOption.blockUninstalling, v),
               title: const Text('Block Uninstall'),
-              subtitle: const Text('Prevents uninstalling Koru.'),
+              subtitle: const Text(
+                'Makes uninstalling Koru harder. No app can fully prevent uninstall without Device Owner mode.',
+              ),
             ),
             const SizedBox(height: 24),
             _SectionTitle('Device Admin'),
