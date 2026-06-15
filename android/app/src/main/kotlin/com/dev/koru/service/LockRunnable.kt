@@ -175,6 +175,30 @@ class LockRunnable(
     }
 
     private fun checkAndBlock() {
+        // PERF/batteria (causa #1 del consumo a riposo sul launcher): GUARDIA
+        // SPOSTATA IN CIMA. Quando l'AccessibilityService è vivo lui è il path
+        // primario (event-driven, latenza ~0) e questo backup non deve fare
+        // NULLA. Prima questa guardia stava DOPO ForegroundDetector.detect():
+        // ogni tick (5s a schermo acceso, h24) sparava comunque una query
+        // UsageStats cross-process in system_server — e con Koru launcher di
+        // default il foreground è SEMPRE un skipPackage (Koru stesso), quindi
+        // ~720 query/ora completamente sprecate. Spostata qui: zero lavoro
+        // mentre a11y è sano. Subsume anche il fallback 1h di ForegroundDetector
+        // (che a riposo scattava a ogni tick).
+        //
+        // Sicurezza enforcement INVARIATA: il backup (a11y morto, instance==null)
+        // prosegue identico col polling 300ms più sotto. Il tracking del bypass
+        // che PRIMA precedeva la query è un no-op qui — lastBypassedForegroundPkg
+        // resta null finché a11y è vivo (il solo setter è nel ramo Allow,
+        // raggiunto solo con instance==null). La revoca dei bypass su screen-off
+        // vive in run() (prima di checkAndBlock), non qui, quindi è inalterata.
+        // currentlyBlockingPackage=null mantiene lo stato pulito per ripartire
+        // netti se a11y cade.
+        if (KoruAccessibilityService.instance != null) {
+            currentlyBlockingPackage = null
+            return
+        }
+
         // NOTE: rimosso il vecchio early-return su `profiles.isEmpty()`:
         // i daily limits sono globali, non profile-scoped, quindi vanno
         // controllati anche se l'utente ha 0 profili abilitati.
@@ -211,14 +235,8 @@ class LockRunnable(
             return
         }
 
-        // BACKUP-ONLY: se l'AccessibilityService è vivo, lui è il path
-        // primario (event-driven, niente polling lag). Ci tiriamo da parte
-        // per evitare doppio overlay e doppia HOME. Manteniamo lo state
-        // pulito così, se in futuro accessibility cade, ripartiamo netti.
-        if (KoruAccessibilityService.instance != null) {
-            currentlyBlockingPackage = null
-            return
-        }
+        // (Guardia BACKUP-ONLY instance!=null spostata in cima a checkAndBlock:
+        // se siamo qui, a11y è morto e questo polling è il path attivo.)
 
         if (iterationCount % 33 == 0) Log.d(TAG, "[BACKUP] Foreground: $pkg")
 

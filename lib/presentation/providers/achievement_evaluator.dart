@@ -53,17 +53,13 @@ final achievementEvaluatorProvider = Provider<void>((ref) {
   WidgetsBinding.instance.addObserver(observer);
   ref.onDispose(() => WidgetsBinding.instance.removeObserver(observer));
 
-  bool? lastTickIsActive;
-
   final sub = events.listen((event) async {
-    if (event is QuickBlockTickEvent) {
-      final was = lastTickIsActive;
-      lastTickIsActive = event.isActive;
-      if (was == true && !event.isActive) {
-        // sessione focus appena chiusa → focus streak + achievements
-        await streaksRepo.markToday(StreakId.focus);
-        await ref.read(achievementEvaluationProvider.notifier).trigger();
-      }
+    if (event is QuickBlockFinishedEvent) {
+      // sessione focus appena chiusa → focus streak + achievements.
+      // Edge-driven via QUICK_BLOCK_FINISHED (emesso una volta a fine sessione)
+      // invece del parsing del tick 1Hz — vedi service_event_channel.
+      await streaksRepo.markToday(StreakId.focus);
+      await ref.read(achievementEvaluationProvider.notifier).trigger();
     } else if (event is BlockingStateEvent && event.isBlocking) {
       // nuovo blocco triggered → honest block count crescerà al prossimo eval
       await ref.read(achievementEvaluationProvider.notifier).trigger();

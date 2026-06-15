@@ -92,6 +92,11 @@ void main() {
       expect(t.totalCycles, 0);
     });
 
+    test('QUICK_BLOCK_FINISHED → QuickBlockFinishedEvent', () {
+      final event = KoruServiceEvent.fromJson({'type': 'QUICK_BLOCK_FINISHED'});
+      expect(event, isA<QuickBlockFinishedEvent>());
+    });
+
     test('PACKAGE_CHANGED parses kind + packageName', () {
       final event = KoruServiceEvent.fromJson({
         'type': 'PACKAGE_CHANGED',

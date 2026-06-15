@@ -135,7 +135,6 @@ Future<void> _cleanupStaleAppLimits(
 /// scrive direttamente su SQLite (bypassando il tracking di Drift.watch).
 final blockingEventsRefresherProvider = Provider<void>((ref) {
   final events = ref.watch(platformChannelServiceProvider).events.events();
-  bool? lastTickIsActive;
   final sub = events.listen((event) {
     final shouldInvalidate = (event is BlockingStateEvent && event.isBlocking) ||
         (event is UnknownServiceEvent &&
@@ -146,16 +145,14 @@ final blockingEventsRefresherProvider = Provider<void>((ref) {
     }
     // Quick-block / pomodoro session finita → il native ha appena scritto
     // un focus_usage_event. Invalida le stats per aggiornare focus time.
-    if (event is QuickBlockTickEvent) {
-      final was = lastTickIsActive;
-      lastTickIsActive = event.isActive;
-      if (was == true && !event.isActive) {
-        developer.log(
-          'Focus session tick transition true→false, invalidating stats',
-          name: 'EventsRefresher',
-        );
-        _invalidateStats(ref);
-      }
+    // Edge-driven: ascoltiamo QUICK_BLOCK_FINISHED (emesso una volta a fine
+    // sessione) invece di parsare ogni tick 1Hz — vedi service_event_channel.
+    if (event is QuickBlockFinishedEvent) {
+      developer.log(
+        'Focus session finished, invalidating stats',
+        name: 'EventsRefresher',
+      );
+      _invalidateStats(ref);
     }
   });
   ref.onDispose(sub.cancel);

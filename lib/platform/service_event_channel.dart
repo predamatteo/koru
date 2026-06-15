@@ -27,6 +27,8 @@ sealed class KoruServiceEvent {
           currentCycle: json['currentCycle'] as int? ?? 0,
           totalCycles: json['totalCycles'] as int? ?? 0,
         );
+      case 'QUICK_BLOCK_FINISHED':
+        return const QuickBlockFinishedEvent();
       case 'PACKAGE_CHANGED':
         return PackageChangedEvent(
           kind: json['kind'] as String? ?? '',
@@ -76,6 +78,16 @@ class QuickBlockTickEvent extends KoruServiceEvent {
   final bool isActive;
   final int currentCycle;
   final int totalCycles;
+}
+
+/// Emesso UNA VOLTA dal native sulla transizione fine-sessione focus/pomodoro
+/// (isActive true→false). Sostituisce il parsing del tick 1Hz per i consumer
+/// che reagiscono solo alla FINE (stats refresh, focus streak, achievements):
+/// prima svegliavano l'isolate ogni secondo per tutta la sessione solo per
+/// intercettare quest'unico edge. Il tick [QuickBlockTickEvent] resta per il
+/// display del countdown in /focus ([quickBlockTickProvider]).
+class QuickBlockFinishedEvent extends KoruServiceEvent {
+  const QuickBlockFinishedEvent();
 }
 
 class PackageChangedEvent extends KoruServiceEvent {

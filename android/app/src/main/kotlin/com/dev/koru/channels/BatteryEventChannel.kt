@@ -30,8 +30,20 @@ class BatteryEventChannel(private val context: Context) : EventChannel.StreamHan
     private var eventSink: EventChannel.EventSink? = null
     private var receiver: BroadcastReceiver? = null
 
+    // Coalescenza (battery): ultimo valore EMESSO verso Dart. ACTION_BATTERY_CHANGED
+    // viene ribroadcastato dal sistema anche su variazioni di temperatura/voltaggio
+    // che NON toccano la % né lo stato di carica mostrati (decine/min in carica);
+    // senza filtro ogni broadcast attraversava l'EventChannel e svegliava l'isolate
+    // Dart per un valore identico. `lastCharging == null` è il sentinel "mai emesso"
+    // → il primo valore (lo sticky di registerReceiver) passa sempre. Resettato in
+    // onListen così ogni nuovo subscriber riceve subito un valore iniziale.
+    private var lastPct: Int = -1
+    private var lastCharging: Boolean? = null
+
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
         eventSink = events
+        lastPct = -1
+        lastCharging = null
         val r = object : BroadcastReceiver() {
             override fun onReceive(c: Context?, i: Intent?) {
                 i?.let { emit(it) }
@@ -75,6 +87,11 @@ class BatteryEventChannel(private val context: Context) : EventChannel.StreamHan
         )
         val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
             status == BatteryManager.BATTERY_STATUS_FULL
+        // Emetti solo su delta reale di ciò che la UI mostra (% o carica): scarta
+        // i ribroadcast a parità di valore (temperatura/voltaggio). Vedi lastPct.
+        if (pct == lastPct && charging == lastCharging) return
+        lastPct = pct
+        lastCharging = charging
         try {
             eventSink?.success(mapOf("level" to pct, "charging" to charging))
         } catch (_: IllegalStateException) {

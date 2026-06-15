@@ -271,6 +271,12 @@ class QuickBlockManager {
         }
     }
 
+    /// Ultimo `isActive` propagato via tick: serve a rilevare la transizione
+    /// fine-sessione (true→false) e a emettere allora — e SOLO allora — un
+    /// evento dedicato [sendFinishedEvent]. Le transizioni work→break del
+    /// pomodoro NON la attivano (isActive resta true durante il break).
+    private var lastSentActive = false
+
     private fun sendTickEvent() {
         val json = JSONObject().apply {
             put("type", "QUICK_BLOCK_TICK")
@@ -280,6 +286,25 @@ class QuickBlockManager {
             put("isActive", isActive)
             put("currentCycle", currentCycle)
             put("totalCycles", totalCycles)
+        }
+        ServiceEventChannel.sendEvent(json.toString())
+
+        // Edge fine-sessione: emetti QUICK_BLOCK_FINISHED una sola volta sulla
+        // transizione isActive true→false. I consumer stats/achievement
+        // (events_refresher, achievement_evaluator) si agganciano a QUESTO
+        // invece di parsare ogni tick 1Hz per dedurre la fine — prima
+        // svegliavano l'isolate Dart ogni secondo per tutta la sessione solo
+        // per intercettare quest'unico edge. Il tick 1Hz resta per il display
+        // del countdown in /focus (quickBlockTickProvider).
+        if (lastSentActive && !isActive) {
+            sendFinishedEvent()
+        }
+        lastSentActive = isActive
+    }
+
+    private fun sendFinishedEvent() {
+        val json = JSONObject().apply {
+            put("type", "QUICK_BLOCK_FINISHED")
         }
         ServiceEventChannel.sendEvent(json.toString())
     }

@@ -16,6 +16,15 @@
     Instagram/YouTube/TikTok detector e aumentava il payload di ogni
     AccessibilityNodeInfo tree fetch.
 
+    accessibilityFlags: rimosso ANCHE flagRetrieveInteractiveWindows (battery).
+    Forzava system_server a calcolare e IPC-are la lista completa delle
+    finestre interattive a OGNI evento window-level (incluso ogni redraw del
+    launcher Koru — clock al minuto, batteria), ma NESSUNO la legge: zero
+    chiamate a getWindows()/.windows in tutto il codice nativo, tutta la
+    detection usa rootInActiveWindow (che NON richiede questo flag). Era costo
+    puro. flagReportViewIds RESTA: è consumato dai detector Instagram/YouTube/
+    browser (viewIdResourceName).
+
     packageNames whitelist NON impostata qui: il filtering dinamico
     via serviceInfo.packageNames lo fa KoruAccessibilityService.loadProfiles().
     Lasciare il manifest vuoto = filter accetta tutti i pkg al boot,
@@ -25,7 +34,7 @@
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged|typeWindowContentChanged|typeViewScrolled"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagRetrieveInteractiveWindows|flagReportViewIds"
+    android:accessibilityFlags="flagReportViewIds"
     android:canRetrieveWindowContent="true"
     android:notificationTimeout="200"
     android:settingsActivity="com.dev.koru.MainActivity"
