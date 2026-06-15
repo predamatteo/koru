@@ -6,6 +6,7 @@ import '../../../../core/di/providers.dart';
 import '../../../../platform/permission_channel.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
 import '../../home/widgets/accessibility_health_banner.dart';
+import '../../../widgets/strict_mode_recovery_help.dart';
 
 /// Gestione permessi post-onboarding (utente che aveva premuto "Skip for now"
 /// o vuole verificare lo stato). Riutilizza il pattern di onboarding con
@@ -103,6 +104,19 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen>
               granted: s?.notificationListener ?? false,
               required: false,
               onGrant: () => _channel.openNotificationListenerSettings(),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(
+                Icons.help_outline,
+                color: KoruColors.textSecondary,
+              ),
+              title: const Text('Stuck? Can\'t disable Strict Mode'),
+              subtitle: const Text(
+                'Recovery steps if you locked yourself out.',
+              ),
+              onTap: () => showStrictModeRecoveryHelp(context),
             ),
           ],
         ),

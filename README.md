@@ -211,6 +211,12 @@ Your blocklists, your overlays, your intentions, your mood check-ins:
 all of it lives in a SQLite file and a few Hive boxes inside the app's
 private storage. Uninstall the app and it is gone.
 
+## Support
+
+Locked out by Strict Mode, or blocking stopped working? See
+[SUPPORT.md](SUPPORT.md) for recovery steps (backdoor code, and how to
+uninstall via system settings or `adb` if Accessibility is off).
+
 ## License
 
 Licensed under the **Apache License, Version 2.0**.

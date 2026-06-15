@@ -8,6 +8,7 @@ import '../../../../core/di/providers.dart';
 import '../../../../platform/strict_mode_channel.dart';
 import '../../../providers/achievements_provider.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
+import '../../../widgets/strict_mode_recovery_help.dart';
 
 class StrictModeScreen extends ConsumerStatefulWidget {
   const StrictModeScreen({super.key});
@@ -403,6 +404,22 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
                       },
                       child: const Text('Enable'),
                     ),
+            ),
+            const SizedBox(height: 24),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(
+                Icons.help_outline,
+                color: KoruColors.textSecondary,
+              ),
+              title: const Text('Stuck? Can\'t disable Strict Mode'),
+              subtitle: Text(
+                'Backdoor code, and how to recover if Accessibility is off.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: KoruColors.textSecondary,
+                ),
+              ),
+              onTap: () => showStrictModeRecoveryHelp(context),
             ),
           ],
         ),
