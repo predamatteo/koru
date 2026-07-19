@@ -222,6 +222,10 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
     @Volatile
     private var isShowing = false
 
+    /// True dopo che [prewarm] ha scaldato il runtime Compose (una volta per
+    /// istanza). Evita di ripetere il warm-up a ogni onServiceConnected.
+    private var prewarmed = false
+
     /// Compose-observable. Una `var String` veniva trattata come "stable
     /// param" dal compiler e non triggerava ricomposizioni quando il show()
     /// successivo cambiava pkg (es. utente passa da IG a YT senza che
@@ -308,96 +312,8 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
 
         try {
             windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
-                PixelFormat.TRANSLUCENT,
-            ).apply {
-                gravity = Gravity.TOP or Gravity.START
-                // Cutout: l'overlay deve coprire l'area del notch su display
-                // con foro/tacca, altrimenti compare una banda nera che
-                // rivela l'app sottostante per ~30px in alto.
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    layoutInDisplayCutoutMode =
-                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-                }
-                // Stiamo già FLAG_LAYOUT_NO_LIMITS: la combinazione con
-                // fitInsetsTypes=systemBars() su API 30+ ci dà copertura
-                // sotto status/nav bar mantenendo il layout pulito.
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    try {
-                        fitInsetsTypes = WindowInsets.Type.systemBars()
-                    } catch (_: Throwable) {
-                        // Alcune ROM custom rompono questa API; skip silente.
-                    }
-                }
-            }
-
-            // Font scelto dall'utente (in-app), propagato al processo
-            // :accessibility via UiSettingsStore. Risolto UNA volta per overlay
-            // (I/O cache-ato in KoruFonts); null ⇒ font di sistema.
-            val overlayFontFamily =
-                KoruFonts.resolve(context, UiSettingsStore.activeFontId(context))
-
-            val composeView = ComposeView(context).apply {
-                setViewTreeLifecycleOwner(this@OverlayManager)
-                setViewTreeSavedStateRegistryOwner(this@OverlayManager)
-                setContent {
-                    androidx.compose.material3.MaterialTheme(
-                        colorScheme = darkColorScheme(
-                            primary = KoruPrimary,
-                            onPrimary = KoruTextPrimary,
-                            surface = KoruSurface,
-                            onSurface = KoruTextPrimary,
-                            background = KoruBgBase,
-                        ),
-                    ) {
-                        // Applica il fontFamily a TUTTI i Text dell'overlay via
-                        // LocalTextStyle: i singoli Text fissano size/weight ma
-                        // non la family, quindi la ereditano da qui. null = system.
-                        androidx.compose.runtime.CompositionLocalProvider(
-                            androidx.compose.material3.LocalTextStyle provides
-                                androidx.compose.material3.LocalTextStyle.current.copy(
-                                    fontFamily = overlayFontFamily,
-                                ),
-                        ) {
-                        // I valori sono letti dai mutableState dentro la
-                        // composable (vedi BlockedScreen): qui passiamo i
-                        // .value per rendere esplicita la sottoscrizione.
-                        BlockedScreen(
-                            packageName = _currentPackageName.value,
-                            appLabel = _appLabel.value,
-                            profileTitle = _profileTitle.value,
-                            reason = _reason.value,
-                            config = _config.value,
-                            profileEmoji = _profileEmoji.value,
-                            bypassPolicy = _bypassPolicy.value,
-                            onIntentionChosen = { intention ->
-                                onIntentionChosen?.invoke(_currentPackageName.value, intention)
-                            },
-                            onGoHome = { forceHome -> onReturnHome?.invoke(forceHome) },
-                            onBypass = { durationMs ->
-                                // Salva il MOTIVO del blocco insieme al bypass: serve a
-                                // [isLimitBypassActive] per non far sì che un bypass di
-                                // profilo sospenda il cap giornaliero (e viceversa).
-                                markBypassed(
-                                    _currentPackageName.value,
-                                    durationMs,
-                                    _blockedDomain.value,
-                                    _reason.value,
-                                )
-                                onBypassOpen?.invoke(_currentPackageName.value, durationMs, _blockedDomain.value)
-                            },
-                        )
-                        }
-                    }
-                }
-            }
+            val params = buildParams()
+            val composeView = buildComposeView()
 
             lifecycleRegistry.currentState = Lifecycle.State.RESUMED
             windowManager?.addView(composeView, params)
@@ -412,6 +328,144 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
             BlackBox.log("A11Y-FLASH", "overlay addView pkg=$packageName reason=$reason")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to show overlay", e)
+        }
+    }
+
+    /// Costruisce i LayoutParams dell'overlay. Estratto da [show] per essere
+    /// riusato dal warm-up [prewarm] (stessi flag/cutout/insets).
+    private fun buildParams(): WindowManager.LayoutParams =
+        WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            // Cutout: l'overlay deve coprire l'area del notch su display
+            // con foro/tacca, altrimenti compare una banda nera che
+            // rivela l'app sottostante per ~30px in alto.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            }
+            // Stiamo già FLAG_LAYOUT_NO_LIMITS: la combinazione con
+            // fitInsetsTypes=systemBars() su API 30+ ci dà copertura
+            // sotto status/nav bar mantenendo il layout pulito.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    fitInsetsTypes = WindowInsets.Type.systemBars()
+                } catch (_: Throwable) {
+                    // Alcune ROM custom rompono questa API; skip silente.
+                }
+            }
+        }
+
+    /// Costruisce la ComposeView dell'overlay leggendo i mutableState correnti.
+    /// Estratto da [show] per essere riusato dal warm-up [prewarm], così il
+    /// warm-up scalda ESATTAMENTE le stesse classi/composable/font del blocco.
+    private fun buildComposeView(): ComposeView {
+        // Font scelto dall'utente (in-app), propagato al processo
+        // :accessibility via UiSettingsStore. Risolto UNA volta per overlay
+        // (I/O cache-ato in KoruFonts); null ⇒ font di sistema.
+        val overlayFontFamily =
+            KoruFonts.resolve(context, UiSettingsStore.activeFontId(context))
+
+        return ComposeView(context).apply {
+            setViewTreeLifecycleOwner(this@OverlayManager)
+            setViewTreeSavedStateRegistryOwner(this@OverlayManager)
+            setContent {
+                androidx.compose.material3.MaterialTheme(
+                    colorScheme = darkColorScheme(
+                        primary = KoruPrimary,
+                        onPrimary = KoruTextPrimary,
+                        surface = KoruSurface,
+                        onSurface = KoruTextPrimary,
+                        background = KoruBgBase,
+                    ),
+                ) {
+                    // Applica il fontFamily a TUTTI i Text dell'overlay via
+                    // LocalTextStyle: i singoli Text fissano size/weight ma
+                    // non la family, quindi la ereditano da qui. null = system.
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        androidx.compose.material3.LocalTextStyle provides
+                            androidx.compose.material3.LocalTextStyle.current.copy(
+                                fontFamily = overlayFontFamily,
+                            ),
+                    ) {
+                    // I valori sono letti dai mutableState dentro la
+                    // composable (vedi BlockedScreen): qui passiamo i
+                    // .value per rendere esplicita la sottoscrizione.
+                    BlockedScreen(
+                        packageName = _currentPackageName.value,
+                        appLabel = _appLabel.value,
+                        profileTitle = _profileTitle.value,
+                        reason = _reason.value,
+                        config = _config.value,
+                        profileEmoji = _profileEmoji.value,
+                        bypassPolicy = _bypassPolicy.value,
+                        onIntentionChosen = { intention ->
+                            onIntentionChosen?.invoke(_currentPackageName.value, intention)
+                        },
+                        onGoHome = { forceHome -> onReturnHome?.invoke(forceHome) },
+                        onBypass = { durationMs ->
+                            // Salva il MOTIVO del blocco insieme al bypass: serve a
+                            // [isLimitBypassActive] per non far sì che un bypass di
+                            // profilo sospenda il cap giornaliero (e viceversa).
+                            markBypassed(
+                                _currentPackageName.value,
+                                durationMs,
+                                _blockedDomain.value,
+                                _reason.value,
+                            )
+                            onBypassOpen?.invoke(_currentPackageName.value, durationMs, _blockedDomain.value)
+                        },
+                    )
+                    }
+                }
+            }
+        }
+    }
+
+    /// Scalda il runtime Compose (+ font) UNA volta all'avvio del service,
+    /// FUORI dal path di blocco. Misura on-device (tag A11Y-FLASH): il primo
+    /// addView dell'overlay costa ~70ms (class-loading Compose + prima
+    /// composizione), i successivi ~6ms. Pagando quel costo qui, il PRIMO
+    /// blocco reale dopo un cold-start è veloce quanto i successivi. NON lascia
+    /// finestre parcheggiate: aggiunge una view trasparente (alpha 0) e
+    /// non-touchable e la rimuove appena composta (frame successivo).
+    fun prewarm(): Unit = synchronized(this) {
+        if (isShowing || prewarmed) return@synchronized
+        prewarmed = true
+        try {
+            val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            windowManager = wm
+            val params = buildParams().apply {
+                alpha = 0f // invisibile
+                flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            }
+            val warm = buildComposeView()
+            lifecycleRegistry.currentState = Lifecycle.State.RESUMED
+            wm.addView(warm, params)
+            // Rimuovi appena la prima composizione+layout è avvenuta (post =
+            // frame successivo). Riferimento locale: non tocca overlayView né
+            // isShowing, quindi un blocco reale concorrente resta intatto.
+            warm.post {
+                synchronized(this) {
+                    try { wm.removeView(warm) } catch (_: Exception) {}
+                    if (!isShowing) {
+                        try {
+                            lifecycleRegistry.currentState = Lifecycle.State.CREATED
+                        } catch (_: Exception) {}
+                    }
+                }
+            }
+            Log.d(TAG, "Overlay prewarm: Compose runtime scaldato")
+        } catch (e: Exception) {
+            Log.e(TAG, "Overlay prewarm failed", e)
         }
     }
 

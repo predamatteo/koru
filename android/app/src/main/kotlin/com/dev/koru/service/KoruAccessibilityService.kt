@@ -796,6 +796,10 @@ class KoruAccessibilityService : AccessibilityService() {
                 endOverlayOverApp()
             }
         }
+        // Scalda il runtime Compose dell'overlay ORA (fuori dal path di blocco):
+        // il primo blocco reale dopo questo cold-start eviterà i ~70ms di
+        // class-loading Compose misurati al primo addView (tag A11Y-FLASH).
+        overlayManager?.prewarm()
 
         actionReceiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
