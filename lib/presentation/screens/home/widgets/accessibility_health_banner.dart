@@ -6,20 +6,15 @@ import '../../../../core/di/providers.dart';
 import '../../../providers/accessibility_health_provider.dart';
 
 /// Banner che appare in cima alla home quando il servizio di accessibilità
-/// di Koru NON è attivo nel sistema. NON è "nessun blocco funziona": il
-/// backup [LockRunnable] (UsageStats dentro LockForegroundService) continua a
-/// far rispettare blocco app, limiti giornalieri e Focus anche senza
-/// accessibility. A cadere sono SOLO le feature che richiedono l'albero dei
-/// nodi: website blocking, blocco sezioni in-app (Reels/Shorts) e lo Strict
-/// Mode (intercetto Settings/Recents/Uninstall). Il copy riflette questa
-/// asimmetria onestamente — vedi SECURITY.md. Gli OEM aggressivi sui processi
-/// (OPPO/ColorOS, MIUI, Samsung) capita che disabilitino il servizio dopo
-/// ripetuti kill, senza avvertire l'utente.
+/// di Koru NON è attivo nel sistema. È la situazione in cui *nessun blocco
+/// funziona* (limiti giornalieri, profili, focus, website blocking) — gli
+/// OEM aggressivi sui processi (OPPO/ColorOS, MIUI, Samsung) capita che
+/// disabilitino il servizio dopo ripetuti kill, senza avvertire l'utente.
 ///
 /// Il provider [accessibilityHealthProvider] fa polling ogni 5s e ricontrola
 /// anche al ritorno in foreground. Quando lo stato passa a `false` il banner
-/// compare con un CTA che apre direttamente le Settings di accessibilità di
-/// sistema (Settings.ACTION_ACCESSIBILITY_SETTINGS).
+/// compare immediatamente con un CTA che apre direttamente le Settings di
+/// accessibilità di sistema (Settings.ACTION_ACCESSIBILITY_SETTINGS).
 class AccessibilityHealthBanner extends ConsumerWidget {
   const AccessibilityHealthBanner({super.key});
 
@@ -56,7 +51,7 @@ class AccessibilityHealthBanner extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Accessibility is off',
+                        'Koru blocking is OFF',
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
                               color: KoruColors.textPrimary,
                               fontWeight: FontWeight.w600,
@@ -64,10 +59,9 @@ class AccessibilityHealthBanner extends ConsumerWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'App blocking, daily limits and Focus still run via '
-                        'the backup service. Website blocking, in-app blocking '
-                        '(Reels, Shorts) and Strict Mode are paused until you '
-                        're-enable Accessibility.',
+                        'Accessibility service was disabled by the system. '
+                        'Limits, profiles and focus mode will not work until '
+                        'you re-enable it.',
                         style:
                             Theme.of(context).textTheme.bodySmall?.copyWith(
                                   color: KoruColors.textSecondary,
@@ -80,7 +74,7 @@ class AccessibilityHealthBanner extends ConsumerWidget {
                         child: FilledButton.tonal(
                           style: FilledButton.styleFrom(
                             backgroundColor: KoruColors.danger,
-                            foregroundColor: KoruColors.textPrimary,
+                            foregroundColor: KoruColors.onDanger,
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 14, vertical: 8),
                             minimumSize: const Size(0, 36),

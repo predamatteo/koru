@@ -8,7 +8,6 @@ import '../../../core/di/providers.dart';
 import '../../../core/router/app_router.dart';
 import 'pages/launcher_page.dart';
 import 'pages/permissions_page.dart';
-import 'pages/pre_permission_disclosure_page.dart';
 import 'pages/presets_page.dart';
 import 'pages/welcome_page.dart';
 
@@ -22,7 +21,6 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final _controller = PageController();
   int _page = 0;
-  bool _disclosureAcked = false;
 
   @override
   void dispose() {
@@ -30,23 +28,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     super.dispose();
   }
 
-  void _onPageChanged(int p) {
-    setState(() => _page = p);
-    // Superata la disclosure (indice 1) e raggiunta Permissions (indice 2+),
-    // registra che e' stata mostrata PRIMA della richiesta permessi (prominent
-    // disclosure, policy Play). Idempotente, una sola scrittura.
-    if (!_disclosureAcked && p >= 2) {
-      _disclosureAcked = true;
-      ref.read(hiveSettingsServiceProvider).put(
-            HiveKeys.settingsBox,
-            HiveKeys.accessibilityPrivacyAccepted,
-            true,
-          );
-    }
-  }
-
   void _next() {
-    if (_page >= 4) {
+    if (_page >= 3) {
       _finish();
     } else {
       _controller.nextPage(
@@ -71,17 +54,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             Expanded(
               child: PageView(
                 controller: _controller,
-                onPageChanged: _onPageChanged,
+                onPageChanged: (p) => setState(() => _page = p),
                 children: const [
                   WelcomePage(),
-                  PrePermissionDisclosurePage(),
                   PermissionsPage(),
                   PresetsPage(),
                   LauncherPage(),
                 ],
               ),
             ),
-            _PageIndicator(current: _page, total: 5),
+            _PageIndicator(current: _page, total: 4),
             const SizedBox(height: 16),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -89,11 +71,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 width: double.infinity,
                 child: FilledButton(
                   onPressed: _next,
-                  child: Text(_page == 4 ? 'Enter Koru' : 'Continue'),
+                  child: Text(_page == 3 ? 'Enter Koru' : 'Continue'),
                 ),
               ),
             ),
-            if (_page < 4)
+            if (_page < 3)
               TextButton(
                 onPressed: _finish,
                 child: const Text('Skip for now'),

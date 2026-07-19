@@ -225,9 +225,9 @@ Future<void> _showUninstallBlockedDialog(BuildContext context) {
     builder: (ctx) => AlertDialog(
       title: const Text('Strict mode active'),
       content: const Text(
-        'Uninstalling is blocked from here while Strict mode uninstall '
-        'protection is on. Turn that option off in Strict mode settings '
-        'to uninstall apps.',
+        'Uninstalling apps is blocked while strict mode protects '
+        'uninstalling. Disable that option in Strict mode settings to '
+        'uninstall apps.',
       ),
       actions: [
         TextButton(

@@ -29,7 +29,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Quando ok, il banner non mostra niente di significativo.
-      expect(find.text('Accessibility is off'), findsNothing);
+      expect(find.text('Koru blocking is OFF'), findsNothing);
       expect(find.text('Re-enable'), findsNothing);
       expect(find.byIcon(Icons.warning_amber_rounded), findsNothing);
     });
@@ -53,7 +53,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Accessibility is off'), findsOneWidget);
+      expect(find.text('Koru blocking is OFF'), findsOneWidget);
       expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
       expect(find.text('Re-enable'), findsOneWidget);
     });
@@ -137,7 +137,7 @@ void main() {
       // Pumps ridotti per non triggerare timer del provider override.
       await tester.pump();
 
-      expect(find.text('Accessibility is off'), findsNothing);
+      expect(find.text('Koru blocking is OFF'), findsNothing);
     });
   });
 }

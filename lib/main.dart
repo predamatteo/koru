@@ -8,7 +8,6 @@ import 'package:koru/app.dart';
 import 'package:koru/core/constants/hive_keys.dart';
 import 'package:koru/core/di/providers.dart';
 import 'package:koru/core/diagnostics/black_box.dart';
-import 'package:koru/core/diagnostics/funnel_milestones.dart';
 import 'package:koru/core/diagnostics/perf_observer.dart';
 import 'package:koru/data/database/app_database.dart';
 import 'package:koru/data/local/hive_settings_service.dart';
@@ -33,11 +32,6 @@ Future<void> main() async {
     'DART',
     'hiveSettings.init fine (${swBoot.elapsedMilliseconds}ms totali pre-runApp)',
   );
-
-  // Funnel milestone locale (write-once, mai inviato off-device): segna il
-  // primo avvio. Le coorti aggregate vengono da Play Console/Billing — vedi
-  // FUNNEL.md. Box gia' aperta sopra, quindi la put e' sicura qui.
-  FunnelMilestones.markFirstInstall(hiveSettings);
 
   final database = AppDatabase();
 

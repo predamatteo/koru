@@ -49,13 +49,12 @@ void main() {
       HiveKeys.focusSessionsCount,
       HiveKeys.lastMoodCheckInDay,
       HiveKeys.firstInstallTimestamp,
-      HiveKeys.accessibilityGrantedAt,
     };
 
     test('all settings keys are unique', () {
       // The Set literal above would dedupe; assert the size matches the
       // expected count to defend against future duplicates.
-      expect(settingsKeys.length, 12);
+      expect(settingsKeys.length, 11);
     });
 
     test('STRICT_MODE_ENABLED, MONOCHROME_ENABLED, THEME_MODE literals', () {
@@ -90,7 +89,6 @@ void main() {
       HiveKeys.focusSessionsCount,
       HiveKeys.lastMoodCheckInDay,
       HiveKeys.firstInstallTimestamp,
-      HiveKeys.accessibilityGrantedAt,
       // onboarding
       HiveKeys.isOnboardingPassed,
       HiveKeys.isPermissionsPassed,

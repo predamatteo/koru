@@ -94,12 +94,8 @@ no certificate install — and it works inside private/incognito tabs.
 
 For when you know you'll try to wriggle out:
 
-- Makes the Settings app, Recent Apps, and Koru's own uninstall flow
-  *harder to reach*, using Android **Device Admin** + Accessibility
-  interception. It is a deterrent, not an unbreakable lock — a motivated
-  user can still remove it (e.g. via `adb`, or if Android revokes the
-  Accessibility permission). See [SECURITY.md](SECURITY.md) for the
-  honest threat model.
+- Locks the Settings app, Recent Apps, and Koru's own uninstall flow
+  using Android **Device Admin**.
 - The bypass code rotates **weekly** and is shown only after a cooling-off
   period — so disabling Koru in a moment of weakness takes long enough
   for the impulse to pass.
@@ -202,24 +198,11 @@ Everything Koru does happens on-device.
   makes (you'll see `INTERNET` in the manifest only because some
   third-party plugins request it transitively — Koru itself does not
   open sockets).
-- **No ads, ever.** The minimalist launcher and core blocking are free
-  and open source. An optional one-time **Koru Pro** unlock (advanced
-  blocking depth, unlimited profiles, long-term stats, personalization)
-  funds development — no subscriptions, no data ever sold.
+- **No ads, ever.** There is no monetization layer to build.
 
 Your blocklists, your overlays, your intentions, your mood check-ins:
 all of it lives in a SQLite file and a few Hive boxes inside the app's
 private storage. Uninstall the app and it is gone.
-
-Even product analytics stay on-device: see [FUNNEL.md](FUNNEL.md) for how
-conversion is measured with **zero custom telemetry** — local milestones for
-QA plus Play Console / Play Billing aggregates, nothing sent from the app.
-
-## Support
-
-Locked out by Strict Mode, or blocking stopped working? See
-[SUPPORT.md](SUPPORT.md) for recovery steps (backdoor code, and how to
-uninstall via system settings or `adb` if Accessibility is off).
 
 ## License
 

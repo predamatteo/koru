@@ -8,7 +8,6 @@ import '../../../../core/di/providers.dart';
 import '../../../../platform/strict_mode_channel.dart';
 import '../../../providers/achievements_provider.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
-import '../../../widgets/strict_mode_recovery_help.dart';
 
 class StrictModeScreen extends ConsumerStatefulWidget {
   const StrictModeScreen({super.key});
@@ -325,8 +324,8 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
                     const SizedBox(height: 12),
                     Text(
                       _isEnabled
-                          ? 'Settings, Recent apps and Uninstall are blocked from here. To disable, you will need your weekly backdoor code.'
-                          : 'Enable to make Settings, Recent apps and Uninstall harder to reach (a deterrent, not an unbreakable lock). Requires Device Admin.',
+                          ? 'Settings, Recent apps and Uninstall are locked. Use the backdoor code if you really need to disable it.'
+                          : 'Enable to lock Settings, Recent apps and Uninstall. Requires Device Admin.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: KoruColors.textSecondary,
                         height: 1.4,
@@ -337,7 +336,7 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            _SectionTitle('What to block'),
+            _SectionTitle('What to lock'),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _mask & StrictModeOption.blockSettings != 0,
@@ -345,7 +344,7 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
                   _toggleOption(StrictModeOption.blockSettings, v),
               title: const Text('Block Settings'),
               subtitle: const Text(
-                'Makes opening the Android Settings app harder (intercepts it via the Accessibility service).',
+                'Prevents opening the Android Settings app.',
               ),
             ),
             SwitchListTile(
@@ -354,9 +353,7 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
               onChanged: (v) =>
                   _toggleOption(StrictModeOption.blockRecentApps, v),
               title: const Text('Block Recent apps'),
-              subtitle: const Text(
-                'Makes opening the Recent apps view harder (intercepts it via the Accessibility service).',
-              ),
+              subtitle: const Text('Prevents opening the Recent apps view.'),
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -364,9 +361,7 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
               onChanged: (v) =>
                   _toggleOption(StrictModeOption.blockUninstalling, v),
               title: const Text('Block Uninstall'),
-              subtitle: const Text(
-                'Makes uninstalling Koru harder. No app can fully prevent uninstall without Device Owner mode.',
-              ),
+              subtitle: const Text('Prevents uninstalling Koru.'),
             ),
             const SizedBox(height: 24),
             _SectionTitle('Device Admin'),
@@ -404,22 +399,6 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
                       },
                       child: const Text('Enable'),
                     ),
-            ),
-            const SizedBox(height: 24),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(
-                Icons.help_outline,
-                color: KoruColors.textSecondary,
-              ),
-              title: const Text('Stuck? Can\'t disable Strict Mode'),
-              subtitle: Text(
-                'Backdoor code, and how to recover if Accessibility is off.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: KoruColors.textSecondary,
-                ),
-              ),
-              onTap: () => showStrictModeRecoveryHelp(context),
             ),
           ],
         ),

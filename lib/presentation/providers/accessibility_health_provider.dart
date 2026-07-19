@@ -4,7 +4,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/di/providers.dart';
-import '../../core/diagnostics/funnel_milestones.dart';
 
 /// Stato del servizio di accessibilità Koru, ripollato periodicamente
 /// finché un consumer (es. il banner in home) è montato.
@@ -31,14 +30,6 @@ final accessibilityHealthProvider = StreamProvider.autoDispose<bool>((ref) {
     try {
       final ok = await channel.checkAccessibilityService();
       if (!controller.isClosed) controller.add(ok);
-      // Funnel milestone locale (write-once), best-effort e ISOLATO: l'add di
-      // `ok` e' gia' avvenuto, e _markOnce non rilancia — cosi' un errore del
-      // funnel non puo' mai alterare lo stream di health.
-      if (ok) {
-        FunnelMilestones.markAccessibilityGranted(
-          ref.read(hiveSettingsServiceProvider),
-        );
-      }
     } catch (_) {
       if (!controller.isClosed) controller.add(false);
     }
