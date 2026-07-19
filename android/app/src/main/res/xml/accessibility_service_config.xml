@@ -2,13 +2,17 @@
 <!--
     Config dell'AccessibilityService Koru.
 
-    notificationTimeout=200: la frequenza minima con cui il sistema ci
-    consegna eventi dello stesso tipo dalla stessa finestra. Era 100ms,
-    portato a 200ms per tagliare ~50% degli eventi WindowContentChanged
-    duplicati (es. scroll continuo in IG Stories) — il consumer di
-    questi eventi (handleAccessibilityEvent) ha overhead non trascurabile
-    quando la coalescenza è disabilitata. 200ms resta sotto il budget di
-    reattività percepibile dall'utente per il blocco.
+    notificationTimeout=100: la frequenza minima con cui il sistema ci
+    consegna eventi dello stesso tipo dalla stessa finestra. Storico:
+    100ms → 200ms per tagliare eventi WindowContentChanged duplicati (scroll
+    IG Stories). MISURA on-device (tag A11Y-FLASH, campo `delivery`): a 200ms
+    il PRIMO window-state event di un lancio veniva trattenuto ~200-208ms
+    PRIMA di raggiungere onAccessibilityEvent — cioè ~200ms del flash
+    "app-bloccata-visibile" erano puro ritardo di consegna, non lavoro di
+    Koru. Riportato a 100ms per dimezzare quel ritardo (~-100ms sul flash).
+    Il costo (più eventi content/scroll duplicati) è mitigato dai throttle
+    in-code (lastBrowserContentCheckMs 500ms, debounce sezioni) e va
+    verificato col protocollo A/B batteria (docs/battery-ab-test-protocol.md).
 
     accessibilityFlags: rimosso flagIncludeNotImportantViews. Era utile
     quando volevamo scansionare anche subview decorative (es. ad icons
@@ -36,6 +40,6 @@
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagReportViewIds"
     android:canRetrieveWindowContent="true"
-    android:notificationTimeout="200"
+    android:notificationTimeout="100"
     android:settingsActivity="com.dev.koru.MainActivity"
     android:description="@string/koru_accessibility_description" />
