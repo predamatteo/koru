@@ -1467,16 +1467,19 @@ class KoruAccessibilityService : AccessibilityService() {
                     endOverlayOverApp()
                     currentlyBlockingPackage = packageName
                     val appLabel = getAppLabel(packageName)
-                    mainHandler.post {
-                        overlayManager?.show(
-                            packageName = packageName,
-                            appLabel = appLabel,
-                            profileTitle = decision.profileTitle,
-                            reason = BlockReason.FOCUS_MODE,
-                            config = OverlayConfig.DEFAULT,
-                            profileEmoji = decision.profileEmoji,
-                        )
-                    }
+                    // Reveal INLINE (siamo già sul main thread) e PRIMA di
+                    // performGoHomeForBlock: l'overlay è attaccato prima che parta
+                    // HOME/BACK e ne maschera la transizione. Il vecchio
+                    // mainHandler.post riaccodava lo show in coda al looper, quindi
+                    // GLOBAL_ACTION_HOME (sincrono) partiva prima del primo pixel.
+                    overlayManager?.show(
+                        packageName = packageName,
+                        appLabel = appLabel,
+                        profileTitle = decision.profileTitle,
+                        reason = BlockReason.FOCUS_MODE,
+                        config = OverlayConfig.DEFAULT,
+                        profileEmoji = decision.profileEmoji,
+                    )
                     // FOCUS_MODE: forceHome=true. La user-intent del Pomodoro /
                     // focus session è uscire dall'app, non navigare lo stack
                     // interno. BACK su un'app con activity nested chiuderebbe
@@ -1517,17 +1520,16 @@ class KoruAccessibilityService : AccessibilityService() {
                         baseConfig = limitBaseConfig,
                         isStrict = decision.isStrictLimit,
                     )
-                    mainHandler.post {
-                        overlayManager?.show(
-                            packageName = packageName,
-                            appLabel = appLabel,
-                            profileTitle = decision.profileTitle,
-                            reason = BlockReason.USAGE_LIMIT,
-                            config = overlayConfig,
-                            profileEmoji = decision.profileEmoji,
-                            bypassPolicy = policy,
-                        )
-                    }
+                    // Reveal INLINE prima di performGoHomeForBlock (vedi FOCUS_MODE).
+                    overlayManager?.show(
+                        packageName = packageName,
+                        appLabel = appLabel,
+                        profileTitle = decision.profileTitle,
+                        reason = BlockReason.USAGE_LIMIT,
+                        config = overlayConfig,
+                        profileEmoji = decision.profileEmoji,
+                        bypassPolicy = policy,
+                    )
                     performGoHomeForBlock(blockedPackage = packageName)
                     val now = System.currentTimeMillis()
                     BlockEventLogger.logRestrictedAccess(
@@ -1556,16 +1558,17 @@ class KoruAccessibilityService : AccessibilityService() {
 
                     val appLabel = getAppLabel(packageName)
                     val config = OverlayConfig.fromJsonString(decision.relation?.overlayConfigJson)
-                    mainHandler.post {
-                        overlayManager?.show(
-                            packageName = packageName,
-                            appLabel = appLabel,
-                            profileTitle = decision.profileTitle,
-                            reason = BlockReason.APP_BLOCKED,
-                            config = config,
-                            profileEmoji = decision.profileEmoji,
-                        )
-                    }
+                    // Reveal INLINE prima della scelta kick/over-app + go-home
+                    // (vedi FOCUS_MODE): l'overlay maschera subito, poi decidiamo
+                    // se espellere o restare sopra l'app.
+                    overlayManager?.show(
+                        packageName = packageName,
+                        appLabel = appLabel,
+                        profileTitle = decision.profileTitle,
+                        reason = BlockReason.APP_BLOCKED,
+                        config = config,
+                        profileEmoji = decision.profileEmoji,
+                    )
 
                     // Modalità del blocco — "da link/altra app" vs "da icona del
                     // launcher" — decisa dall'app immediatamente precedente
