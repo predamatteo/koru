@@ -170,7 +170,7 @@ class _ActiveCard extends StatelessWidget {
               label: const Text('Stop'),
               style: FilledButton.styleFrom(
                 backgroundColor: KoruColors.danger,
-                foregroundColor: Colors.white,
+                foregroundColor: KoruColors.onDanger,
                 padding: const EdgeInsets.symmetric(vertical: 14),
               ),
             ),
@@ -414,11 +414,9 @@ class _StartButton extends StatelessWidget {
         label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
         style: FilledButton.styleFrom(
           backgroundColor: KoruColors.primary,
-          foregroundColor: Colors.white,
+          foregroundColor: KoruColors.onPrimary,
           padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
+          shape: const StadiumBorder(),
         ),
       ),
     );

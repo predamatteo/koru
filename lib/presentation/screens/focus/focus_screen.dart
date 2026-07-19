@@ -271,7 +271,7 @@ class _Card extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: KoruColors.surface,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(28),
       clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
@@ -371,18 +371,18 @@ class _PresetChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: selected
-          ? KoruColors.primary.withAlpha(40)
+          ? KoruColors.primaryContainer
           : KoruColors.surfaceElevated,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(14),
         child: Container(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(
               color: selected ? KoruColors.primary : Colors.transparent,
-              width: 1.2,
+              width: 1.5,
             ),
           ),
           padding: const EdgeInsets.symmetric(vertical: 12),
@@ -415,9 +415,9 @@ class _PlayButton extends StatelessWidget {
         onTap: onTap,
         customBorder: const CircleBorder(),
         child: const SizedBox(
-          width: 44,
-          height: 44,
-          child: Icon(Icons.play_arrow, color: Colors.white, size: 24),
+          width: 46,
+          height: 46,
+          child: Icon(Icons.play_arrow, color: KoruColors.onPrimary, size: 26),
         ),
       ),
     );

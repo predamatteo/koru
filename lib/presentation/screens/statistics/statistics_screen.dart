@@ -71,7 +71,7 @@ class _PeriodSwitcher extends ConsumerWidget {
     return Container(
       decoration: BoxDecoration(
         color: KoruColors.surface,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(4),
       child: Row(
@@ -109,10 +109,10 @@ class _PeriodPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: selected ? KoruColors.surfaceElevated : Colors.transparent,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(14),
         child: Container(
           alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(vertical: 10),
@@ -780,7 +780,7 @@ class _Card extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: KoruColors.surface,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(26),
       ),
       padding: const EdgeInsets.all(20),
       child: child,

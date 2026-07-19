@@ -139,7 +139,7 @@ class _Section extends StatelessWidget {
         Container(
           decoration: BoxDecoration(
             color: KoruColors.surface,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(20),
           ),
           clipBehavior: Clip.antiAlias,
           child: Column(
@@ -151,7 +151,7 @@ class _Section extends StatelessWidget {
                     padding: const EdgeInsets.only(left: 52),
                     child: Container(
                       height: 1,
-                      color: KoruColors.surfaceElevated,
+                      color: KoruColors.outline,
                     ),
                   ),
               ],
@@ -235,14 +235,7 @@ class _SwitchTile extends StatelessWidget {
                 ),
               ),
             ),
-            Switch(
-              value: value,
-              onChanged: onChanged,
-              activeThumbColor: Colors.white,
-              activeTrackColor: KoruColors.primary,
-              inactiveThumbColor: KoruColors.textSecondary,
-              inactiveTrackColor: KoruColors.backgroundBase,
-            ),
+            Switch(value: value, onChanged: onChanged),
           ],
         ),
       ),

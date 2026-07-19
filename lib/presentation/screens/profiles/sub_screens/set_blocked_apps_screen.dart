@@ -165,7 +165,7 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
                 return CheckboxListTile(
                   value: checked,
                   activeColor: KoruColors.primary,
-                  checkColor: Colors.white,
+                  checkColor: KoruColors.onPrimary,
                   side: const BorderSide(
                     color: KoruColors.textSecondary,
                     width: 1.5,

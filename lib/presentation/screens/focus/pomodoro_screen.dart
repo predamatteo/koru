@@ -217,7 +217,7 @@ class _ActiveCard extends StatelessWidget {
               label: const Text('Stop'),
               style: FilledButton.styleFrom(
                 backgroundColor: KoruColors.danger,
-                foregroundColor: Colors.white,
+                foregroundColor: KoruColors.onDanger,
                 padding: const EdgeInsets.symmetric(vertical: 14),
               ),
             ),
@@ -306,7 +306,7 @@ class _StepperButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: enabled
-          ? KoruColors.primary.withAlpha(40)
+          ? KoruColors.primaryContainer
           : KoruColors.surfaceElevated,
       shape: const CircleBorder(),
       child: InkWell(
@@ -437,11 +437,9 @@ class _StartButton extends StatelessWidget {
         label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
         style: FilledButton.styleFrom(
           backgroundColor: KoruColors.primary,
-          foregroundColor: Colors.white,
+          foregroundColor: KoruColors.onPrimary,
           padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
+          shape: const StadiumBorder(),
         ),
       ),
     );
@@ -458,7 +456,7 @@ class _Card extends StatelessWidget {
     final container = Container(
       decoration: BoxDecoration(
         color: KoruColors.surface,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(26),
       ),
       padding: const EdgeInsets.all(20),
       child: child,
@@ -466,10 +464,10 @@ class _Card extends StatelessWidget {
     if (onTap == null) return container;
     return Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(26),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(26),
         child: container,
       ),
     );

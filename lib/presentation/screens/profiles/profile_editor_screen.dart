@@ -577,8 +577,8 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                     width: 44,
                     height: 44,
                     alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: KoruColors.danger.withAlpha(40),
+                    decoration: const BoxDecoration(
+                      color: KoruColors.dangerContainer,
                       shape: BoxShape.circle,
                     ),
                     child: Text(
@@ -830,7 +830,7 @@ class _Card extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: KoruColors.surface,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(26),
       ),
       clipBehavior: Clip.antiAlias,
       padding: padded ? const EdgeInsets.all(20) : EdgeInsets.zero,
@@ -944,7 +944,7 @@ class _DayCircle extends StatelessWidget {
         child: Text(
           letter,
           style: TextStyle(
-            color: selected ? Colors.white : KoruColors.textSecondary,
+            color: selected ? KoruColors.onPrimary : KoruColors.textSecondary,
             fontSize: 13,
             fontWeight: FontWeight.w700,
           ),
@@ -1048,14 +1048,7 @@ class _SectionSwitchRow extends StatelessWidget {
               ],
             ),
           ),
-          Switch(
-            value: value,
-            onChanged: onChanged,
-            activeThumbColor: Colors.white,
-            activeTrackColor: KoruColors.primary,
-            inactiveThumbColor: KoruColors.textSecondary,
-            inactiveTrackColor: KoruColors.backgroundBase,
-          ),
+          Switch(value: value, onChanged: onChanged),
         ],
       ),
     );

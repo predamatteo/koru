@@ -126,13 +126,14 @@ class _PermTile extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
                 color: KoruColors.secondaryContainer,
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(7),
               ),
               child: Text(
                 'Required',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: KoruColors.textPrimary,
-                      letterSpacing: 1,
+                      color: KoruColors.onSecondaryContainer,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
                     ),
               ),
             ),

@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:koru/core/constants/koru_colors.dart';
 
+/// Koru theme — **Material 3 Expressive · "Sage Tonal"** (dark only).
+///
+/// Tonal layered surfaces, extra-large rounded shapes, expressive pill nav bar,
+/// a single bright sage primary + warm sand accent. See [KoruColors] for the
+/// token palette. The bright primary/error means filled surfaces carry a **dark**
+/// on-color — the [FilledButtonTheme] foreground is [KoruColors.onPrimary].
 class AppTheme {
   const AppTheme._();
 
@@ -9,21 +15,32 @@ class AppTheme {
     const colorScheme = ColorScheme.dark(
       brightness: Brightness.dark,
       primary: KoruColors.primary,
-      onPrimary: KoruColors.textPrimary,
+      onPrimary: KoruColors.onPrimary,
       primaryContainer: KoruColors.primaryContainer,
-      onPrimaryContainer: KoruColors.textPrimary,
+      onPrimaryContainer: KoruColors.onPrimaryContainer,
       secondary: KoruColors.secondary,
-      onSecondary: KoruColors.textPrimary,
+      onSecondary: KoruColors.onSecondary,
       secondaryContainer: KoruColors.secondaryContainer,
-      onSecondaryContainer: KoruColors.textPrimary,
+      onSecondaryContainer: KoruColors.onSecondaryContainer,
+      tertiary: KoruColors.tertiary,
+      onTertiary: KoruColors.onTertiary,
+      tertiaryContainer: KoruColors.tertiaryContainer,
+      onTertiaryContainer: KoruColors.onTertiaryContainer,
       surface: KoruColors.surface,
       onSurface: KoruColors.textPrimary,
+      onSurfaceVariant: KoruColors.textSecondary,
+      surfaceContainerLowest: KoruColors.backgroundBase,
+      surfaceContainerLow: KoruColors.surface,
+      surfaceContainer: KoruColors.surfaceContainer,
+      surfaceContainerHigh: KoruColors.surfaceElevated,
       surfaceContainerHighest: KoruColors.surfaceElevated,
       error: KoruColors.danger,
-      onError: KoruColors.textPrimary,
+      onError: KoruColors.onDanger,
       errorContainer: KoruColors.dangerContainer,
-      onErrorContainer: KoruColors.textPrimary,
-      outline: KoruColors.textSecondary,
+      onErrorContainer: KoruColors.onDangerContainer,
+      outline: KoruColors.outline,
+      outlineVariant: KoruColors.surfaceElevated,
+      surfaceTint: Colors.transparent,
     );
 
     return base.copyWith(
@@ -38,30 +55,42 @@ class AppTheme {
       appBarTheme: AppBarTheme(
         backgroundColor: KoruColors.backgroundBase,
         foregroundColor: KoruColors.textPrimary,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
+        scrolledUnderElevation: 0,
         centerTitle: false,
         titleTextStyle: TextStyle(
           color: KoruColors.textPrimary,
-          fontSize: 20,
-          fontWeight: FontWeight.w500,
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.3,
           fontFamily: fontFamily,
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: KoruColors.surfaceElevated,
         surfaceTintColor: Colors.transparent,
-        indicatorColor: KoruColors.primary.withValues(alpha: 0.22),
-        // Cerchio con raggio maggiore del default Material 3 NavigationIndicator
-        // (che è 32x56). Usiamo una shape custom che "infla" il rect prima di
-        // disegnare l'oval, così il fill cresce oltre il bounds assegnato.
-        indicatorShape: const _InflatedCircleBorder(extra: 6),
-        height: 64,
+        indicatorColor: KoruColors.primary,
+        // Solid sage pill hugging the active icon (M3 Expressive stadium).
+        indicatorShape: const StadiumBorder(),
+        height: 70,
         elevation: 0,
-        // Icon-only floating nav bar, cerchio tondo come indicator.
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         iconTheme: WidgetStateProperty.resolveWith(
           (states) => IconThemeData(
-            size: 24,
+            size: 23,
+            color: states.contains(WidgetState.selected)
+                ? KoruColors.onPrimary
+                : KoruColors.textSecondary,
+          ),
+        ),
+        labelTextStyle: WidgetStateProperty.resolveWith(
+          (states) => TextStyle(
+            fontSize: 10.5,
+            fontFamily: fontFamily,
+            fontWeight: states.contains(WidgetState.selected)
+                ? FontWeight.w700
+                : FontWeight.w500,
             color: states.contains(WidgetState.selected)
                 ? KoruColors.primary
                 : KoruColors.textSecondary,
@@ -72,42 +101,54 @@ class AppTheme {
         color: KoruColors.surface,
         elevation: 0,
         margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(26)),
+        ),
       ),
       listTileTheme: const ListTileThemeData(
         iconColor: KoruColors.textSecondary,
         textColor: KoruColors.textPrimary,
       ),
-      dividerColor: const Color(0x1FE8E6E1),
+      dividerColor: KoruColors.outline,
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
-              ? KoruColors.primary
+              ? KoruColors.onPrimary
               : KoruColors.textSecondary,
         ),
         trackColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
-              ? KoruColors.primary.withValues(alpha: 0.4)
-              : KoruColors.surface,
+              ? KoruColors.primary
+              : KoruColors.surfaceElevated,
+        ),
+        trackOutlineColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? Colors.transparent
+              : KoruColors.outline,
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: KoruColors.primary,
-          foregroundColor: KoruColors.textPrimary,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          foregroundColor: KoruColors.onPrimary,
+          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+          shape: const StadiumBorder(),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 15),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: KoruColors.textPrimary,
-          side: const BorderSide(color: KoruColors.textSecondary, width: 1),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          side: const BorderSide(color: KoruColors.outline, width: 1.5),
+          shape: const StadiumBorder(),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 15),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(foregroundColor: KoruColors.primary),
+        style: TextButton.styleFrom(
+          foregroundColor: KoruColors.primary,
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        ),
       ),
       extensions: const <ThemeExtension<dynamic>>[
         KoruSemanticColors(
@@ -149,61 +190,4 @@ class KoruSemanticColors extends ThemeExtension<KoruSemanticColors> {
       textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
     );
   }
-}
-
-/// OutlinedBorder a forma di cerchio perfetto, centrato sul rect del
-/// NavigationIndicator (default 56x32), con raggio = shortestSide/2 + [extra].
-/// A differenza di CircleBorder default (che inscrive nel rect quindi segue
-/// le proporzioni 56x32 → ovale), qui disegniamo sempre un cerchio tondo.
-class _InflatedCircleBorder extends OutlinedBorder {
-  const _InflatedCircleBorder({this.extra = 0, super.side = BorderSide.none});
-
-  final double extra;
-
-  Rect _circleRect(Rect rect) {
-    final size = rect.shortestSide + extra * 2;
-    return Rect.fromCenter(
-      center: rect.center,
-      width: size,
-      height: size,
-    );
-  }
-
-  @override
-  OutlinedBorder copyWith({BorderSide? side}) =>
-      _InflatedCircleBorder(extra: extra, side: side ?? this.side);
-
-  @override
-  EdgeInsetsGeometry get dimensions => EdgeInsets.all(side.strokeInset);
-
-  @override
-  ShapeBorder scale(double t) =>
-      _InflatedCircleBorder(extra: extra * t, side: side.scale(t));
-
-  @override
-  Path getInnerPath(Rect rect, {TextDirection? textDirection}) {
-    return Path()..addOval(_circleRect(rect).deflate(side.strokeInset));
-  }
-
-  @override
-  Path getOuterPath(Rect rect, {TextDirection? textDirection}) {
-    return Path()..addOval(_circleRect(rect));
-  }
-
-  @override
-  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {
-    if (side.style == BorderStyle.solid) {
-      canvas.drawPath(getOuterPath(rect), side.toPaint());
-    }
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is _InflatedCircleBorder &&
-          other.side == side &&
-          other.extra == extra);
-
-  @override
-  int get hashCode => Object.hash(side, extra);
 }

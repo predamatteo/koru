@@ -22,13 +22,14 @@ class ProfilesListScreen extends ConsumerWidget {
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: IconButton.filled(
-              tooltip: 'New profile',
+            child: FilledButton.icon(
               onPressed: () => context.push('/profiles/new'),
-              icon: const Icon(Icons.add),
-              style: IconButton.styleFrom(
-                backgroundColor: KoruColors.primary,
-                foregroundColor: Colors.white,
+              icon: const Icon(Icons.add, size: 20),
+              label: const Text('New'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                minimumSize: const Size(0, 40),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ),
           ),
@@ -93,7 +94,7 @@ class _ProfileCard extends ConsumerWidget {
     return Container(
       decoration: BoxDecoration(
         color: KoruColors.surface,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(26),
       ),
       clipBehavior: Clip.antiAlias,
       child: Material(
@@ -125,10 +126,6 @@ class _ProfileCard extends ConsumerWidget {
                     Switch(
                       value: profile.isEnabled,
                       onChanged: (v) => repo.toggleProfile(profile.id, v),
-                      activeThumbColor: Colors.white,
-                      activeTrackColor: KoruColors.primary,
-                      inactiveThumbColor: KoruColors.textSecondary,
-                      inactiveTrackColor: KoruColors.backgroundBase,
                     ),
                   ],
                 ),

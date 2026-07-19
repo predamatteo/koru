@@ -4,16 +4,17 @@ import 'package:koru/core/constants/koru_colors.dart';
 
 void main() {
   group('KoruColors literal ARGB values', () {
-    test('backgroundBase == 0xFF0E100F', () {
-      expect(KoruColors.backgroundBase.toARGB32(), 0xFF0E100F);
+    // Material 3 Expressive · "Sage Tonal" palette.
+    test('backgroundBase == 0xFF0F1210', () {
+      expect(KoruColors.backgroundBase.toARGB32(), 0xFF0F1210);
     });
 
-    test('primary == 0xFF5C8262', () {
-      expect(KoruColors.primary.toARGB32(), 0xFF5C8262);
+    test('primary == 0xFFA4D6A0', () {
+      expect(KoruColors.primary.toARGB32(), 0xFFA4D6A0);
     });
 
-    test('danger == 0xFFA85449', () {
-      expect(KoruColors.danger.toARGB32(), 0xFFA85449);
+    test('danger == 0xFFF0B4AB', () {
+      expect(KoruColors.danger.toARGB32(), 0xFFF0B4AB);
     });
   });
 

@@ -88,23 +88,35 @@ class _GreetingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: KoruColors.surface,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(_greeting(), style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 4),
-            Text(
-              'Take a breath. What do you want to focus on today?',
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: KoruColors.textSecondary),
+    return Container(
+      decoration: BoxDecoration(
+        color: KoruColors.surface,
+        borderRadius: BorderRadius.circular(30),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 26),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _greeting(),
+            style: const TextStyle(
+              fontSize: 30,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -1,
+              height: 1.05,
+              color: KoruColors.textPrimary,
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 9),
+          Text(
+            'Take a breath. What do you want to focus on today?',
+            style: const TextStyle(
+              fontSize: 14.5,
+              height: 1.4,
+              color: KoruColors.textSecondary,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -141,66 +153,79 @@ class _ActiveProfileCard extends StatelessWidget {
     final primaryActive = activeProfiles.isNotEmpty
         ? activeProfiles.first
         : null;
-    final primaryActiveColor = primaryActive == null
-        ? KoruColors.textSecondary
-        : _parseHex(primaryActive.colorHex);
 
-    return Card(
-      color: hasActive ? KoruColors.primaryContainer : KoruColors.surface,
+    // Tonal primary-container card in every state (M3 Expressive): the active
+    // profile is the dashboard's most prominent surface. Content is the dark-on
+    // color for the bright primary container.
+    const onc = KoruColors.onPrimaryContainer;
+    return Container(
+      decoration: BoxDecoration(
+        color: KoruColors.primaryContainer,
+        borderRadius: BorderRadius.circular(26),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
         onTap: () => GoRouter.of(context).go('/profiles'),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(18, 17, 18, 17),
           child: Row(
             children: [
-              if (hasActive)
-                CircleAvatar(
-                  radius: 20,
-                  backgroundColor: primaryActiveColor.withValues(alpha: 0.2),
-                  foregroundColor: primaryActiveColor,
-                  child: Text(
-                    primaryActive!.emoji == 'NoIcon'
-                        ? '🌱'
-                        : primaryActive.emoji,
-                    style: const TextStyle(fontSize: 18),
-                  ),
-                )
-              else
-                Icon(
-                  hasAny ? Icons.shield_outlined : Icons.add_circle_outline,
-                  color: KoruColors.textSecondary,
-                  size: 32,
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(15),
                 ),
-              const SizedBox(width: 16),
+                alignment: Alignment.center,
+                child: hasActive
+                    ? Text(
+                        primaryActive!.emoji == 'NoIcon'
+                            ? '🌱'
+                            : primaryActive.emoji,
+                        style: const TextStyle(fontSize: 22),
+                      )
+                    : Icon(
+                        hasAny ? Icons.shield : Icons.add_circle_outline,
+                        color: onc,
+                        size: 24,
+                      ),
+              ),
+              const SizedBox(width: 15),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      eyebrow,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: KoruColors.textSecondary,
-                        letterSpacing: 2,
+                      eyebrow.toUpperCase(),
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                        color: onc,
+                      ).copyWith(color: onc.withValues(alpha: 0.72)),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: onc,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(title, style: Theme.of(context).textTheme.titleMedium),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: KoruColors.textSecondary),
+              const Icon(Icons.chevron_right, color: onc),
             ],
           ),
         ),
       ),
     );
   }
-}
-
-Color _parseHex(String hex) {
-  final clean = hex.replaceFirst('#', '');
-  return Color(0xFF000000 | int.parse(clean, radix: 16));
 }
 
 class _TodayStatsRow extends StatelessWidget {
@@ -223,7 +248,8 @@ class _TodayStatsRow extends StatelessWidget {
       children: [
         Expanded(
           child: _MiniStat(
-            icon: Icons.shield_outlined,
+            icon: Icons.shield,
+            iconColor: KoruColors.primary,
             label: 'Blocks',
             value: '$blocksToday',
           ),
@@ -231,7 +257,8 @@ class _TodayStatsRow extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: _MiniStat(
-            icon: Icons.self_improvement_outlined,
+            icon: Icons.self_improvement,
+            iconColor: KoruColors.tertiary,
             label: 'Focus',
             value: _fmtMs(focusMs),
           ),
@@ -244,87 +271,151 @@ class _TodayStatsRow extends StatelessWidget {
 class _MiniStat extends StatelessWidget {
   const _MiniStat({
     required this.icon,
+    required this.iconColor,
     required this.label,
     required this.value,
   });
 
   final IconData icon;
+  final Color iconColor;
   final String label;
   final String value;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: KoruColors.surface,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 20, color: KoruColors.textSecondary),
-            const SizedBox(height: 8),
-            Text(value, style: Theme.of(context).textTheme.headlineSmall),
-            Text(
-              label,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: KoruColors.textSecondary),
+    return Container(
+      decoration: BoxDecoration(
+        color: KoruColors.surfaceContainer,
+        borderRadius: BorderRadius.circular(26),
+      ),
+      padding: const EdgeInsets.fromLTRB(18, 17, 18, 19),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 21, color: iconColor),
+          const SizedBox(height: 12),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 33,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -1,
+              height: 1,
+              color: KoruColors.textPrimary,
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 13, color: KoruColors.textSecondary),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _QuickActionsCard extends ConsumerWidget {
+class _QuickActionsCard extends StatelessWidget {
   const _QuickActionsCard();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Card(
-      color: KoruColors.surface,
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(4, 2, 4, 9),
+          child: Text(
+            'QUICK ACTIONS',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.4,
+              color: KoruColors.textSecondary,
+            ),
+          ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: KoruColors.surface,
+            borderRadius: BorderRadius.circular(26),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              _QuickActionRow(
+                icon: Icons.timer_outlined,
+                label: 'Quick block',
+                onTap: () => GoRouter.of(context).go('/focus/quick'),
+              ),
+              const _QuickActionDivider(),
+              _QuickActionRow(
+                icon: Icons.hourglass_top,
+                label: 'Pomodoro',
+                onTap: () => GoRouter.of(context).go('/focus/pomodoro'),
+              ),
+              const _QuickActionDivider(),
+              _QuickActionRow(
+                icon: Icons.shield_outlined,
+                label: 'Manage profiles',
+                onTap: () => GoRouter.of(context).go('/profiles'),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _QuickActionDivider extends StatelessWidget {
+  const _QuickActionDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 1,
+      margin: const EdgeInsets.symmetric(horizontal: 18),
+      color: KoruColors.outline,
+    );
+  }
+}
+
+class _QuickActionRow extends StatelessWidget {
+  const _QuickActionRow({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+        child: Row(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+            Icon(icon, size: 22, color: KoruColors.primary),
+            const SizedBox(width: 15),
+            Expanded(
               child: Text(
-                'Quick actions',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: KoruColors.textSecondary,
-                  letterSpacing: 2,
+                label,
+                style: const TextStyle(
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w600,
+                  color: KoruColors.textPrimary,
                 ),
               ),
             ),
-            ListTile(
-              leading: const Icon(
-                Icons.timer_outlined,
-                color: KoruColors.primary,
-              ),
-              title: const Text('Quick block'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => GoRouter.of(context).go('/focus/quick'),
-            ),
-            ListTile(
-              leading: const Icon(
-                Icons.hourglass_bottom_outlined,
-                color: KoruColors.primary,
-              ),
-              title: const Text('Pomodoro'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => GoRouter.of(context).go('/focus/pomodoro'),
-            ),
-            ListTile(
-              leading: const Icon(
-                Icons.shield_outlined,
-                color: KoruColors.primary,
-              ),
-              title: const Text('Manage profiles'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => GoRouter.of(context).go('/profiles'),
+            const Icon(
+              Icons.chevron_right,
+              size: 20,
+              color: KoruColors.textSecondary,
             ),
           ],
         ),

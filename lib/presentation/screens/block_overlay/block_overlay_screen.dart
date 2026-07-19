@@ -112,17 +112,24 @@ class _BlockOverlayScreenState extends ConsumerState<BlockOverlayScreen> {
             child: Column(
               children: [
                 const Spacer(flex: 2),
-                Icon(
-                  _headerIcon,
-                  size: 64,
-                  color: KoruColors.textPrimary.withValues(alpha: 0.92),
+                // Soft sage halo around the mindful icon (design "A · Breath").
+                Container(
+                  width: 76,
+                  height: 76,
+                  decoration: BoxDecoration(
+                    color: KoruColors.primary.withValues(alpha: 0.14),
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(_headerIcon, size: 38, color: KoruColors.primary),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 22),
                 Text(
                   _title,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                         color: KoruColors.textPrimary,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.6,
                       ),
                   textAlign: TextAlign.center,
                 ),
@@ -130,7 +137,7 @@ class _BlockOverlayScreenState extends ConsumerState<BlockOverlayScreen> {
                 Text(
                   _subtitle,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: KoruColors.textPrimary.withValues(alpha: 0.78),
+                        color: KoruColors.textPrimary.withValues(alpha: 0.72),
                       ),
                   textAlign: TextAlign.center,
                 ),
@@ -142,12 +149,25 @@ class _BlockOverlayScreenState extends ConsumerState<BlockOverlayScreen> {
                         setState(() => _chosenIntention = intention),
                   ),
                 ],
-                const Spacer(),
+                const Spacer(flex: 2),
+                // Recommended action first: stay away (bright sage primary).
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: widget.onGoHome,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 54),
+                    ),
+                    child: Text("Don't open ${widget.appLabel}"),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Bypass kept deliberately understated below the primary action.
                 CountdownButtonWidget(
                   durationMs: widget.config.countdownSeconds * 1000,
-                  fillColor: KoruColors.textPrimary.withValues(alpha: 0.3),
-                  textColor: KoruColors.textPrimary,
-                  backgroundColor: KoruColors.textPrimary.withValues(alpha: 0.1),
+                  fillColor: KoruColors.primary.withValues(alpha: 0.22),
+                  textColor: KoruColors.primary,
+                  backgroundColor: Colors.white.withValues(alpha: 0.06),
                   finishedText: 'Open ${widget.appLabel}',
                   onFinished: () =>
                       setState(() => _countdownFinished = true),
@@ -155,23 +175,16 @@ class _BlockOverlayScreenState extends ConsumerState<BlockOverlayScreen> {
                       ? _recordIntentionAndContinue
                       : null,
                 ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: widget.onGoHome,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: KoruColors.textPrimary,
-                      foregroundColor: bg,
-                      minimumSize: const Size(double.infinity, 52),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: Text("Don't open ${widget.appLabel}"),
+                const SizedBox(height: 12),
+                Text(
+                  'Tap the timer to pause it',
+                  style: TextStyle(
+                    color: KoruColors.textPrimary.withValues(alpha: 0.45),
+                    fontSize: 12,
                   ),
+                  textAlign: TextAlign.center,
                 ),
-                const Spacer(flex: 2),
+                const Spacer(),
               ],
             ),
           ),
