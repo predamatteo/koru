@@ -13,6 +13,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -588,6 +589,16 @@ class KoruAccessibilityService : AccessibilityService() {
     /// [pendingLimitChecks]/[scheduleBackFallbackHome].
     private val pendingGhostRechecks = mutableMapOf<String, Runnable>()
 
+    /// STRUMENTAZIONE FLASH (tag A11Y-FLASH): uptime dell'evento window-change
+    /// che ha innescato la valutazione di un pkg, per misurare il ritardo
+    /// evento→decisione di blocco. Un dt ~800ms rivela che la decisione è
+    /// arrivata dal ghost-recheck differito (falso ghost su lancio esterno);
+    /// un dt di pochi ms = blocco sincrono. Solo-main-thread come
+    /// [pendingGhostRechecks]; rimosso alla decisione (block/allow) e al
+    /// verdetto "ghost reale" del re-check. Serve a quantificare il contributo
+    /// del rinvio ghost vs l'inflazione dell'overlay PRIMA di intervenire.
+    private val blockTriggerUptimeMs = mutableMapOf<String, Long>()
+
     /// Throttle per TYPE_WINDOW_CONTENT_CHANGED nei browser: limita la lettura
     /// della URL bar (operazione relativamente costosa) a max 2/s.
     @Volatile
@@ -978,6 +989,11 @@ class KoruAccessibilityService : AccessibilityService() {
         if (now - lastProfileLoadTime > 10_000) loadProfiles()
         val freshSnapshot = profilesSnapshot.get()
 
+        // STRUMENTAZIONE FLASH: marca l'istante dell'evento window-change PRIMA
+        // di checkAppBlocking. Se l'app viene ghost-scartata, il valore resta
+        // nel map e verrà consumato dalla decisione del re-check differito,
+        // rendendo visibile su BlackBox (tag A11Y-FLASH) il ritardo di ~800ms.
+        blockTriggerUptimeMs[pkg] = SystemClock.uptimeMillis()
         val blockedByApp = checkAppBlocking(pkg, freshSnapshot)
         if (blockedByApp) return
 
@@ -1208,6 +1224,18 @@ class KoruAccessibilityService : AccessibilityService() {
      *
      * Stesso pattern di [scheduleBackFallbackHome] / [scheduleLimitCheck].
      */
+    /// STRUMENTAZIONE: logga su BlackBox (tag A11Y-FLASH) il ritardo
+    /// evento→decisione di blocco. Chiamata all'ingresso di ciascun ramo di
+    /// blocco. dt ~800ms ⇒ decisione arrivata dal ghost-recheck differito;
+    /// dt di pochi ms ⇒ blocco sincrono. Consuma (rimuove) il timestamp.
+    private fun logFlashDecision(pkg: String, reason: BlockReason) {
+        val t0 = blockTriggerUptimeMs.remove(pkg) ?: return
+        BlackBox.log(
+            "A11Y-FLASH",
+            "decision pkg=$pkg reason=$reason evt→decision=${SystemClock.uptimeMillis() - t0}ms",
+        )
+    }
+
     private fun scheduleGhostRecheck(pkg: String) {
         pendingGhostRechecks.remove(pkg)?.let { mainHandler.removeCallbacks(it) }
         val r = object : Runnable {
@@ -1229,6 +1257,7 @@ class KoruAccessibilityService : AccessibilityService() {
                     return
                 }
                 pendingGhostRechecks.remove(pkg)
+                blockTriggerUptimeMs.remove(pkg) // ghost reale: scarta il timestamp flash
                 Log.d(TAG, "Ghost re-check: $pkg never became foreground (fg=$fg) — real ghost")
             }
         }
@@ -1431,6 +1460,7 @@ class KoruAccessibilityService : AccessibilityService() {
         when (decision) {
             is BlockDecision.Block -> when (decision.reason) {
                 BlockReason.FOCUS_MODE -> {
+                    logFlashDecision(packageName, BlockReason.FOCUS_MODE)
                     Log.w(TAG, ">>> BLOCKING APP (focus): $packageName")
                     // Un focus/limite/sezione sopravvenuto è un blocco "duro" che
                     // espelle: chiude l'eventuale sessione over-app dello stesso pkg.
@@ -1464,6 +1494,7 @@ class KoruAccessibilityService : AccessibilityService() {
                 }
 
                 BlockReason.USAGE_LIMIT -> {
+                    logFlashDecision(packageName, BlockReason.USAGE_LIMIT)
                     Log.w(TAG, ">>> BLOCKING APP (daily limit, strict=${decision.isStrictLimit}): " +
                         "$packageName ${decision.todayMs / 60_000}min used, cap=${limitMinutes}min")
                     // Il cap è un blocco "duro" che espelle: chiude l'eventuale
@@ -1510,6 +1541,7 @@ class KoruAccessibilityService : AccessibilityService() {
                 }
 
                 else -> { // APP_BLOCKED (gli altri reason non sono raggiungibili qui)
+                    logFlashDecision(packageName, BlockReason.APP_BLOCKED)
                     val profile = snapshot.profiles.firstOrNull { it.id == decision.profileId }
                     currentlyBlockingPackage = packageName
                     cancelWindowBoundaryCheck(packageName)
@@ -1578,6 +1610,8 @@ class KoruAccessibilityService : AccessibilityService() {
             }
 
             is BlockDecision.Allow -> {
+                // STRUMENTAZIONE: decisione non-blocco → scarta il timestamp flash.
+                blockTriggerUptimeMs.remove(packageName)
                 // Questo pkg non è più bloccato ORA (bypass concesso o profilo non
                 // più attivo): una eventuale sessione over-app per esso è finita →
                 // rilascia il focus audio (il video riprende) e azzera il tracking.

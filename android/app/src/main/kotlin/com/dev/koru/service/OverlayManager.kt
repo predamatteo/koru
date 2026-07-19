@@ -19,6 +19,7 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.dev.koru.diagnostics.BlackBox
 import com.dev.koru.overlay.BlockReason
 import com.dev.koru.overlay.OverlayConfig
 
@@ -404,6 +405,11 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
             overlayParams = params
             isShowing = true
             Log.d(TAG, "Overlay shown for $packageName (reason=$reason)")
+            // STRUMENTAZIONE FLASH: istante reale dell'addView dell'overlay. Il
+            // divario con la riga "A11Y-FLASH decision ..." (BlackBox, stesso
+            // clock uptime) misura post-hop + inflazione Compose; il dt della
+            // decision misura l'eventuale rinvio ghost. Insieme danno lo split.
+            BlackBox.log("A11Y-FLASH", "overlay addView pkg=$packageName reason=$reason")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to show overlay", e)
         }
