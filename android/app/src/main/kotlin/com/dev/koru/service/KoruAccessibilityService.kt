@@ -599,6 +599,14 @@ class KoruAccessibilityService : AccessibilityService() {
     /// del rinvio ghost vs l'inflazione dell'overlay PRIMA di intervenire.
     private val blockTriggerUptimeMs = mutableMapOf<String, Long>()
 
+    /// STRUMENTAZIONE FLASH: ritardo di CONSEGNA dell'evento window-change =
+    /// (uptime all'ingresso di onAccessibilityEvent) - (event.eventTime, istante
+    /// in cui l'evento è stato generato dal sistema). Cattura il contributo di
+    /// notificationTimeout + coda di dispatch, cioè la latenza PRE-codice che
+    /// il timer evento→decisione non vede. Solo-main-thread; stesso ciclo di
+    /// vita di [blockTriggerUptimeMs].
+    private val blockTriggerDeliveryMs = mutableMapOf<String, Long>()
+
     /// Throttle per TYPE_WINDOW_CONTENT_CHANGED nei browser: limita la lettura
     /// della URL bar (operazione relativamente costosa) a max 2/s.
     @Volatile
@@ -993,7 +1001,11 @@ class KoruAccessibilityService : AccessibilityService() {
         // di checkAppBlocking. Se l'app viene ghost-scartata, il valore resta
         // nel map e verrà consumato dalla decisione del re-check differito,
         // rendendo visibile su BlackBox (tag A11Y-FLASH) il ritardo di ~800ms.
-        blockTriggerUptimeMs[pkg] = SystemClock.uptimeMillis()
+        // Cattura anche il ritardo di CONSEGNA (entry - event.eventTime), cioè
+        // la latenza pre-codice (notificationTimeout + coda dispatch).
+        val flashEntryUptime = SystemClock.uptimeMillis()
+        blockTriggerUptimeMs[pkg] = flashEntryUptime
+        blockTriggerDeliveryMs[pkg] = flashEntryUptime - event.eventTime
         val blockedByApp = checkAppBlocking(pkg, freshSnapshot)
         if (blockedByApp) return
 
@@ -1230,9 +1242,11 @@ class KoruAccessibilityService : AccessibilityService() {
     /// dt di pochi ms ⇒ blocco sincrono. Consuma (rimuove) il timestamp.
     private fun logFlashDecision(pkg: String, reason: BlockReason) {
         val t0 = blockTriggerUptimeMs.remove(pkg) ?: return
+        val delivery = blockTriggerDeliveryMs.remove(pkg) ?: -1L
         BlackBox.log(
             "A11Y-FLASH",
-            "decision pkg=$pkg reason=$reason evt→decision=${SystemClock.uptimeMillis() - t0}ms",
+            "decision pkg=$pkg reason=$reason delivery=${delivery}ms " +
+                "evt→decision=${SystemClock.uptimeMillis() - t0}ms",
         )
     }
 
@@ -1257,7 +1271,8 @@ class KoruAccessibilityService : AccessibilityService() {
                     return
                 }
                 pendingGhostRechecks.remove(pkg)
-                blockTriggerUptimeMs.remove(pkg) // ghost reale: scarta il timestamp flash
+                blockTriggerUptimeMs.remove(pkg) // ghost reale: scarta i timestamp flash
+                blockTriggerDeliveryMs.remove(pkg)
                 Log.d(TAG, "Ghost re-check: $pkg never became foreground (fg=$fg) — real ghost")
             }
         }
@@ -1613,8 +1628,9 @@ class KoruAccessibilityService : AccessibilityService() {
             }
 
             is BlockDecision.Allow -> {
-                // STRUMENTAZIONE: decisione non-blocco → scarta il timestamp flash.
+                // STRUMENTAZIONE: decisione non-blocco → scarta i timestamp flash.
                 blockTriggerUptimeMs.remove(packageName)
+                blockTriggerDeliveryMs.remove(packageName)
                 // Questo pkg non è più bloccato ORA (bypass concesso o profilo non
                 // più attivo): una eventuale sessione over-app per esso è finita →
                 // rilascia il focus audio (il video riprende) e azzera il tracking.
