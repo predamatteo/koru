@@ -6,7 +6,6 @@ import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
-import android.view.WindowInsets
 import android.view.WindowManager
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.mutableStateOf
@@ -352,12 +351,19 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
                 layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
             }
-            // Stiamo già FLAG_LAYOUT_NO_LIMITS: la combinazione con
-            // fitInsetsTypes=systemBars() su API 30+ ci dà copertura
-            // sotto status/nav bar mantenendo il layout pulito.
+            // Edge-to-edge: fitInsetsTypes=0 dice al WindowManager di NON
+            // restringere la finestra per evitare status/nav bar, così il
+            // gradiente dell'overlay copre l'INTERO schermo — incluse la banda
+            // della status bar in alto e quella della nav/taskbar in basso, che
+            // altrimenti restano trasparenti e lasciano vedere l'app bloccata.
+            // (Il default di fitInsetsTypes è systemBars(), che invece incassa
+            // la finestra dentro le barre: era la causa delle bande vuote.)
+            // Il contenuto interattivo resta nell'area sicura via
+            // systemBarsPadding() nei Column di BlockedScreen, quindi i pulsanti
+            // non finiscono sotto le barre di sistema.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 try {
-                    fitInsetsTypes = WindowInsets.Type.systemBars()
+                    fitInsetsTypes = 0
                 } catch (_: Throwable) {
                     // Alcune ROM custom rompono questa API; skip silente.
                 }

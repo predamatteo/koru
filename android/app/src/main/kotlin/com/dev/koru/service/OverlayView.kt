@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -137,6 +138,10 @@ internal fun BlockedScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                // Il gradiente del Box padre resta edge-to-edge; qui incassiamo
+                // solo il contenuto interattivo dentro status/nav bar così i
+                // pulsanti non finiscono sotto le barre di sistema.
+                .systemBarsPadding()
                 .padding(horizontal = 32.dp, vertical = 48.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -259,6 +264,8 @@ private fun DurationPickerSection(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            // Contenuto nell'area sicura; il gradiente edge-to-edge è sul Box padre.
+            .systemBarsPadding()
             .padding(horizontal = 32.dp, vertical = 48.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -351,6 +358,8 @@ private fun ExtensionPromptSection(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            // Contenuto nell'area sicura; il gradiente edge-to-edge è sul Box padre.
+            .systemBarsPadding()
             .padding(horizontal = 32.dp, vertical = 48.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
