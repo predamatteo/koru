@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Metadati del widget "tempo d'uso + limiti".
+
+     updatePeriodMillis = 30 min: è il MINIMO che il sistema onora (valori più
+     bassi vengono silenziosamente portati a 30 min) ed è solo la rete di
+     sicurezza. L'aggiornamento vero è event-driven — [KoruUsageWidgetProvider]
+     viene svegliato quando l'utente torna alla home, quando cambia un limite e
+     quando un cap scatta — così il widget è fresco nell'istante in cui viene
+     guardato, senza polling che pesi sulla batteria.
+
+     resizeMode="vertical|horizontal": il numero di righe è ricalcolato ad ogni
+     resize in onAppWidgetOptionsChanged. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="70dp"
+    android:maxResizeWidth="400dp"
+    android:maxResizeHeight="400dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="1800000"
+    android:initialLayout="@layout/widget_usage"
+    android:previewLayout="@layout/widget_usage"
+    android:previewImage="@mipmap/ic_launcher"
+    android:description="@string/koru_widget_description"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen" />

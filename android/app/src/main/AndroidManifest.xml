@@ -138,6 +138,26 @@
             </intent-filter>
         </receiver>
 
+        <!-- Widget home "tempo d'uso + limiti". Gira nel processo main come
+             tutto il resto (nessun android:process nel manifest), quindi legge
+             direttamente UsageCounter/AppUsageLimitsStore e riusa l'app-op
+             PACKAGE_USAGE_STATS già concessa all'app.
+
+             android:exported="true" è REQUIRED: il broadcast APPWIDGET_UPDATE
+             arriva dall'AppWidgetService di sistema. Il receiver non espone
+             azioni proprie — l'unico intent-filter è quello di sistema. -->
+        <receiver
+            android:name=".widget.KoruUsageWidgetProvider"
+            android:label="@string/koru_widget_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/usage_widget_info" />
+        </receiver>
+
         <receiver
             android:name=".receiver.BootReceiver"
             android:exported="true">

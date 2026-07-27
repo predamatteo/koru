@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Raggio del background del widget. Su Android 12+ il sistema impone il
+         proprio raggio alle "app widget background" e il valore va preso da
+         @android:dimen/system_app_widget_background_radius (vedi values-v31),
+         altrimenti gli angoli del nostro drawable non combaciano con la
+         maschera del launcher. Qui il fallback per API 28-30. -->
+    <dimen name="koru_widget_corner_radius">20dp</dimen>
+</resources>

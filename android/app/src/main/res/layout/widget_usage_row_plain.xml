@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Riga di un'app SENZA time limit: solo icona + label + tempo d'uso.
+     Nessuna barra — non c'è un cap rispetto a cui mostrare progresso.
+
+     Altezza ~28dp, replicata in UsageWidgetModel.PLAIN_ROW_DP (vedi la nota
+     in widget_usage_row_limit.xml). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingTop="5dp"
+    android:paddingBottom="5dp">
+
+    <ImageView
+        android:id="@+id/row_icon"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_marginEnd="8dp"
+        android:importantForAccessibility="no" />
+
+    <TextView
+        android:id="@+id/row_label"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:textColor="@color/koru_widget_text"
+        android:textSize="13sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <TextView
+        android:id="@+id/row_value"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:textColor="@color/koru_widget_text_secondary"
+        android:textSize="12sp"
+        android:maxLines="1" />
+</LinearLayout>

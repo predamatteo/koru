@@ -151,6 +151,30 @@ grouping all channels (`blocking`, `profile`, `permission`, `strictMode`, `event
 exposed via `platformChannelServiceProvider`. Add new native calls inside the matching
 channel class rather than scattering `MethodChannel` instances.
 
+### Home-screen widget (`widget/`, Kotlin-only)
+
+`android/.../widget/` is a **fully native** App Widget (RemoteViews, no Glance, no
+Flutter engine): it shows today's screen time plus the per-app *time limits* —
+the `AppUsageLimitsStore` caps only, not profile-driven blocking. It reads
+`UsageCounter` + `AppUsageLimitsStore` directly, so it never touches Drift or the
+platform channels.
+
+Two things to keep in mind when touching it:
+
+1. **Parity with the Flutter UI is a contract, not a nicety.** `UsageWidgetModel`
+   is a 1:1 port of `_fmtDurationMs` (`statistics_screen.dart`),
+   `usageTodayMinutesProvider` (`app_limits_provider.dart`) and the bar-colour
+   logic of `_LimitRow` (`today_limits_card.dart`). `UsageWidgetModelTest` is the
+   only place that check lives — change a formatter on the Dart side and that
+   test is what should stop you.
+2. **Refresh is event-driven on purpose.** `KoruUsageWidgetProvider.requestUpdate`
+   is called from the "user went home" branch of `KoruAccessibilityService`, from
+   `handleUserPresent`, from the `USAGE_LIMIT` block branch and from
+   `LimitsCallHandler`. It is safe on the hot path only because it bails on a
+   single `@Volatile` read when no widget is placed and defers all I/O to its own
+   HandlerThread. Do not add a polling loop — see the battery audit constraints in
+   `LockRunnable.checkAndBlock`.
+
 ### Launcher vs. shell routing
 
 The launcher UI (clock + favorites + drawer, `/launcher`) lives **outside** the

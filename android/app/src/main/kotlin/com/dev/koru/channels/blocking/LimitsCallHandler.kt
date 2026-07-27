@@ -5,6 +5,7 @@ import android.content.Intent
 import com.dev.koru.service.AppUsageLimitsStore
 import com.dev.koru.service.BypassCountStore
 import com.dev.koru.service.KoruAccessibilityService
+import com.dev.koru.widget.KoruUsageWidgetProvider
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
@@ -60,6 +61,11 @@ internal object LimitsCallHandler : BlockingCallHandler {
                         Intent(KoruAccessibilityService.ACTION_RELOAD_PROFILES)
                             .setPackage(ctx.packageName),
                     )
+                    // Il widget home mostra used/cap per ogni limite: dopo un
+                    // salvataggio deve riflettere subito il nuovo valore, non
+                    // al prossimo ritorno alla home. Forzato per bypassare il
+                    // throttle — è un cambio di configurazione, non un tick.
+                    KoruUsageWidgetProvider.requestUpdate(ctx, "limits-saved", force = true)
                 }
                 result.success(saved)
             }

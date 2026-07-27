@@ -77,12 +77,20 @@ final shellNavigatorFocusKey = GlobalKey<NavigatorState>();
 final shellNavigatorStatsKey = GlobalKey<NavigatorState>();
 final shellNavigatorSettingsKey = GlobalKey<NavigatorState>();
 
-/// Route iniziale dell'app: se Flutter riceve `defaultRouteName == '/launcher'`
-/// (impostato da MainActivity.getInitialRoute quando l'app è stata lanciata
-/// via HOME intent) partiamo dal launcher. Altrimenti partiamo dalla tab Home.
+/// Route iniziale dell'app, decisa lato nativo e passata come
+/// `defaultRouteName` (`MainActivity.computeInitialRoute`):
+/// - `/launcher` → l'app è stata lanciata via HOME intent ed è il launcher di
+///   default;
+/// - `/stats` → cold start da un tap sul widget home;
+/// - qualsiasi altro valore → tab Home.
+///
+/// L'allowlist esplicita (invece di inoltrare `name` così com'è) evita che una
+/// route sconosciuta finisca in `initialLocation` e faccia fallire il match di
+/// GoRouter all'avvio.
 String _resolveInitialRoute() {
   final name = WidgetsBinding.instance.platformDispatcher.defaultRouteName;
   if (name == KoruRoutes.launcher) return KoruRoutes.launcher;
+  if (name == KoruRoutes.stats) return KoruRoutes.stats;
   return KoruRoutes.home;
 }
 

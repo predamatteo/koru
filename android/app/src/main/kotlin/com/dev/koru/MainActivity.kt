@@ -19,6 +19,8 @@ import com.dev.koru.service.AppUsageLimitsStore
 import com.dev.koru.service.KoruAccessibilityService
 import com.dev.koru.service.LockForegroundService
 import com.dev.koru.strictmode.KoruDeviceAdminReceiver
+import com.dev.koru.widget.KoruUsageWidgetProvider
+import com.dev.koru.widget.UsageWidgetRenderer
 
 class MainActivity : FlutterActivity() {
     private var packageEventsReceiver: PackageEventsReceiver? = null
@@ -252,12 +254,46 @@ class MainActivity : FlutterActivity() {
      * per-activity) dove FlutterActivity la consulta direttamente.
      */
     private fun computeInitialRoute(): String {
-        val current = intent
-        return if (current != null && isHomeIntent(current) && isDefaultLauncher()) {
+        val current = intent ?: return "/"
+        // Tap sul widget home: la route richiesta vince su tutto il resto —
+        // è un'azione esplicita dell'utente, non un intent di sistema.
+        widgetRoute(current)?.let { return it }
+        return if (isHomeIntent(current) && isDefaultLauncher()) {
             "/launcher"
         } else {
             "/"
         }
+    }
+
+    /// Route Flutter richiesta da un tap sul widget home, oppure null se
+    /// l'intent non viene dal widget. Solo le route dichiarate da
+    /// [KoruUsageWidgetProvider] sono accettate: il receiver è `exported`
+    /// (deve esserlo, il broadcast arriva dal sistema), quindi un'app terza
+    /// potrebbe costruire lo stesso intent — l'allowlist impedisce che
+    /// diventi una navigazione arbitraria dentro Koru.
+    private fun widgetRoute(intent: Intent): String? {
+        val route = intent.getStringExtra(KoruUsageWidgetProvider.EXTRA_WIDGET_ROUTE)
+            ?: return null
+        return if (route == UsageWidgetRenderer.ROUTE_STATS) route else null
+    }
+
+    /**
+     * Se [intent] viene da un tap sul widget, porta Flutter sulla route
+     * richiesta e ritorna true. Consuma l'extra (come
+     * [maybeRequireBackdoorCode]) così un successivo onResume che riusa lo
+     * stesso intent non rinaviga sotto le dita dell'utente.
+     *
+     * Usato solo sui path a engine GIÀ caldo: al cold start la route arriva
+     * dalla `initialRoute` calcolata in [computeInitialRoute].
+     */
+    private fun maybeRouteFromWidget(intent: Intent?): Boolean {
+        if (intent == null) return false
+        val route = widgetRoute(intent) ?: return false
+        intent.removeExtra(KoruUsageWidgetProvider.EXTRA_WIDGET_ROUTE)
+        setIntent(intent)
+        Log.i("MainActivity", "widget tap → route $route")
+        NavigationMethodChannel.goToRoute(route)
+        return true
     }
 
     override fun getInitialRoute(): String? = computeInitialRoute()
@@ -269,6 +305,9 @@ class MainActivity : FlutterActivity() {
     /// sennò esce dal launcher se Dart è rimasto lì da una sessione precedente.
     private fun routeForLaunchIntent() {
         val current = intent ?: return
+        // Tap sul widget: naviga e basta, senza passare per la policy
+        // launcher/home (che riporterebbe l'utente altrove).
+        if (maybeRouteFromWidget(current)) return
         val now = System.currentTimeMillis()
         val suppressUntil = KoruAccessibilityService.suppressLauncherNavigationUntilMs
         if (now < suppressUntil) {
@@ -304,6 +343,8 @@ class MainActivity : FlutterActivity() {
         // disabilitare il device admin con strict mode attivo) apriamo il prompt
         // e fermiamoci qui — ha priorità sulla navigazione launcher/home.
         if (maybeRequireBackdoorCode(intent)) return
+        // Tap sul widget home mentre Koru è già viva (singleTask → onNewIntent).
+        if (maybeRouteFromWidget(intent)) return
         val now = System.currentTimeMillis()
         val suppressUntil = KoruAccessibilityService.suppressLauncherNavigationUntilMs
         val isHome = isHomeIntent(intent)

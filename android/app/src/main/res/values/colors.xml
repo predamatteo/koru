@@ -6,4 +6,18 @@
     <color name="koru_background_base">#FF0E100F</color>
     <color name="koru_surface">#FF1A1D1B</color>
     <color name="koru_primary">#FF5C8262</color>
+
+    <!-- ── Widget home (RemoteViews) ──────────────────────────────────────
+         Mirror ESATTO dei token di `lib/core/constants/koru_colors.dart`:
+         il widget è disegnato dal launcher, fuori da Flutter, quindi non può
+         leggere la palette Dart e la deve duplicare. Se cambi KoruColors,
+         cambia anche qui — è l'unico punto di duplicazione della palette. -->
+    <color name="koru_widget_bg">#F21D221E</color>          <!-- surfaceContainer @95% -->
+    <color name="koru_widget_track">#FF252B26</color>       <!-- surfaceElevated -->
+    <color name="koru_widget_outline">#FF333934</color>     <!-- outline -->
+    <color name="koru_widget_text">#FFE7EAE4</color>        <!-- textPrimary -->
+    <color name="koru_widget_text_secondary">#FF8E948C</color> <!-- textSecondary -->
+    <color name="koru_widget_sage">#FFA4D6A0</color>        <!-- primary -->
+    <color name="koru_widget_sand">#FFE6C08C</color>        <!-- tertiary -->
+    <color name="koru_widget_danger">#FFF0B4AB</color>      <!-- danger -->
 </resources>

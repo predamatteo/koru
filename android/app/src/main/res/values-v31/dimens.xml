@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+: usa i raggi di sistema così il background del widget
+         combacia con la maschera applicata dal launcher (senza, si vede un
+         doppio bordo agli angoli). -->
+    <dimen name="koru_widget_corner_radius">@android:dimen/system_app_widget_background_radius</dimen>
+</resources>

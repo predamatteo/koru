@@ -58,6 +58,16 @@ object NavigationMethodChannel {
         invokeSafely("goToHomeIfOnLauncher")
     }
 
+    /// Naviga Flutter su una route esplicita. Usata dal tap sul widget home
+    /// (`MainActivity.maybeRouteFromWidget`), che sa già dove vuole portare
+    /// l'utente e non deve passare per la policy launcher/home.
+    ///
+    /// Il chiamante valida la route contro un'allowlist PRIMA di arrivare qui:
+    /// questo metodo la inoltra e basta, non è un punto di controllo.
+    fun goToRoute(route: String) {
+        invokeSafely("goToRoute", route)
+    }
+
     /// SEC-12: chiede a Flutter di aprire il prompt del backdoor code. Invocata
     /// da [com.dev.koru.MainActivity] quando l'intent porta l'extra
     /// [com.dev.koru.strictmode.KoruDeviceAdminReceiver.EXTRA_REQUIRE_BACKDOOR_CODE]
@@ -93,10 +103,10 @@ object NavigationMethodChannel {
     /// aggressivo) crasha il processo. Catchiamo e azzeriamo `channel`
     /// così invocazioni successive diventano no-op finché un nuovo
     /// `register` non ripopola.
-    private fun invokeSafely(method: String) {
+    private fun invokeSafely(method: String, arguments: Any? = null) {
         val c = channel ?: return
         try {
-            c.invokeMethod(method, null)
+            c.invokeMethod(method, arguments)
         } catch (e: IllegalStateException) {
             Log.w("NavigationMethodChannel", "channel dead on '$method': ${e.message}")
             channel = null

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sfondo del widget: tonal surface Koru (surfaceContainer) con gli angoli
+     allineati al raggio di sistema su Android 12+ (vedi values-v31/dimens.xml). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/koru_widget_bg" />
+    <corners android:radius="@dimen/koru_widget_corner_radius" />
+</shape>

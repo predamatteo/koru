@@ -163,13 +163,33 @@ activity.startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
             .any { it.resolveInfo.serviceInfo.packageName == context.packageName }
     }
 
-    private fun hasUsageStats(context: Context): Boolean {
+    /// `internal` (era private) per essere riusata da
+    /// [com.dev.koru.widget.UsageWidgetDataSource]: PACKAGE_USAGE_STATS è una
+    /// appops permission, quindi senza concessione `queryEvents` NON lancia —
+    /// ritorna una lista vuota. Il widget deve poter distinguere "permesso
+    /// mancante" da "non hai usato niente oggi", e l'unico modo è questo check.
+    internal fun hasUsageStats(context: Context): Boolean {
         val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-        return appOps.unsafeCheckOpNoThrow(
-            AppOpsManager.OPSTR_GET_USAGE_STATS,
-            Process.myUid(),
-            context.packageName
-        ) == AppOpsManager.MODE_ALLOWED
+        // `unsafeCheckOpNoThrow` esiste solo da API 29 (Q) mentre il minSdk è
+        // 28: senza questa guardia, su Android 9 la chiamata solleva
+        // NoSuchMethodError — un Error, non un'Exception, quindi sfugge alla
+        // maggior parte dei try/catch e abbatte il processo. `checkOpNoThrow`
+        // è l'API equivalente pre-29 (deprecata da 29, non rimossa).
+        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            appOps.unsafeCheckOpNoThrow(
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                Process.myUid(),
+                context.packageName,
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            appOps.checkOpNoThrow(
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                Process.myUid(),
+                context.packageName,
+            )
+        }
+        return mode == AppOpsManager.MODE_ALLOWED
     }
 
     private fun isNotificationListenerEnabled(context: Context): Boolean {

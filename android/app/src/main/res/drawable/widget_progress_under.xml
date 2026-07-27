@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Barra used/cap SOTTO il limite (salvia = KoruColors.primary).
+     Perché tre drawable invece di uno tintato a runtime: RemoteViews espone
+     `setColorStateList` (necessario per `setProgressTintList`) solo da API 31,
+     mentre il minSdk del progetto è 28. Tre ProgressBar pre-stilizzate con
+     visibilità alternata coprono tutte le versioni senza rami per API. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@android:id/background">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/koru_widget_track" />
+            <corners android:radius="3dp" />
+        </shape>
+    </item>
+    <item android:id="@android:id/progress">
+        <clip>
+            <shape android:shape="rectangle">
+                <solid android:color="@color/koru_widget_sage" />
+                <corners android:radius="3dp" />
+            </shape>
+        </clip>
+    </item>
+</layer-list>

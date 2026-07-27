@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Riga di un'app CON time limit: icona + label (+ lucchetto se strict),
+     "usato / cap" e la barra di progresso.
+
+     Le tre ProgressBar sovrapposte sono un compromesso di compatibilità: il
+     tinting a runtime di una singola barra richiede `RemoteViews.setColorStateList`,
+     API 31, mentre il minSdk è 28. Il renderer ne rende visibile UNA sola
+     (sage / sand / danger) — vedi widget_progress_under.xml.
+
+     L'altezza totale di questa riga è ~42dp: il valore è replicato in
+     UsageWidgetModel.LIMIT_ROW_DP, che decide quante righe entrano. Se cambi
+     i margini qui, aggiorna quella costante. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="5dp"
+    android:paddingBottom="5dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageView
+            android:id="@+id/row_icon"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginEnd="8dp"
+            android:importantForAccessibility="no" />
+
+        <TextView
+            android:id="@+id/row_label"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/koru_widget_text"
+            android:textSize="13sp"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <ImageView
+            android:id="@+id/row_lock"
+            android:layout_width="11dp"
+            android:layout_height="11dp"
+            android:layout_marginStart="5dp"
+            android:layout_marginEnd="5dp"
+            android:src="@drawable/ic_widget_lock"
+            android:visibility="gone"
+            android:importantForAccessibility="no" />
+
+        <TextView
+            android:id="@+id/row_value"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:textColor="@color/koru_widget_text_secondary"
+            android:textSize="11sp"
+            android:maxLines="1" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="5dp"
+        android:layout_marginTop="5dp">
+
+        <ProgressBar
+            android:id="@+id/row_bar_under"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="5dp"
+            android:max="100"
+            android:progressDrawable="@drawable/widget_progress_under" />
+
+        <ProgressBar
+            android:id="@+id/row_bar_near"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="5dp"
+            android:max="100"
+            android:visibility="gone"
+            android:progressDrawable="@drawable/widget_progress_near" />
+
+        <ProgressBar
+            android:id="@+id/row_bar_over"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="5dp"
+            android:max="100"
+            android:visibility="gone"
+            android:progressDrawable="@drawable/widget_progress_over" />
+    </FrameLayout>
+</LinearLayout>

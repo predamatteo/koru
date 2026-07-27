@@ -33,6 +33,7 @@ import com.dev.koru.overlay.BlockReason
 import com.dev.koru.overlay.OverlayConfig
 import com.dev.koru.strictmode.StrictModeEnforcer
 import com.dev.koru.strictmode.StrictModeFailSafe
+import com.dev.koru.widget.KoruUsageWidgetProvider
 import java.util.Calendar
 import java.util.concurrent.atomic.AtomicReference
 
@@ -464,6 +465,13 @@ class KoruAccessibilityService : AccessibilityService() {
     private fun handleUserPresent() {
         val fg = ForegroundDetector.detect(applicationContext)?.primaryPackage
         Log.d(TAG, "USER_PRESENT: foreground=$fg → re-check if blocked")
+        // Sblocco = il momento in cui la home (e il widget) tornano visibili.
+        // NON forzato di proposito: dopo un lock lungo il throttle è già
+        // scaduto e il refresh parte comunque, mentre su un ciclo
+        // lock/unlock rapido (schermo toccato per sbaglio, notifica guardata e
+        // richiusa — decine di volte al giorno) forzarlo pagherebbe una
+        // `queryEvents` su tutta la giornata per mostrare gli stessi numeri.
+        KoruUsageWidgetProvider.requestUpdate(applicationContext, "unlock")
         if (fg == null || SKIP_PACKAGES.contains(fg) || fg == packageName) return
         mainHandler.post {
             checkAppBlocking(fg, profilesSnapshot.get(), overAppIfBlocked = true)
@@ -988,6 +996,14 @@ class KoruAccessibilityService : AccessibilityService() {
             // aver bloccato un'app. L'overlay deve restare visibile sopra il
             // launcher finché l'utente non apre un'app diversa (gestito sotto
             // in checkAppBlocking) o tocca "Go back" sull'overlay.
+            //
+            // È anche il momento ESATTO in cui il widget home diventa
+            // visibile: chiediamo qui il suo refresh invece di introdurre un
+            // polling. La chiamata è throttlata e, se nessun widget è
+            // piazzato, costa la lettura di un @Volatile (vedi
+            // KoruUsageWidgetProvider.requestUpdate) — nulla che pesi su
+            // questo hot path.
+            KoruUsageWidgetProvider.requestUpdate(applicationContext, "home")
             return
         }
 
@@ -1557,6 +1573,15 @@ class KoruAccessibilityService : AccessibilityService() {
                         eventType = 0,
                         restrictionType = BlockingContract.RESTRICTION_TYPE_USAGE_LIMIT,
                         timestamp = now,
+                    )
+                    // Il cap è appena scattato e l'utente sta per atterrare
+                    // sulla home: la riga di quest'app deve essere già rossa
+                    // quando ci arriva. Forzato — è proprio il cambio di stato
+                    // che il throttle non deve nascondere.
+                    KoruUsageWidgetProvider.requestUpdate(
+                        applicationContext,
+                        "limit-hit",
+                        force = true,
                     )
                     return true
                 }

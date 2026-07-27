@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Traduzioni italiane delle stringhe NATIVE rivolte all'utente. Il resto
+     della UI è Flutter e si localizza da lib/l10n/app_it.arb.
+
+     Vanno tradotte TUTTE le stringhe traducibili di values/strings.xml, non
+     solo quelle del widget: una traduzione parziale fa fallire il task Gradle
+     `lint` con MissingTranslation. -->
+<resources>
+    <string name="koru_accessibility_description">Koru ha bisogno dell\'accesso all\'accessibilità per accorgersi quando apri le app che ti distraggono e mostrarti l\'overlay di blocco. Nessun dato lascia mai il tuo dispositivo.</string>
+    <string name="koru_service_channel_title">Motore di blocco Koru</string>
+    <string name="koru_service_channel_description">Mantiene attivi i tuoi profili in background.</string>
+    <string name="koru_service_notification_title">Koru veglia su di te</string>
+    <string name="koru_service_notification_text">Tocca per aprire Koru</string>
+    <string name="koru_device_admin_description">Attiva l\'amministratore dispositivo per bloccare Impostazioni, App recenti e disinstallazione mentre la Modalità rigida è attiva.</string>
+    <string name="koru_blocked_title">Fai un respiro</string>
+    <string name="koru_blocked_subtitle">Questa app è in pausa per via del tuo profilo Koru.</string>
+    <string name="koru_blocked_button_back">Torna indietro</string>
+
+    <!-- Widget home "tempo d'uso + limiti" -->
+    <string name="koru_widget_label">Koru · Tempo d\'uso</string>
+    <string name="koru_widget_description">Il tempo d\'uso di oggi e i limiti impostati sulle app.</string>
+    <string name="koru_widget_title">OGGI</string>
+    <string name="koru_widget_empty">Nessun utilizzo registrato oggi.</string>
+    <string name="koru_widget_empty_rows">Finora solo tempo di sistema e launcher.</string>
+    <string name="koru_widget_no_permission">Concedi a Koru l\'accesso all\'utilizzo per vedere il tempo d\'uso.</string>
+</resources>

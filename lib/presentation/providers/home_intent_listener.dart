@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/router/app_router.dart';
+import '../../domain/entities/statistics_period.dart';
+import 'screen_time_provider.dart';
+import 'statistics_providers.dart';
 
 /// Ascolta il canale `com.koru/navigation` popolato da MainActivity per:
 /// - `goToLauncher`: nuovo HOME intent con Koru default launcher → porta
@@ -31,16 +34,18 @@ final homeIntentListenerProvider = Provider<void>((ref) {
   ref.keepAlive();
   const channel = MethodChannel('com.koru/navigation');
 
+  const backdoorRoute = '${KoruRoutes.settings}/backdoor';
+
+  String currentLocation(BuildContext ctx) =>
+      GoRouter.of(ctx).routerDelegate.currentConfiguration.uri.toString();
+
   /// SEC-12: porta l'utente al prompt del backdoor code. `push` (non `go`) così
   /// la schermata si sovrappone e, una volta sbloccato/annullato, si torna dove
   /// si era. Idempotente sull'eventuale doppia notifica (push+pull).
   void openBackdoorPrompt() {
     final ctx = rootNavigatorKey.currentContext;
     if (ctx == null || !ctx.mounted) return;
-    const backdoorRoute = '${KoruRoutes.settings}/backdoor';
-    final router = GoRouter.of(ctx);
-    final loc = router.routerDelegate.currentConfiguration.uri.toString();
-    if (loc == backdoorRoute) return; // già lì: non impilare due volte
+    if (currentLocation(ctx) == backdoorRoute) return; // già lì: non impilare
     ctx.push(backdoorRoute);
   }
 
@@ -52,9 +57,7 @@ final homeIntentListenerProvider = Provider<void>((ref) {
         ctx.go(KoruRoutes.launcher);
         break;
       case 'goToHomeIfOnLauncher':
-        final router = GoRouter.of(ctx);
-        final loc =
-            router.routerDelegate.currentConfiguration.uri.toString();
+        final loc = currentLocation(ctx);
         if (loc == KoruRoutes.launcher ||
             loc.startsWith('${KoruRoutes.launcher}/')) {
           ctx.go(KoruRoutes.home);
@@ -62,6 +65,33 @@ final homeIntentListenerProvider = Provider<void>((ref) {
         break;
       case 'requireBackdoorCode': // SEC-12 (push dal native, app già viva)
         openBackdoorPrompt();
+        break;
+      case 'goToRoute':
+        // Tap sul widget home (app già viva). La route arriva dal native, che
+        // l'ha già validata contro l'allowlist di MainActivity.widgetRoute;
+        // qui ci limitiamo a rifiutare valori non-stringa o vuoti per non
+        // passare spazzatura a GoRouter.
+        final route = call.arguments;
+        if (route is! String || !route.startsWith('/')) break;
+        // SEC-12: MainActivity è exported, quindi un'app terza può ricostruire
+        // l'intent del widget. La route è ristretta a `/stats` e non può quindi
+        // portare da nessuna parte di sensibile, MA una `go` cancellerebbe il
+        // prompt del backdoor code se fosse aperto in quel momento —
+        // trasformando il deterrent in qualcosa che si può far sparire
+        // dall'esterno. Se siamo sul prompt, la navigazione non passa.
+        if (currentLocation(ctx) == backdoorRoute) break;
+        if (route == KoruRoutes.stats) {
+          // Il widget è etichettato "OGGI" e mostra sempre [mezzanotte, ora].
+          // `selectedPeriodProvider` e `selectedStatsDayProvider` sono stato UI
+          // che sopravvive alla navigazione: senza reset, un utente che aveva
+          // lasciato le statistiche su "This week" (o su un giorno del grafico)
+          // toccherebbe un widget che dice 3h 12m e atterrerebbe su una
+          // schermata che ne mostra 19h — stesso dato, due numeri.
+          ref.read(selectedPeriodProvider.notifier).state =
+              StatisticsPeriod.today;
+          ref.read(selectedStatsDayProvider.notifier).state = null;
+        }
+        ctx.go(route);
         break;
     }
   });
