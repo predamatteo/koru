@@ -42,6 +42,14 @@ class _PermissionsPageState extends ConsumerState<PermissionsPage>
     if (mounted) setState(() => _status = s);
   }
 
+  /// POST_NOTIFICATIONS è l'unico permesso concedibile senza uscire dall'app
+  /// (dialog runtime): il refresh su resume non scatta se il dialog non fa
+  /// passare l'Activity per onPause, quindi rinfreschiamo alla risposta.
+  Future<void> _grantNotifications() async {
+    await _channel.requestNotificationPermission();
+    await _refresh();
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = _status;
@@ -85,6 +93,20 @@ class _PermissionsPageState extends ConsumerState<PermissionsPage>
             granted: s?.batteryOptimizationIgnored ?? false,
             required: false,
             onGrant: () => _channel.requestDisableBatteryOptimization(),
+          ),
+          _PermTile(
+            title: 'Notifications',
+            subtitle: 'Let Koru warn you when blocking needs attention.',
+            granted: s?.notifications ?? false,
+            required: false,
+            onGrant: _grantNotifications,
+          ),
+          _PermTile(
+            title: 'Notification listener',
+            subtitle: 'Filter notifications from blocked apps.',
+            granted: s?.notificationListener ?? false,
+            required: false,
+            onGrant: () => _channel.openNotificationListenerSettings(),
           ),
         ],
       ),

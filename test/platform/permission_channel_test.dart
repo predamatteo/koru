@@ -108,6 +108,39 @@ void main() {
     });
   });
 
+  group('PermissionChannel - notifications (POST_NOTIFICATIONS)', () {
+    test('checkNotificationPermission returns bool', () async {
+      setMockHandler((_) async => true);
+      expect(await PermissionChannel().checkNotificationPermission(), isTrue);
+      expect(calls.first.method, 'checkNotificationPermission');
+    });
+
+    test('checkNotificationPermission returns false on null', () async {
+      setMockHandler((_) async => null);
+      expect(await PermissionChannel().checkNotificationPermission(), isFalse);
+    });
+
+    test('requestNotificationPermission returns native outcome', () async {
+      setMockHandler((_) async => true);
+      expect(await PermissionChannel().requestNotificationPermission(), isTrue);
+      expect(calls.first.method, 'requestNotificationPermission');
+    });
+
+    test('requestNotificationPermission returns false on null', () async {
+      setMockHandler((_) async => null);
+      expect(
+        await PermissionChannel().requestNotificationPermission(),
+        isFalse,
+      );
+    });
+
+    test('openAppNotificationSettings invokes channel method', () async {
+      setMockHandler((_) async => null);
+      await PermissionChannel().openAppNotificationSettings();
+      expect(calls.first.method, 'openAppNotificationSettings');
+    });
+  });
+
   group('PermissionChannel - notification listener', () {
     test('checkNotificationListener returns bool', () async {
       setMockHandler((_) async => true);
@@ -197,6 +230,7 @@ void main() {
             'usageStats': true,
             'overlay': true,
             'battery': true,
+            'notifications': true,
             'notificationListener': true,
             'defaultLauncher': true,
           });
@@ -205,6 +239,7 @@ void main() {
       expect(status.usageStats, isTrue);
       expect(status.overlay, isTrue);
       expect(status.batteryOptimizationIgnored, isTrue);
+      expect(status.notifications, isTrue);
       expect(status.notificationListener, isTrue);
       expect(status.defaultLauncher, isTrue);
       expect(status.allMandatoryGranted, isTrue);
@@ -218,6 +253,7 @@ void main() {
       expect(status.usageStats, isFalse);
       expect(status.overlay, isFalse);
       expect(status.batteryOptimizationIgnored, isFalse);
+      expect(status.notifications, isFalse);
       expect(status.notificationListener, isFalse);
       expect(status.defaultLauncher, isFalse);
       expect(status.allMandatoryGranted, isFalse);
@@ -233,6 +269,7 @@ void main() {
       expect(status.usageStats, isFalse);
       expect(status.overlay, isTrue);
       expect(status.batteryOptimizationIgnored, isFalse);
+      expect(status.notifications, isFalse);
       expect(status.notificationListener, isFalse);
       expect(status.defaultLauncher, isFalse);
       expect(status.allMandatoryGranted, isFalse);
@@ -245,6 +282,7 @@ void main() {
       bool usageStats = false,
       bool overlay = false,
       bool batteryOptimizationIgnored = false,
+      bool notifications = false,
       bool notificationListener = false,
       bool defaultLauncher = false,
     }) {
@@ -253,6 +291,7 @@ void main() {
         usageStats: usageStats,
         overlay: overlay,
         batteryOptimizationIgnored: batteryOptimizationIgnored,
+        notifications: notifications,
         notificationListener: notificationListener,
         defaultLauncher: defaultLauncher,
       );
@@ -297,6 +336,7 @@ void main() {
           usageStats: true,
           overlay: true,
           batteryOptimizationIgnored: false,
+          notifications: false,
           notificationListener: false,
           defaultLauncher: false,
         ).allMandatoryGranted,

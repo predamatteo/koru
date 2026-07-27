@@ -12,6 +12,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
 import com.dev.koru.channels.NavigationMethodChannel
 import com.dev.koru.channels.PackageEventsReceiver
+import com.dev.koru.channels.PermissionMethodChannel
 import com.dev.koru.channels.ServiceEventChannel
 import com.dev.koru.db.NativeDatabase
 import com.dev.koru.diagnostics.BlackBox
@@ -234,6 +235,24 @@ class MainActivity : FlutterActivity() {
     override fun onResume() {
         super.onResume()
         BlackBox.log("ACT", "onResume — Activity in primo piano e interattiva")
+    }
+
+    /**
+     * L'unico permesso runtime di Koru è POST_NOTIFICATIONS (API 33+),
+     * richiesto da [PermissionMethodChannel]: senza questo inoltro il
+     * `MethodChannel.Result` in attesa non verrebbe mai risolto e la Future
+     * Dart resterebbe appesa.
+     *
+     * `super` prima di tutto: FlutterActivity inoltra il risultato ai plugin
+     * registrati sull'engine, che non devono perderlo.
+     */
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        PermissionMethodChannel.onRequestPermissionsResult(this, requestCode, grantResults)
     }
 
     override fun onDestroy() {

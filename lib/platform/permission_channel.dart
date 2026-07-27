@@ -6,6 +6,7 @@ class KoruPermissionStatus {
     required this.usageStats,
     required this.overlay,
     required this.batteryOptimizationIgnored,
+    required this.notifications,
     required this.notificationListener,
     required this.defaultLauncher,
   });
@@ -14,6 +15,14 @@ class KoruPermissionStatus {
   final bool usageStats;
   final bool overlay;
   final bool batteryOptimizationIgnored;
+
+  /// POST_NOTIFICATIONS (Android 13+) *oppure* notifiche dell'app spente a
+  /// mano: entrambi i casi impediscono al foreground service e agli alert
+  /// dello strict mode di comparire.
+  final bool notifications;
+
+  /// Accesso alle notifiche ALTRUI (NotificationListenerService), usato per
+  /// filtrare quelle delle app bloccate. Nulla a che vedere con [notifications].
   final bool notificationListener;
   final bool defaultLauncher;
 
@@ -25,6 +34,7 @@ class KoruPermissionStatus {
         usageStats: map['usageStats'] as bool? ?? false,
         overlay: map['overlay'] as bool? ?? false,
         batteryOptimizationIgnored: map['battery'] as bool? ?? false,
+        notifications: map['notifications'] as bool? ?? false,
         notificationListener: map['notificationListener'] as bool? ?? false,
         defaultLauncher: map['defaultLauncher'] as bool? ?? false,
       );
@@ -58,6 +68,25 @@ class PermissionChannel {
 
   Future<void> requestDisableBatteryOptimization() =>
       _channel.invokeMethod<void>('requestDisableBatteryOptimization');
+
+  /// `true` se Koru può postare notifiche (POST_NOTIFICATIONS concesso su
+  /// Android 13+ **e** notifiche dell'app non spente a mano).
+  Future<bool> checkNotificationPermission() async =>
+      (await _channel.invokeMethod<bool>('checkNotificationPermission')) ??
+      false;
+
+  /// Mostra il dialog runtime di POST_NOTIFICATIONS (Android 13+) e risolve
+  /// con l'esito. Quando il dialog non può comparire — API < 33, oppure
+  /// permesso già negato in modo permanente — il lato nativo apre direttamente
+  /// la pagina Notifiche di Koru nelle impostazioni di sistema e ritorna
+  /// `false`: in ogni caso l'utente finisce dove può concedere il permesso.
+  Future<bool> requestNotificationPermission() async =>
+      (await _channel.invokeMethod<bool>('requestNotificationPermission')) ??
+      false;
+
+  /// Apre la pagina Notifiche di Koru nelle impostazioni di sistema.
+  Future<void> openAppNotificationSettings() =>
+      _channel.invokeMethod<void>('openAppNotificationSettings');
 
   Future<bool> checkNotificationListener() async =>
       (await _channel.invokeMethod<bool>('checkNotificationListener')) ?? false;
