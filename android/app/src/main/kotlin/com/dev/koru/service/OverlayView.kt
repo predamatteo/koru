@@ -35,6 +35,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -116,16 +118,44 @@ internal fun BlockedScreen(
                 // l'app bloccata (onGoHome(false) → performGoHomeForBlock +
                 // dismiss lato service). Replica il gesto "home" di sistema, che
                 // sull'overlay da solo non farebbe nulla. Solo verso l'alto: lo
-                // swipe-down è ignorato. La soglia evita trigger accidentali; i
-                // tap su pulsanti/chip restano intatti perché detectVertical-
-                // DragGestures scatta solo dopo il touch-slop verticale.
-                val thresholdPx = 80.dp.toPx()
+                // swipe-down è ignorato. I tap su pulsanti/chip restano intatti
+                // perché detectVerticalDragGestures scatta solo dopo il
+                // touch-slop verticale (valore di piattaforma, ~8dp).
+                //
+                // Lo spazio richiesto è gateato dalla VELOCITÀ, non da una sola
+                // distanza: flick veloce ⇒ SHORT_DP, trascinamento lento ⇒
+                // LONG_DP. Vedi [shouldDismissOnSwipeUp] per il perché.
+                val shortPx = SwipeDismissDefaults.SHORT_DP.dp.toPx()
+                val longPx = SwipeDismissDefaults.LONG_DP.dp.toPx()
+                val flingPx = SwipeDismissDefaults.FLING_DP_PER_SEC.dp.toPx()
                 var dyTotal = 0f
+                val velocityTracker = VelocityTracker()
                 detectVerticalDragGestures(
-                    onDragStart = { dyTotal = 0f },
-                    onDragCancel = { dyTotal = 0f },
-                    onVerticalDrag = { _, dy -> dyTotal += dy },
-                    onDragEnd = { if (dyTotal <= -thresholdPx) goHomeNow(false) },
+                    onDragStart = {
+                        dyTotal = 0f
+                        velocityTracker.resetTracking()
+                    },
+                    onDragCancel = {
+                        dyTotal = 0f
+                        velocityTracker.resetTracking()
+                    },
+                    onVerticalDrag = { change, dy ->
+                        dyTotal += dy
+                        velocityTracker.addPointerInputChange(change)
+                    },
+                    onDragEnd = {
+                        val velocityY = velocityTracker.calculateVelocity().y
+                        if (shouldDismissOnSwipeUp(
+                                dyTotalPx = dyTotal,
+                                velocityYPxPerSec = velocityY,
+                                shortPx = shortPx,
+                                longPx = longPx,
+                                flingPxPerSec = flingPx,
+                            )
+                        ) {
+                            goHomeNow(false)
+                        }
+                    },
                 )
             },
         contentAlignment = Alignment.Center,
