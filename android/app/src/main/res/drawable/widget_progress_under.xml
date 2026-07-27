@@ -1,15 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Barra used/cap SOTTO il limite (salvia = KoruColors.primary).
+
+     Forma M3 Expressive del linear progress indicator:
+      - track e indicatore a PILL (raggio = metà altezza, 3dp su 6dp), non a
+        rettangolo smussato;
+      - **stop indicator**: il pallino in fondo al track, nel colore
+        dell'indicatore. È l'elemento che rende riconoscibile la specifica M3
+        aggiornata, e resta visibile anche a progresso 0 (per spec: segna dove
+        finisce la corsa). A progresso 100% l'indicatore lo raggiunge e i due
+        si fondono.
+
+     Il pallino è cotto DENTRO il layer di background invece di essere una
+     ImageView a parte: una view in più per riga si moltiplicherebbe per tutte
+     le righe nella transazione Binder verso il launcher, e andrebbe comunque
+     replicata in tre copie per il colore (vedi sotto).
+
      Perché tre drawable invece di uno tintato a runtime: RemoteViews espone
      `setColorStateList` (necessario per `setProgressTintList`) solo da API 31,
      mentre il minSdk del progetto è 28. Tre ProgressBar pre-stilizzate con
      visibilità alternata coprono tutte le versioni senza rami per API. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:id="@android:id/background">
-        <shape android:shape="rectangle">
-            <solid android:color="@color/koru_widget_track" />
-            <corners android:radius="3dp" />
-        </shape>
+        <layer-list>
+            <item>
+                <shape android:shape="rectangle">
+                    <solid android:color="@color/koru_widget_track" />
+                    <corners android:radius="3dp" />
+                </shape>
+            </item>
+            <!-- Stop indicator. `gravity` + `width`/`height` sull'item di una
+                 layer-list esistono da API 23, quindi sono sicuri sul minSdk 28.
+                 Sopravvivono anche a `ProgressBar.tileify()`, che ricostruisce
+                 le LayerDrawable ma ricopia gravity/width/height/inset layer
+                 per layer.
+
+                 `right`, non `end`: il `<clip>` del progresso ha gravity di
+                 default LEFT e riempie sempre da sinistra anche in RTL. Con
+                 `end` il pallino migrerebbe a sinistra in una locale RTL e
+                 finirebbe dalla parte opposta rispetto alla corsa della barra. -->
+            <item
+                android:width="6dp"
+                android:height="6dp"
+                android:gravity="right|center_vertical">
+                <shape android:shape="oval">
+                    <solid android:color="@color/koru_widget_sage" />
+                </shape>
+            </item>
+        </layer-list>
     </item>
     <item android:id="@android:id/progress">
         <clip>

@@ -11,13 +11,26 @@
          Mirror ESATTO dei token di `lib/core/constants/koru_colors.dart`:
          il widget è disegnato dal launcher, fuori da Flutter, quindi non può
          leggere la palette Dart e la deve duplicare. Se cambi KoruColors,
-         cambia anche qui — è l'unico punto di duplicazione della palette. -->
+         cambia anche qui — è l'unico punto di duplicazione della palette.
+
+         Su Android 12+ i token di SUPERFICIE (bg / track / outline / testo)
+         sono sovrascritti dalla palette dinamica del wallpaper — vedi
+         `values-v31/colors.xml`. I valori qui sotto restano il fallback per
+         API 28-30 e, per gli ACCENTI, l'unica definizione su tutte le
+         versioni: salvia/sabbia/salmone codificano lo stato del limite e non
+         vanno resi dinamici. -->
     <color name="koru_widget_bg">#F21D221E</color>          <!-- surfaceContainer @95% -->
     <color name="koru_widget_track">#FF252B26</color>       <!-- surfaceElevated -->
-    <color name="koru_widget_outline">#FF333934</color>     <!-- outline -->
     <color name="koru_widget_text">#FFE7EAE4</color>        <!-- textPrimary -->
     <color name="koru_widget_text_secondary">#FF8E948C</color> <!-- textSecondary -->
     <color name="koru_widget_sage">#FFA4D6A0</color>        <!-- primary -->
     <color name="koru_widget_sand">#FFE6C08C</color>        <!-- tertiary -->
     <color name="koru_widget_danger">#FFF0B4AB</color>      <!-- danger -->
+
+    <!-- Pill del totale di giornata (header). Coppia container/on-container:
+         su un riempimento salvia va il contenuto CHIARO del suo container,
+         non `koru_widget_text` — vedi la nota sull'inversione degli on-color
+         in KoruColors. Fissa anche su Android 12+: è l'accento di brand. -->
+    <color name="koru_widget_pill">#FF294E2E</color>        <!-- primaryContainer -->
+    <color name="koru_widget_on_pill">#FFC0F3BB</color>     <!-- onPrimaryContainer -->
 </resources>

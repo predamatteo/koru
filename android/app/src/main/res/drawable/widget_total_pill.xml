@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pill del totale di giornata nell'header del widget.
+
+     È il "contenimento espressivo" del dato principale previsto da M3
+     Expressive: la metrica chiave non è solo testo più grande, è testo dentro
+     un contenitore tonale che la stacca dal resto. Raggio 100dp = pill piena a
+     qualsiasi altezza di testo (M3 `shape.corner.full`), quindi non va
+     ricalcolato se cambia la textSize. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/koru_widget_pill" />
+    <corners android:radius="100dp" />
+</shape>

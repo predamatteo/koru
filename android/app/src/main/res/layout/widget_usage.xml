@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Root del widget "tempo d'uso + limiti".
+<!-- Root del widget "tempo d'uso + limiti". Linguaggio Material 3 Expressive:
+     superficie tonale ad angoli di sistema, metrica principale contenuta in
+     una pill, tipografia Roboto Medium, niente divisori (in M3 la struttura la
+     fa lo spazio, non le linee).
 
      Le righe NON sono dichiarate qui: vengono create a runtime da
      [com.dev.koru.widget.UsageWidgetRenderer] e appese a `widget_rows` con
@@ -8,16 +11,24 @@
 
      `android:id="@android:id/background"` sul root è richiesto da Android 12+
      per far riconoscere al sistema lo sfondo del widget e applicargli la
-     maschera degli angoli arrotondati. -->
+     maschera degli angoli arrotondati.
+
+     ATTENZIONE, vincolo che vale per TUTTI i layout del widget: RemoteViews
+     inflata nel processo del launcher con un filtro che accetta solo le classi
+     annotate @RemoteView. `android.view.View` NON lo è, quindi uno spaziatore
+     o un divisore scritti come `<View>` farebbero fallire l'inflazione e il
+     launcher mostrerebbe "Problem loading widget" al posto del contenuto —
+     usa margini/padding, oppure ImageView (che è annotata). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@android:id/background"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/widget_usage_background"
-    android:padding="14dp">
+    android:paddingHorizontal="16dp"
+    android:paddingVertical="14dp">
 
-    <!-- Header: "Today" + tempo totale della giornata. -->
+    <!-- Header: label "OGGI" + pill con il tempo totale della giornata. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -32,45 +43,43 @@
             android:text="@string/koru_widget_title"
             android:textColor="@color/koru_widget_text_secondary"
             android:textSize="11sp"
-            android:letterSpacing="0.12"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0.14"
             android:maxLines="1"
-            android:ellipsize="end"
-            android:textStyle="bold" />
+            android:ellipsize="end" />
 
         <!-- `text` di default: questo layout è anche `previewLayout` nel picker
              dei widget e `initialLayout` prima del primo onUpdate. Senza un
              valore il totale apparirebbe vuoto e il widget sembrerebbe rotto;
-             viene sostituito dal numero reale entro il primo render. -->
+             viene sostituito dal numero reale entro il primo render.
+
+             Su @drawable/widget_total_pill (riempimento salvia) va l'on-color
+             chiaro del container, non `koru_widget_text`. -->
         <TextView
             android:id="@+id/widget_header_total"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
+            android:background="@drawable/widget_total_pill"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
             android:text="@string/koru_widget_placeholder_total"
-            android:textColor="@color/koru_widget_text"
-            android:textSize="17sp"
-            android:maxLines="1"
-            android:textStyle="bold" />
+            android:textColor="@color/koru_widget_on_pill"
+            android:textSize="16sp"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1" />
     </LinearLayout>
 
-    <!-- Divisore come ImageView, NON come <View>: RemoteViews inflata il layout
-         nel processo del launcher con un filtro che accetta solo le classi
-         annotate @RemoteView. `android.view.View` non lo è, quindi un <View>
-         qui farebbe fallire l'inflazione e il launcher mostrerebbe
-         "Problem loading widget" al posto del contenuto. ImageView è annotata. -->
-    <ImageView
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:layout_marginTop="9dp"
-        android:layout_marginBottom="4dp"
-        android:background="@color/koru_widget_outline"
-        android:importantForAccessibility="no" />
-
-    <!-- Contenitore delle righe dinamiche (vedi UsageWidgetRenderer). -->
+    <!-- Contenitore delle righe dinamiche (vedi UsageWidgetRenderer).
+         Il distacco dall'header è tutto in questo margine: vedi HEADER_DP in
+         UsageWidgetModel, che lo conteggia. -->
     <LinearLayout
         android:id="@+id/widget_rows"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
         android:orientation="vertical" />
 
     <!-- Stato vuoto / errore: mostrato al posto delle righe.
@@ -89,5 +98,6 @@
         android:layout_marginTop="10dp"
         android:text="@string/koru_widget_empty"
         android:textColor="@color/koru_widget_text_secondary"
-        android:textSize="13sp" />
+        android:textSize="13sp"
+        android:lineSpacingExtra="2dp" />
 </LinearLayout>

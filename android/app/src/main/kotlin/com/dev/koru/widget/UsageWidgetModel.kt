@@ -80,19 +80,26 @@ object UsageWidgetModel {
     // più di una riga semplice, quindi il fitting le conta separatamente invece
     // di usare un'altezza media (che su un widget pieno di limiti troncherebbe).
     //
-    //   widget_usage.xml       padding 14dp × 2                     → 28
-    //   header                 TextView 17sp (~24) + divisore 9+1+4 → 38
-    //   row_limit              5 + icona/label 18 + 5 + barra 5 + 5  → 38
-    //   row_plain              5 + icona/label 18 + 5                → 28
+    //   widget_usage.xml       paddingVertical 14dp × 2               → 28
+    //   header                 pill 16sp (~19) + 4+4 + margin 10      → 38
+    //   row_limit              5 + icona/label 20 + 5 + barra 6 + 5   → 41
+    //   row_plain              5 + icona/label 20 + 5                 → 30
+    //
+    // Il restyle M3 Expressive ha alzato icone (18→20dp) e barra (5→6dp): i
+    // padding sono stati stretti in proporzione (6→5, header 12→10) perché il
+    // costo per riga restasse quasi invariato. Non è pignoleria: a +6dp per
+    // riga un widget 4x2 sarebbe passato da 2 righe a 1, cioè il restyle
+    // avrebbe tolto informazione — che è il modo più facile di rendere un
+    // widget più bello e meno utile.
     //
     // [ROOT_VPADDING_DP] esisteva solo implicitamente ed era il bug: il budget
-    // veniva calcolato sull'altezza totale del widget senza scalare i 28dp di
-    // padding del root, quindi l'ultima riga finiva fuori dal contenitore e
-    // veniva tagliata a metà (tipicamente la barra di progresso).
+    // veniva calcolato sull'altezza totale del widget senza scalare il padding
+    // del root, quindi l'ultima riga finiva fuori dal contenitore e veniva
+    // tagliata a metà (tipicamente la barra di progresso).
     internal const val ROOT_VPADDING_DP = 28
     internal const val HEADER_DP = 38
-    internal const val LIMIT_ROW_DP = 38
-    internal const val PLAIN_ROW_DP = 28
+    internal const val LIMIT_ROW_DP = 41
+    internal const val PLAIN_ROW_DP = 30
 
     /// Tetto duro al numero di righe. Ogni riga porta una bitmap d'icona nella
     /// transazione Binder verso il launcher: RemoteViews troppo grandi vengono
