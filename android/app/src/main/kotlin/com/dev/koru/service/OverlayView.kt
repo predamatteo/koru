@@ -86,6 +86,7 @@ internal fun BlockedScreen(
     config: OverlayConfig,
     profileEmoji: String?,
     bypassPolicy: BypassPolicy,
+    launching: Boolean,
     onIntentionChosen: (String) -> Unit,
     onGoHome: (forceHome: Boolean) -> Unit,
     onBypass: (durationMs: Long) -> Unit,
@@ -129,6 +130,22 @@ internal fun BlockedScreen(
             },
         contentAlignment = Alignment.Center,
     ) {
+        // Bypass concesso: l'app è GIÀ stata lanciata (startActivity dentro
+        // onBypassOpen) ma la finestra resta montata ancora ~250ms per non
+        // perdere la interaction grace del Background Activity Launch — il
+        // dismiss è deliberatamente differito lato service. In quei frame NON
+        // dobbiamo ridisegnare la schermata di blocco: era il bug "scelgo la
+        // durata e per un secondo mi riappare l'overlay, poi si apre l'app".
+        // Uscendo dal ramo picker (showDurationPicker torna false) l'intero
+        // sottoalbero del blocco rientra in composizione e il CountdownButton,
+        // che aveva perso i suoi `remember`, riparte da ANIMATING/0 → l'utente
+        // rivede l'overlay iniziale col countdown daccapo. Qui ci fermiamo su
+        // uno stato terminale neutro finché la finestra non viene smontata.
+        if (launching) {
+            LaunchingSection(appLabel = appLabel)
+            return@Box
+        }
+
         // Bypass TTL scaduto mentre utente era dentro l'app → non il
         // blocco "entry" classico ma un prompt di estensione (stile
         // minimalist_phone): "Time's up, vuoi altri N min o chiudi?"
@@ -346,6 +363,22 @@ private fun DurationPickerSection(
             )
         }
     }
+}
+
+/// Stato terminale fra il tap su una durata e lo smontaggio della finestra.
+/// Deve leggersi come una transizione di lancio, MAI come un nuovo blocco:
+/// niente icona del reason, niente countdown, nessuna CTA su cui l'utente
+/// possa tornare a tappare mentre l'app sta già aprendosi.
+@Composable
+private fun LaunchingSection(appLabel: String) {
+    Text(
+        text = "Opening $appLabel…",
+        color = KoruTextPrimary.copy(alpha = 0.70f),
+        fontSize = 15.sp,
+        letterSpacing = 0.1.sp,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.padding(horizontal = 32.dp),
+    )
 }
 
 @Composable

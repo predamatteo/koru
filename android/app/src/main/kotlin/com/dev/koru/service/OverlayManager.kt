@@ -274,6 +274,14 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
     /// (vedi markBypassed/onBypass). Resettato ad ogni show() → niente leak.
     private var _blockedDomain = mutableStateOf<String?>(null)
 
+    /// True dal tap su una durata (bypass concesso, app lanciata) fino allo
+    /// smontaggio della finestra. Finché è true [BlockedScreen] non ridisegna
+    /// la schermata di blocco — vedi il ramo `launching` lì. Vive QUI e non in
+    /// un `remember` della composizione perché deve essere azzerato da [show]
+    /// anche nel path di riuso con lo stesso package, dove la ComposeView (e
+    /// con essa ogni `remember` interno) NON viene ricreata.
+    private val _launching = mutableStateOf(false)
+
     fun show(
         packageName: String,
         appLabel: String,
@@ -306,6 +314,10 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
         _profileEmoji.value = profileEmoji
         _bypassPolicy.value = bypassPolicy
         _blockedDomain.value = blockedDomain
+        // Nuovo blocco = nessuno stato di lancio residuo. DEVE stare qui, sopra
+        // l'early-return: il riuso con stesso pkg non ricrea la ComposeView e
+        // l'overlay resterebbe fermo su "Opening …" invece di bloccare.
+        _launching.value = false
 
         if (isShowing) return@synchronized
 
@@ -413,28 +425,43 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
                         config = _config.value,
                         profileEmoji = _profileEmoji.value,
                         bypassPolicy = _bypassPolicy.value,
+                        launching = _launching.value,
                         onIntentionChosen = { intention ->
                             onIntentionChosen?.invoke(_currentPackageName.value, intention)
                         },
                         onGoHome = { forceHome -> onReturnHome?.invoke(forceHome) },
-                        onBypass = { durationMs ->
-                            // Salva il MOTIVO del blocco insieme al bypass: serve a
-                            // [isLimitBypassActive] per non far sì che un bypass di
-                            // profilo sospenda il cap giornaliero (e viceversa).
-                            markBypassed(
-                                _currentPackageName.value,
-                                durationMs,
-                                _blockedDomain.value,
-                                _reason.value,
-                            )
-                            onBypassOpen?.invoke(_currentPackageName.value, durationMs, _blockedDomain.value)
-                        },
+                        onBypass = { durationMs -> handleBypassChosen(durationMs) },
                     )
                     }
                 }
             }
         }
     }
+
+    /// Tap su una durata, sia dal duration picker che dal prompt di estensione
+    /// BYPASS_EXPIRED. Estratto dalla lambda `onBypass` senza cambi di logica
+    /// (a parte il flag [_launching]) così è esercitabile da un test senza
+    /// dover far girare una composizione Compose.
+    internal fun handleBypassChosen(durationMs: Long) {
+        // PRIMA di tutto entra nello stato "launching": la scrittura invalida
+        // la composizione ma non disegna nulla dentro il click handler, quindi
+        // il PRIMO frame dopo il tap è già la schermata neutra e non di nuovo
+        // il blocco (lato service il dismiss è differito di 250ms).
+        _launching.value = true
+        // Salva il MOTIVO del blocco insieme al bypass: serve a
+        // [isLimitBypassActive] per non far sì che un bypass di
+        // profilo sospenda il cap giornaliero (e viceversa).
+        markBypassed(
+            _currentPackageName.value,
+            durationMs,
+            _blockedDomain.value,
+            _reason.value,
+        )
+        onBypassOpen?.invoke(_currentPackageName.value, durationMs, _blockedDomain.value)
+    }
+
+    /// Esposto per i test: vedi [_launching].
+    internal fun isLaunching(): Boolean = _launching.value
 
     /// Scalda il runtime Compose (+ font) UNA volta all'avvio del service,
     /// FUORI dal path di blocco. Misura on-device (tag A11Y-FLASH): il primo
