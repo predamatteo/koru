@@ -506,50 +506,53 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                   const SizedBox(height: 18),
                   Container(height: 1, color: KoruColors.surfaceElevated),
                   for (var i = 0; i < _slots.length; i++) ...[
-                    const SizedBox(height: 14),
+                    SizedBox(height: i == 0 ? 14 : 10),
                     Row(
                       children: [
                         Expanded(
-                          child: _TimeSlot(
+                          child: _TimeField(
                             label: 'Start',
                             time: _slots[i].from,
                             onTap: () => _pickTime(i, true),
                           ),
                         ),
-                        Container(
-                          width: 24,
-                          height: 1,
-                          color: KoruColors.surfaceElevated,
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 8),
+                          child: Icon(
+                            Icons.arrow_forward_rounded,
+                            size: 16,
+                            color: KoruColors.textSecondary,
+                          ),
                         ),
                         Expanded(
-                          child: _TimeSlot(
+                          child: _TimeField(
                             label: 'End',
                             time: _slots[i].to,
                             onTap: () => _pickTime(i, false),
-                            alignEnd: _slots.length == 1,
                           ),
                         ),
+                        // Lo slot trailing esiste solo quando c'e' qualcosa da
+                        // rimuovere: con una sola fascia i due campi occupano
+                        // tutta la riga.
                         if (_slots.length > 1)
                           IconButton(
                             icon: const Icon(
-                              Icons.close,
+                              Icons.close_rounded,
                               size: 18,
                               color: KoruColors.textSecondary,
                             ),
                             onPressed: () => _removeSlot(i),
                             tooltip: 'Remove time slot',
-                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 40,
+                              height: 40,
+                            ),
                           ),
                       ],
                     ),
-                    if (i < _slots.length - 1)
-                      Container(
-                        margin: const EdgeInsets.only(top: 14),
-                        height: 1,
-                        color: KoruColors.surfaceElevated,
-                      ),
                   ],
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   Align(
                     alignment: Alignment.centerLeft,
                     child: TextButton.icon(
@@ -954,50 +957,70 @@ class _DayCircle extends StatelessWidget {
   }
 }
 
-class _TimeSlot extends StatelessWidget {
-  const _TimeSlot({
+/// Campo orario tonale (M3 Expressive): etichetta piccola + ora grande dentro
+/// una superficie arrotondata.
+///
+/// Il fatto che sia una *superficie* e non testo nudo e' cio' che tiene in riga
+/// la freccia e il bottone di rimozione: tutti i figli della Row hanno la stessa
+/// altezza, quindi il centraggio verticale e' esatto sia con una fascia sola sia
+/// con piu' fasce.
+class _TimeField extends StatelessWidget {
+  const _TimeField({
     required this.label,
     required this.time,
     required this.onTap,
-    this.alignEnd = false,
   });
   final String label;
   final TimeOfDay time;
   final VoidCallback onTap;
-  final bool alignEnd;
 
   String _fmt() =>
       '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Column(
-        crossAxisAlignment: alignEnd
-            ? CrossAxisAlignment.end
-            : CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: KoruColors.textSecondary,
-              fontSize: 12,
-              letterSpacing: 0.5,
-            ),
+    return Material(
+      color: KoruColors.surfaceContainer,
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 9, 14, 11),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: KoruColors.textSecondary,
+                  fontSize: 11,
+                  letterSpacing: 0.6,
+                ),
+              ),
+              const SizedBox(height: 2),
+              // scaleDown: il font e la sua dimensione sono scelti dall'utente,
+              // senza questo un font largo taglierebbe le cifre.
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _fmt(),
+                  maxLines: 1,
+                  style: const TextStyle(
+                    color: KoruColors.textPrimary,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            _fmt(),
-            style: const TextStyle(
-              color: KoruColors.textPrimary,
-              fontSize: 26,
-              fontWeight: FontWeight.w500,
-              letterSpacing: -0.5,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
