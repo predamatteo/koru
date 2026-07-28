@@ -7,9 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
-import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -299,68 +296,20 @@ class KoruAccessibilityService : AccessibilityService() {
         }
     }
 
-    /// Chiede il focus audio TRANSIENT per mettere in pausa il media dell'app
-    /// sotto un overlay-over-app. Idempotente: se già detenuto, no-op.
-    private fun requestMediaPause() {
-        if (mediaPauseFocusRequest != null) return
-        try {
-            val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                    .setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
-                            .build(),
-                    )
-                    .setOnAudioFocusChangeListener(mediaPauseFocusListener)
-                    .build()
-                am.requestAudioFocus(req)
-                mediaPauseFocusRequest = req
-            } else {
-                @Suppress("DEPRECATION")
-                am.requestAudioFocus(
-                    mediaPauseFocusListener,
-                    AudioManager.STREAM_MUSIC,
-                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT,
-                )
-                mediaPauseFocusRequest = mediaPauseFocusListener
-            }
-            Log.d(TAG, "Media pause: audio focus acquired")
-        } catch (e: Exception) {
-            Log.w(TAG, "requestMediaPause failed: ${e.message}")
-        }
-    }
-
-    /// Rilascia il focus audio chiesto da [requestMediaPause] → l'app
-    /// sottostante può riprendere la riproduzione. Idempotente.
-    private fun releaseMediaPause() {
-        val held = mediaPauseFocusRequest ?: return
-        mediaPauseFocusRequest = null
-        try {
-            val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && held is AudioFocusRequest) {
-                am.abandonAudioFocusRequest(held)
-            } else {
-                @Suppress("DEPRECATION")
-                am.abandonAudioFocus(mediaPauseFocusListener)
-            }
-            Log.d(TAG, "Media pause: audio focus released")
-        } catch (e: Exception) {
-            Log.w(TAG, "releaseMediaPause failed: ${e.message}")
-        }
-    }
-
     /// Termina la sessione "overlay-over-app" corrente (se presente): azzera il
-    /// tracking e rilascia il focus audio. Chiamato quando il blocco over-app
-    /// finisce in QUALSIASI modo — bypass concesso, "Don't open", passaggio a
-    /// un'altra app, blocco "duro" sopravvenuto (focus/limite/sezione),
-    /// profilo non più attivo, screen-off, destroy. Idempotente.
-    private fun endOverlayOverApp() {
+    /// tracking e rilascia il silenziamento media. Chiamato quando il blocco
+    /// over-app finisce in QUALSIASI modo — bypass concesso, "Don't open",
+    /// passaggio a un'altra app, blocco "duro" sopravvenuto (focus/limite/
+    /// sezione), profilo non più attivo, screen-off, destroy. Idempotente.
+    ///
+    /// @param resume true SOLO quando l'utente ha scelto "Apri comunque" e
+    ///   resta dentro l'app: è l'unico caso in cui riprendere attivamente la
+    ///   riproduzione è ciò che l'utente ha chiesto. Vedi [MediaSilencer.release].
+    private fun endOverlayOverApp(resume: Boolean = false) {
         if (overlayOverAppPackage != null) {
             overlayOverAppPackage = null
         }
-        releaseMediaPause()
+        mediaSilencer?.release(resume)
     }
 
     /// Schedulato dopo un GLOBAL_ACTION_BACK riuscito: a 600ms verifica
@@ -544,20 +493,14 @@ class KoruAccessibilityService : AccessibilityService() {
     @Volatile
     private var preLaunchOverlayPackage: String? = null
 
-    /// AudioFocusRequest attivo finché un overlay-over-app è visibile. Mentre
-    /// l'overlay copre il video l'app sotto continua a girare, quindi chiediamo
-    /// il focus audio TRANSIENT per metterne in PAUSA il media durante il
-    /// countdown (l'audio bleed-through sarebbe fastidioso). Rilasciato in
-    /// [endOverlayOverApp] → l'app può riprendere la riproduzione. Tipo `Any?`
-    /// per non legare il field all'API 26+ ([AudioFocusRequest] esiste da O).
-    @Volatile
-    private var mediaPauseFocusRequest: Any? = null
-
-    /// Listener no-op richiesto da [AudioFocusRequest]/requestAudioFocus: non
-    /// reagiamo ai cambi di focus (non stiamo riproducendo nulla noi), ci serve
-    /// solo "rubare" il focus per mettere in pausa l'app sottostante.
-    private val mediaPauseFocusListener =
-        AudioManager.OnAudioFocusChangeListener { /* no-op: non riproduciamo audio */ }
+    /// Silenziamento del media mentre un overlay di blocco è visibile.
+    ///
+    /// L'overlay è `FLAG_NOT_FOCUSABLE`: l'app sotto resta RESUMED e continua a
+    /// riprodurre, quindi il silenzio va imposto esplicitamente. Prima questo
+    /// viveva in due metodi privati agganciati al solo ramo overlay-over-app e
+    /// con un listener no-op — vedi il commento di classe di [MediaSilencer]
+    /// per il perché quel disegno lasciava partire l'audio comunque.
+    private var mediaSilencer: MediaSilencer? = null
 
     /// Runnable schedulati a tempo di scadenza del bypass, uno per ogni
     /// package attualmente bypassato. Servono a riattivare il blocco se
@@ -631,6 +574,13 @@ class KoruAccessibilityService : AccessibilityService() {
         // window-event trova sempre la cache popolata e non blocca mai il main.
         StrictModeEnforcer.prime(applicationContext)
         inAppDetector = InAppContentDetector(applicationContext)
+        // Silenziamento media: i timer passano dal mainHandler del service, così
+        // sonde/watchdog vivono e muoiono col service (onDestroy li rimuove).
+        mediaSilencer = MediaSilencer(
+            focus = AndroidAudioFocusPort(applicationContext),
+            schedule = { r, delay -> mainHandler.postDelayed(r, delay) },
+            cancel = { r -> mainHandler.removeCallbacks(r) },
+        )
         overlayManager = OverlayManager(applicationContext).apply {
             onReturnHome = onReturnHome@{ forceHome ->
                 // Tap esplicito dall'overlay: il flag `forceHome` decide
@@ -798,10 +748,11 @@ class KoruAccessibilityService : AccessibilityService() {
                 } else {
                     dismiss()
                 }
-                // Bypass concesso: la sessione over-app (se attiva) è finita —
-                // rilascia il focus audio così l'app sotto può riprendere la
-                // riproduzione e azzera il tracking. Idempotente altrimenti.
-                endOverlayOverApp()
+                // Bypass concesso: la sessione di blocco è finita. È l'UNICO
+                // punto con `resume = true` — l'utente ha scelto di guardare,
+                // quindi il media va ripreso attivamente (il video sul deep
+                // link riparte esattamente dov'era, senza tap su play).
+                endOverlayOverApp(resume = true)
             }
         }
         // Scalda il runtime Compose dell'overlay ORA (fuori dal path di blocco):
@@ -1613,6 +1564,17 @@ class KoruAccessibilityService : AccessibilityService() {
                         config = config,
                         profileEmoji = decision.profileEmoji,
                     )
+                    // Silenzia SUBITO, prima ancora di decidere kick vs over-app:
+                    // in entrambi i casi l'app sta suonando ORA. Nel kick-out
+                    // serve perché HOME non ferma un player che continua in
+                    // background (YouTube Premium, PiP, TikTok).
+                    mediaSilencer?.silence(
+                        packageName,
+                        MediaSilencePolicy.intentFor(
+                            BlockReason.APP_BLOCKED,
+                            blockedPkgIsForeground = true,
+                        ),
+                    )
 
                     // Modalità del blocco — "da link/altra app" vs "da icona del
                     // launcher" — decisa dall'app immediatamente precedente
@@ -1638,7 +1600,6 @@ class KoruAccessibilityService : AccessibilityService() {
                         Log.w(TAG, ">>> BLOCKING APP (overlay-over-app, $why): " +
                             "$packageName by '${decision.profileTitle}'")
                         overlayOverAppPackage = packageName
-                        requestMediaPause()
                     } else {
                         Log.w(TAG, ">>> BLOCKING APP: $packageName by '${decision.profileTitle}'")
                         performGoHomeForBlock(blockedPackage = packageName)
