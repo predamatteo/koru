@@ -17,20 +17,22 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * Mirror della tabella di `lib/core/theme/font_catalog.dart` (`KoruFont.id` →
  * famiglia): id 0 = System (nessun asset → default Compose), 1-4 = font custom.
- * I file `.ttf` dichiarati nel `pubspec.yaml` (sezione `fonts:`) finiscono
- * nell'APK sotto `assets/flutter_assets/<asset path del pubspec>`.
+ * I file di font dichiarati nel `pubspec.yaml` (sezione `fonts:`) finiscono
+ * nell'APK sotto `assets/flutter_assets/<asset path del pubspec>`. L'estensione
+ * segue l'upstream del font: `.ttf` per quelli di Google Fonts, `.otf` per
+ * OpenDyslexic (distribuito solo in OTF da antijingoist/opendyslexic).
  */
 object KoruFonts {
     private const val TAG = "KoruFonts"
 
     /// id (KoruFont.id) → path dell'asset dentro l'AssetManager Android.
-    /// Solo i font con un `.ttf` reale: id 0 (System) è assente di proposito
+    /// Solo i font con un file reale: id 0 (System) è assente di proposito
     /// (→ [resolve] ritorna null → font di sistema).
     private val assetByFontId: Map<Int, String> = mapOf(
         1 to "flutter_assets/assets/fonts/Goldman-Regular.ttf",
         2 to "flutter_assets/assets/fonts/Orbitron-Regular.ttf",
         3 to "flutter_assets/assets/fonts/ArchitectsDaughter-Regular.ttf",
-        4 to "flutter_assets/assets/fonts/OpenDyslexic-Regular.ttf",
+        4 to "flutter_assets/assets/fonts/OpenDyslexic-Regular.otf",
     )
 
     /// Cache fontId → FontFamily: leggere e parsare un `.ttf` dagli asset ad ogni

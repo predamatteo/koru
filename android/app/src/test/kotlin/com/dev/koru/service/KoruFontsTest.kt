@@ -30,7 +30,7 @@ class KoruFontsTest {
         assertThat(KoruFonts.assetPath(3))
             .isEqualTo("flutter_assets/assets/fonts/ArchitectsDaughter-Regular.ttf")
         assertThat(KoruFonts.assetPath(4))
-            .isEqualTo("flutter_assets/assets/fonts/OpenDyslexic-Regular.ttf")
+            .isEqualTo("flutter_assets/assets/fonts/OpenDyslexic-Regular.otf")
     }
 
     @Test
@@ -40,13 +40,18 @@ class KoruFontsTest {
         assertThat(KoruFonts.assetPath(99)).isNull()
     }
 
+    /// L'estensione segue l'upstream del font e non e' uniforme: OpenDyslexic
+    /// e' distribuito solo in OTF, gli altri tre in TTF. Convertirlo creerebbe
+    /// una versione modificata, vietata dal Reserved Font Name della sua OFL
+    /// (vedi assets/fonts/LICENSES.md) — quindi l'asserzione e' sul set di
+    /// estensioni ammesse, non su una sola.
     @Test
-    fun assetPath_allCustomFonts_targetFlutterAssetsFontsDirAsTtf() {
+    fun assetPath_allCustomFonts_targetFlutterAssetsFontsDir() {
         for (id in 1..4) {
             val path = KoruFonts.assetPath(id)
             assertThat(path).isNotNull()
             assertThat(path).startsWith("flutter_assets/assets/fonts/")
-            assertThat(path).endsWith(".ttf")
+            assertThat(path!!.substringAfterLast('.')).isIn(listOf("ttf", "otf"))
         }
     }
 }

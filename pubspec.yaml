@@ -83,4 +83,4 @@ flutter:
         - asset: assets/fonts/ArchitectsDaughter-Regular.ttf
     - family: OpenDyslexic
       fonts:
-        - asset: assets/fonts/OpenDyslexic-Regular.ttf
+        - asset: assets/fonts/OpenDyslexic-Regular.otf

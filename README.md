@@ -194,11 +194,14 @@ Everything Koru does happens on-device.
 
 - **No account.** No sign-up, no email, no cloud.
 - **No analytics, no telemetry, no crash reporters.**
-- **No network calls** other than the system-level ones Android itself
-  makes (you'll see `INTERNET` in the manifest only because some
-  third-party plugins request it transitively — Koru itself does not
-  open sockets).
-- **No ads, ever.** There is no monetization layer to build.
+- **No network calls.** There is no networking code anywhere in this
+  repository — no HTTP client, no sockets, no SDK that phones home.
+  `INTERNET` is currently declared in the manifest but never used; it is
+  slated for removal so that the claim is verifiable from the manifest
+  alone.
+- **No ads, ever. No tracking. No subscription.** Koru is funded, if at
+  all, by an optional one-time Pro unlock. Everything that makes the
+  launcher a launcher stays free.
 
 Your blocklists, your overlays, your intentions, your mood check-ins:
 all of it lives in a SQLite file and a few Hive boxes inside the app's
@@ -206,20 +209,31 @@ private storage. Uninstall the app and it is gone.
 
 ## License
 
-Licensed under the **Apache License, Version 2.0**.
+Koru is **source-available, not open source**. The distinction is
+deliberate and worth stating plainly rather than blurring.
 
-```
-Copyright 2026 Matteo Preda
+Licensed under [**PolyForm Noncommercial 1.0.0**](LICENSE) —
+Copyright 2026 Matteo Preda.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+**You may**, for any noncommercial purpose: read every line, build it,
+run it, modify it, publish your changes, and use it in a school, a
+charity, a public research body or a government institution — the licence
+covers those explicitly, whatever their funding.
 
-    http://www.apache.org/licenses/LICENSE-2.0
+**You may not** sell it, or redistribute it commercially, without
+permission.
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-```
+The source stays public on purpose. Koru asks for AccessibilityService,
+Device Admin and Usage Access — the same permission set a piece of spyware
+would ask for. The only honest answer to *"why should I trust this?"* is
+**"read the code."** Closing the repository would remove the one thing
+that makes the request defensible.
+
+The name is handled separately: see [`TRADEMARK.md`](TRADEMARK.md).
+Bundled fonts keep their own SIL Open Font Licence — see
+[`assets/fonts/LICENSES.md`](assets/fonts/LICENSES.md).
+
+> **On the previous licence.** Until this commit, this README stated an
+> Apache-2.0 grant. That grant stands for the code as it was published at
+> the time and is not withdrawn retroactively; it does not extend to this
+> or any later commit.
