@@ -312,6 +312,50 @@ class KoruAccessibilityService : AccessibilityService() {
         mediaSilencer?.release(resume)
     }
 
+    /// Azzera il tracking over-app SENZA rilasciare il silenzio.
+    ///
+    /// Serve quando un blocco più severo (focus / limite / sezione) subentra
+    /// sullo stesso package e sta per ri-silenziare da sé: passare da
+    /// [endOverlayOverApp] rilascerebbe il focus per riprenderlo un'istruzione
+    /// dopo, e nella finestra in mezzo l'app tornerebbe udibile (un blip).
+    private fun endOverlayOverAppKeepingSilence() {
+        overlayOverAppPackage = null
+    }
+
+    /// Silenzia il media dell'app bloccata.
+    ///
+    /// Va chiamata SUBITO dopo ogni `overlayManager?.show(...)`: la causa del
+    /// bug "overlay su ma audio che parte" era che un solo ramo di blocco su
+    /// otto lo faceva. [MediaSilenceParityTest] fa fallire la build se uno
+    /// `show` resta senza silenziamento.
+    ///
+    /// @param isForeground false nel path PRE-LANCIO, dove l'app non è ancora
+    ///   aperta: lì chi sta suonando è quasi certamente qualcun altro e il
+    ///   layer audio-focus (che non è targettizzato) va saltato.
+    private fun silenceMediaFor(
+        packageName: String,
+        reason: BlockReason,
+        isForeground: Boolean = true,
+    ) {
+        mediaSilencer?.silence(
+            packageName,
+            MediaSilencePolicy.intentFor(reason, blockedPkgIsForeground = isForeground),
+        )
+    }
+
+    /// Smonta l'overlay E rilascia il silenzio, mantenendo l'invariante
+    /// "silenzio detenuto ⟺ overlay di blocco visibile".
+    ///
+    /// Ogni `dismiss()` deve passare da qui: prima il rilascio era agganciato
+    /// alla sola sessione over-app, quindi i path che dismissavano senza
+    /// toccarla lasciavano il focus appeso.
+    ///
+    /// @param resume vedi [MediaSilencer.release] — true solo per "Apri comunque".
+    private fun dismissOverlay(resume: Boolean = false) {
+        overlayManager?.dismiss()
+        mediaSilencer?.release(resume)
+    }
+
     /// Schedulato dopo un GLOBAL_ACTION_BACK riuscito: a 600ms verifica
     /// che il pkg target NON sia più in foreground. Se invece e' ancora
     /// li, BACK e' stato "ingoiato" da uno stack interno (mini-player YT,
@@ -371,7 +415,7 @@ class KoruAccessibilityService : AccessibilityService() {
     private fun handleScreenOff() {
         Log.d(TAG, "SCREEN_OFF: dismiss overlay + cancel pending runnables")
         mainHandler.post {
-            overlayManager?.dismiss()
+            dismissOverlay()
             currentlyBlockingPackage = null
             preLaunchOverlayPackage = null
             // Schermo spento durante un overlay-over-app: chiudi la sessione e
@@ -609,7 +653,11 @@ class KoruAccessibilityService : AccessibilityService() {
                     Log.i(TAG, "PRE-LAUNCH 'Don't open' for $targetPkg — dismiss only (app mai aperta)")
                     preLaunchOverlayPackage = null
                     currentlyBlockingPackage = null
-                    dismiss()
+                    // dismissOverlay (non il solo dismiss): questo ramo fa
+                    // `return` e non passa da endOverlayOverApp, quindi senza il
+                    // rilascio esplicito il silenziamento pre-lancio resterebbe
+                    // appeso a overlay già smontato.
+                    this@KoruAccessibilityService.dismissOverlay()
                     return@onReturnHome
                 }
                 // Overlay-over-app: l'app bloccata è ANCORA in foreground sotto
@@ -623,7 +671,7 @@ class KoruAccessibilityService : AccessibilityService() {
                 if (stale) {
                     Log.w(TAG, "STALE overlay click: target=$targetPkg realFg=$realFg accFg=$accFg" +
                         " — dismiss only, no BACK/HOME (foreground app is not the block target)")
-                    dismiss()
+                    this@KoruAccessibilityService.dismissOverlay()
                     currentlyBlockingPackage = null
                     pendingBackFallbacks.remove(targetPkg)?.let { mainHandler.removeCallbacks(it) }
                     pendingLimitChecks.remove(targetPkg)?.let { mainHandler.removeCallbacks(it) }
@@ -632,7 +680,7 @@ class KoruAccessibilityService : AccessibilityService() {
                         forceHome = effectiveForceHome,
                         blockedPackage = targetPkg.ifEmpty { null },
                     )
-                    dismiss()
+                    this@KoruAccessibilityService.dismissOverlay()
                 }
                 // L'utente ha scelto "Don't open": la sessione over-app è finita
                 // (rilascia il focus audio, l'app verrà comunque chiusa da HOME).
@@ -1299,6 +1347,9 @@ class KoruAccessibilityService : AccessibilityService() {
                 bypassPolicy = policy,
                 blockedDomain = domain,
             )
+            // Il tempo è scaduto MENTRE l'utente guardava: l'app è ancora in
+            // foreground e sta ancora riproducendo sotto il prompt.
+            silenceMediaFor(pkg, BlockReason.BYPASS_EXPIRED)
         }
         // Dedicato BYPASS_EXPIRED: discrimina nel log analytics da un normale
         // APP block (era loggato come restrictionType=0).
@@ -1449,8 +1500,10 @@ class KoruAccessibilityService : AccessibilityService() {
                     logFlashDecision(packageName, BlockReason.FOCUS_MODE)
                     Log.w(TAG, ">>> BLOCKING APP (focus): $packageName")
                     // Un focus/limite/sezione sopravvenuto è un blocco "duro" che
-                    // espelle: chiude l'eventuale sessione over-app dello stesso pkg.
-                    endOverlayOverApp()
+                    // espelle: chiude l'eventuale sessione over-app dello stesso
+                    // pkg. Il silenzio NON va rilasciato — lo ri-arma lo
+                    // `silenceMediaFor` qui sotto per il nuovo blocco.
+                    endOverlayOverAppKeepingSilence()
                     currentlyBlockingPackage = packageName
                     val appLabel = getAppLabel(packageName)
                     // Reveal INLINE (siamo già sul main thread) e PRIMA di
@@ -1466,6 +1519,7 @@ class KoruAccessibilityService : AccessibilityService() {
                         config = OverlayConfig.DEFAULT,
                         profileEmoji = decision.profileEmoji,
                     )
+                    silenceMediaFor(packageName, BlockReason.FOCUS_MODE)
                     // FOCUS_MODE: forceHome=true. La user-intent del Pomodoro /
                     // focus session è uscire dall'app, non navigare lo stack
                     // interno. BACK su un'app con activity nested chiuderebbe
@@ -1487,8 +1541,9 @@ class KoruAccessibilityService : AccessibilityService() {
                     Log.w(TAG, ">>> BLOCKING APP (daily limit, strict=${decision.isStrictLimit}): " +
                         "$packageName ${decision.todayMs / 60_000}min used, cap=${limitMinutes}min")
                     // Il cap è un blocco "duro" che espelle: chiude l'eventuale
-                    // sessione over-app dello stesso pkg (rilascia il focus audio).
-                    endOverlayOverApp()
+                    // sessione over-app dello stesso pkg. Il silenzio resta —
+                    // lo ri-arma `silenceMediaFor` per il nuovo blocco.
+                    endOverlayOverAppKeepingSilence()
                     currentlyBlockingPackage = packageName
                     cancelLimitCheck(packageName)
                     cancelWindowBoundaryCheck(packageName)
@@ -1516,6 +1571,7 @@ class KoruAccessibilityService : AccessibilityService() {
                         profileEmoji = decision.profileEmoji,
                         bypassPolicy = policy,
                     )
+                    silenceMediaFor(packageName, BlockReason.USAGE_LIMIT)
                     performGoHomeForBlock(blockedPackage = packageName)
                     val now = System.currentTimeMillis()
                     BlockEventLogger.logRestrictedAccess(
@@ -1568,13 +1624,7 @@ class KoruAccessibilityService : AccessibilityService() {
                     // in entrambi i casi l'app sta suonando ORA. Nel kick-out
                     // serve perché HOME non ferma un player che continua in
                     // background (YouTube Premium, PiP, TikTok).
-                    mediaSilencer?.silence(
-                        packageName,
-                        MediaSilencePolicy.intentFor(
-                            BlockReason.APP_BLOCKED,
-                            blockedPkgIsForeground = true,
-                        ),
-                    )
+                    silenceMediaFor(packageName, BlockReason.APP_BLOCKED)
 
                     // Modalità del blocco — "da link/altra app" vs "da icona del
                     // launcher" — decisa dall'app immediatamente precedente
@@ -1659,7 +1709,7 @@ class KoruAccessibilityService : AccessibilityService() {
                 // Nessun profilo blocca questo pkg — se avevamo un overlay, dismiss.
                 if (currentlyBlockingPackage != null) {
                     currentlyBlockingPackage = null
-                    mainHandler.post { overlayManager?.dismiss() }
+                    mainHandler.post { dismissOverlay() }
                     BlockEventLogger.emitBlockingState(false, "", null)
                 }
                 return false
@@ -1809,6 +1859,10 @@ class KoruAccessibilityService : AccessibilityService() {
                         profileEmoji = block.profileEmoji,
                         bypassPolicy = policy,
                     )
+                    // PRE-LANCIO: l'app non è ancora aperta, quindi solo il
+                    // layer chirurgico. Chi sta suonando ORA è verosimilmente
+                    // un'altra app e rubargli il focus sarebbe danno collaterale.
+                    silenceMediaFor(packageName, BlockReason.USAGE_LIMIT, isForeground = false)
                 }
                 BlockEventLogger.logRestrictedAccess(
                     applicationContext,
@@ -1829,6 +1883,8 @@ class KoruAccessibilityService : AccessibilityService() {
                         config = OverlayConfig.DEFAULT,
                         profileEmoji = block.profileEmoji,
                     )
+                    // PRE-LANCIO: solo layer chirurgico (vedi sopra).
+                    silenceMediaFor(packageName, BlockReason.FOCUS_MODE, isForeground = false)
                 }
                 BlockEventLogger.logBlockSessionAndAccess(
                     applicationContext,
@@ -1851,6 +1907,8 @@ class KoruAccessibilityService : AccessibilityService() {
                         config = config,
                         profileEmoji = block.profileEmoji,
                     )
+                    // PRE-LANCIO: solo layer chirurgico (vedi sopra).
+                    silenceMediaFor(packageName, BlockReason.APP_BLOCKED, isForeground = false)
                 }
                 BlockEventLogger.logBlockSessionAndAccess(
                     applicationContext,
@@ -1919,10 +1977,15 @@ class KoruAccessibilityService : AccessibilityService() {
                 // combaciano.
                 blockedDomain = block.bypassScopeDomain,
             )
+            // Reels e Shorts sono il caso con audio per definizione: qui il
+            // silenziamento è il punto. Dentro il `post` perché [MediaSilencer]
+            // vive sul main thread come l'OverlayManager che lo affianca.
+            silenceMediaFor(packageName, BlockReason.SECTION_BLOCKED)
         }
         // Un blocco di sezione è "duro" (espelle): chiude l'eventuale sessione
-        // over-app dello stesso pkg prima del kick-out.
-        endOverlayOverApp()
+        // over-app dello stesso pkg prima del kick-out. Il silenzio resta —
+        // lo ri-arma lo `silenceMediaFor` qui sopra.
+        endOverlayOverAppKeepingSilence()
         // SECTION_BLOCKED: forceHome=true. Bloccare una "sezione"
         // dentro un'app (es. Reels, Shorts) ha senso solo se l'app
         // viene effettivamente chiusa. BACK chiuderebbe solo la
@@ -2025,6 +2088,9 @@ class KoruAccessibilityService : AccessibilityService() {
                     profileEmoji = block.profileEmoji,
                     blockedDomain = block.bypassScopeDomain,
                 )
+                // Un video incorporato nella pagina bloccata continua a suonare
+                // dietro l'overlay esattamente come l'app nativa.
+                silenceMediaFor(packageName, BlockReason.WEBSITE_BLOCKED)
             }
             // WEBSITE_BLOCKED: forceHome=true. L'utente sta navigando in
             // un browser; BACK porta alla pagina precedente del browser,
