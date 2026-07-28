@@ -67,6 +67,15 @@ class LockForegroundService : Service() {
     private var blockingThread: Thread? = null
     private var lockRunnable: LockRunnable? = null
     private var overlayManager: OverlayManager? = null
+
+    /// Silenziamento media, gemello di quello dell'AccessibilityService.
+    ///
+    /// Deve esistere anche qui: questo path è attivo esattamente quando l'OEM
+    /// ha ucciso l'AccessibilityService, cioè quando l'enforcement è già più
+    /// fragile. Un fix che vivesse solo nel path primario lascerebbe il bug
+    /// intatto su ColorOS/MIUI — la stessa classe di divergenza già nota fra
+    /// checkAppBlocking e checkWebsiteBlocking.
+    private var mediaSilencer: MediaSilencer? = null
     private var reloadReceiver: BroadcastReceiver? = null
 
     /// Handler sul main looper. Tutte le chiamate a WindowManager.addView /
@@ -98,6 +107,11 @@ class LockForegroundService : Service() {
         createNotificationChannel()
         quickBlockManager.attachContext(applicationContext)
         overlayManager = OverlayManager(applicationContext)
+        mediaSilencer = MediaSilencer(
+            focus = AndroidAudioFocusPort(applicationContext),
+            schedule = { r, delay -> mainHandler.postDelayed(r, delay) },
+            cancel = { r -> mainHandler.removeCallbacks(r) },
+        )
         overlayManager?.onReturnHome = { _ ->
             // Tap "Don't open" sull'overlay: l'utente vuole tornare alla
             // home del DISPOSITIVO (launcher di default), non a Koru.
@@ -115,10 +129,10 @@ class LockForegroundService : Service() {
             val stale = targetPkg.isNotEmpty() && realFg != null && realFg != targetPkg
             if (stale) {
                 Log.w(TAG, "STALE overlay click (backup path): target=$targetPkg realFg=$realFg — dismiss only")
-                overlayManager?.dismiss()
+                dismissOverlay()
             } else {
                 performGoHome()
-                overlayManager?.dismiss()
+                dismissOverlay()
             }
         }
         // O8: wiring del bypass timed. Quando l'utente sceglie una durata
@@ -144,7 +158,10 @@ class LockForegroundService : Service() {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to launch bypassed app $pkg", e)
             }
-            overlayManager?.dismiss()
+            // resume=true: l'utente ha scelto di aprire comunque, quindi la
+            // riproduzione va ripresa attivamente (unico caso — vedi
+            // [MediaSilencer.release]).
+            dismissOverlay(resume = true)
         }
 
         // Listen for RELOAD_PROFILES broadcasts sent by ProfileMethodChannel.
@@ -205,6 +222,11 @@ class LockForegroundService : Service() {
         quickBlockManager.stop()
         overlayManager?.destroy()
         overlayManager = null
+        // Rilascio SINCRONO: stopBlocking() smonta l'overlay con un post sul
+        // main handler, che in teardown non è una garanzia. Il silenzio non
+        // deve poter sopravvivere al servizio che lo teneva.
+        mediaSilencer?.release()
+        mediaSilencer = null
         reloadReceiver?.let {
             try { unregisterReceiver(it) } catch (_: Exception) {}
         }
@@ -252,6 +274,7 @@ class LockForegroundService : Service() {
                         config = config,
                         profileEmoji = profile.emoji,
                     )
+                    silenceMediaFor(packageName, BlockReason.APP_BLOCKED)
                 }
                 // Forziamo HOME anche dal foreground service: se siamo qui
                 // l'AccessibilityService è morto, quindi non ci possiamo
@@ -291,6 +314,7 @@ class LockForegroundService : Service() {
                         profileEmoji = "⏳", // ⏳
                         bypassPolicy = policy,
                     )
+                    silenceMediaFor(packageName, BlockReason.USAGE_LIMIT)
                 }
                 performGoHome()
             },
@@ -311,12 +335,13 @@ class LockForegroundService : Service() {
                         config = OverlayConfig.DEFAULT,
                         profileEmoji = "🎯", // 🎯
                     )
+                    silenceMediaFor(packageName, BlockReason.FOCUS_MODE)
                 }
                 performGoHome()
             },
             onUnblock = {
                 Log.d(TAG, "[BACKUP] Unblocking")
-                mainHandler.post { overlayManager?.dismiss() }
+                mainHandler.post { dismissOverlay() }
                 sendBlockingEvent(false, "", null)
             },
         )
@@ -333,13 +358,30 @@ class LockForegroundService : Service() {
         Log.i(TAG, "Blocking service started")
     }
 
+    /// Gemello di `KoruAccessibilityService.silenceMediaFor`: da chiamare
+    /// subito dopo ogni `overlayManager?.show(...)`. Qui l'app bloccata è
+    /// sempre in foreground (il poller la rileva proprio perché lo è).
+    private fun silenceMediaFor(packageName: String, reason: BlockReason) {
+        mediaSilencer?.silence(
+            packageName,
+            MediaSilencePolicy.intentFor(reason, blockedPkgIsForeground = true),
+        )
+    }
+
+    /// Smonta l'overlay e rilascia il silenzio insieme — vedi l'invariante in
+    /// `KoruAccessibilityService.dismissOverlay`.
+    private fun dismissOverlay(resume: Boolean = false) {
+        overlayManager?.dismiss()
+        mediaSilencer?.release(resume)
+    }
+
     private fun stopBlocking() {
         lockRunnable?.isRunning = false
         blockingThread?.interrupt()
         blockingThread = null
         lockRunnable = null
         currentLockRunnable = null
-        mainHandler.post { overlayManager?.dismiss() }
+        mainHandler.post { dismissOverlay() }
         isRunning = false
         setBlockingPersistenceFlag(false)
         sendServiceStateEvent(false)

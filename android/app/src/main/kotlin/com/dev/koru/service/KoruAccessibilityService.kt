@@ -2305,6 +2305,10 @@ class KoruAccessibilityService : AccessibilityService() {
         endOverlayOverApp()
         overlayManager?.destroy()
         overlayManager = null
+        // Il silenzio non deve sopravvivere al service: endOverlayOverApp ha
+        // già rilasciato, qui rilasciamo la reference perché eventuali runnable
+        // in volo non trovino un silencer orfano.
+        mediaSilencer = null
         NativeDatabase.close()
         super.onDestroy()
     }
