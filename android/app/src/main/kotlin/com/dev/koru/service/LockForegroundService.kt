@@ -109,6 +109,7 @@ class LockForegroundService : Service() {
         overlayManager = OverlayManager(applicationContext)
         mediaSilencer = MediaSilencer(
             focus = AndroidAudioFocusPort(applicationContext),
+            sessions = AndroidMediaSessionPort(applicationContext),
             schedule = { r, delay -> mainHandler.postDelayed(r, delay) },
             cancel = { r -> mainHandler.removeCallbacks(r) },
         )

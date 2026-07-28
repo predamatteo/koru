@@ -622,6 +622,10 @@ class KoruAccessibilityService : AccessibilityService() {
         // sonde/watchdog vivono e muoiono col service (onDestroy li rimuove).
         mediaSilencer = MediaSilencer(
             focus = AndroidAudioFocusPort(applicationContext),
+            // Layer chirurgico: attivo solo se l'utente ha già concesso
+            // l'accesso alle notifiche per il filtro notifiche. Koru non lo
+            // chiede per questo; se manca, si degrada al solo audio focus.
+            sessions = AndroidMediaSessionPort(applicationContext),
             schedule = { r, delay -> mainHandler.postDelayed(r, delay) },
             cancel = { r -> mainHandler.removeCallbacks(r) },
         )
