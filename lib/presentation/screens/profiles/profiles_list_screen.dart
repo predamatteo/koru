@@ -74,7 +74,10 @@ class _ProfileCard extends ConsumerWidget {
     if (profile.hasTimeCondition && profile.intervals.isNotEmpty) {
       parts.add(
         profile.intervals
-            .map((iv) => '${_fmt(iv.fromMinutes)}\u2013${_fmt(iv.toMinutes)}')
+            // from == to e' la fascia 24h, non una finestra a lunghezza zero.
+            .map((iv) => iv.fromMinutes == iv.toMinutes
+                ? 'All day'
+                : '${_fmt(iv.fromMinutes)}\u2013${_fmt(iv.toMinutes)}')
             .join(', '),
       );
     }

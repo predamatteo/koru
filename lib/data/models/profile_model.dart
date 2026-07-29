@@ -53,8 +53,11 @@ class ProfileModel {
     if (websites.isNotEmpty) parts.add('${websites.length} sites');
     if (hasTimeCondition && intervals.isNotEmpty) {
       parts.add(intervals
-          .map((iv) =>
-              '${_formatMinutes(iv.fromMinutes)} - ${_formatMinutes(iv.toMinutes)}')
+          .map((iv) => iv.fromMinutes == iv.toMinutes
+              // from == to e' la fascia 24h (vedi ScheduleUtils.isNowInRange):
+              // stamparla come "00:00 - 00:00" leggerebbe come finestra vuota.
+              ? 'All day'
+              : '${_formatMinutes(iv.fromMinutes)} - ${_formatMinutes(iv.toMinutes)}')
           .join(', '));
     }
     parts.add(dayFlagsLabel);

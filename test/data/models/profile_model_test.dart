@@ -328,6 +328,26 @@ void main() {
       expect(model.subtitle, contains('09:00 - 17:00'));
     });
 
+    test('renders a from == to interval as "All day", not "00:00 - 00:00"', () {
+      final model = ProfileModel(
+        data: buildProfile(typeCombinations: ProfileType.time),
+        // Cio' che scrive il toggle "All day" dell'editor: la fascia degenere
+        // che ScheduleUtils/BlockPolicyEvaluator leggono come 24h.
+        intervals: [buildInterval(1, 0, 0)],
+      );
+      expect(model.subtitle, contains('All day'));
+      expect(model.subtitle, isNot(contains('00:00 - 00:00')));
+    });
+
+    test('treats any from == to interval as all-day, not just midnight', () {
+      final model = ProfileModel(
+        data: buildProfile(typeCombinations: ProfileType.time),
+        intervals: [buildInterval(1, 540, 540)],
+      );
+      expect(model.subtitle, contains('All day'));
+      expect(model.subtitle, isNot(contains('09:00 - 09:00')));
+    });
+
     test('joins multiple intervals with ", "', () {
       final model = ProfileModel(
         data: buildProfile(typeCombinations: ProfileType.time),

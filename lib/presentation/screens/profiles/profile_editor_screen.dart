@@ -41,18 +41,40 @@ const List<String> _emojiPalette = [
   '🔕',
 ];
 
+/// Fascia degenere 00:00 → 00:00.
+///
+/// Non serve alcun flag dedicato per "tutto il giorno": la convenzione
+/// `from == to` significa gia' "24h, sempre attivo" su *entrambi* i runtime
+/// (`ScheduleUtils.isNowInRange` lato Dart, `BlockPolicyEvaluator.isNowInInterval`
+/// lato Kotlin). Passare di qui, invece di salvare zero intervalli, tiene
+/// acceso `ProfileType.time` e rende la scelta esplicita in DB.
+const _allDaySlot = _TimeSlotData(
+  from: TimeOfDay(hour: 0, minute: 0),
+  to: TimeOfDay(hour: 0, minute: 0),
+);
+
+/// Fascia proposta quando l'utente spegne "tutto il giorno" senza averne mai
+/// impostata una propria.
+const _defaultSlot = _TimeSlotData(
+  from: TimeOfDay(hour: 9, minute: 0),
+  to: TimeOfDay(hour: 17, minute: 0),
+);
+
 class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
   final _titleController = TextEditingController();
   String _emoji = '🌿';
   int _dayFlags = DayFlags.allDays;
   int _blockingMode = BlockingMode.blocklist;
   int _typeCombinations = ProfileType.time;
-  List<_TimeSlotData> _slots = [
-    _TimeSlotData(
-      from: const TimeOfDay(hour: 9, minute: 0),
-      to: const TimeOfDay(hour: 17, minute: 0),
-    ),
-  ];
+
+  /// Un profilo nuovo nasce "tutto il giorno": la finestra oraria e' un
+  /// vincolo che l'utente aggiunge, non uno che si ritrova addosso.
+  bool _allDay = true;
+  List<_TimeSlotData> _slots = [_allDaySlot];
+
+  /// Fasce dell'utente messe da parte mentre "tutto il giorno" e' acceso, per
+  /// restituirle intatte se lo rispegne senza uscire dall'editor.
+  List<_TimeSlotData>? _slotsBeforeAllDay;
   bool _timeEnabled = true;
   bool _loaded = false;
   List<String> _wifiSsids = const [];
@@ -114,6 +136,16 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
               ),
             ),
         ];
+        // Una sola fascia con from == to e' esattamente cio' che scrive il
+        // toggle: riaprendo l'editor deve ripresentarsi come "tutto il giorno",
+        // non come una finestra 00:00-00:00 da modificare.
+        _allDay = _slots.length == 1 && _slots.first.from == _slots.first.to;
+        _slotsBeforeAllDay = null;
+      } else {
+        // Nessun intervallo salvato: il profilo non ha vincolo orario e non e'
+        // il caso "tutto il giorno" — mostriamo le fasce editabili.
+        _allDay = false;
+        _slots = [_defaultSlot];
       }
       _wifiSsids = wifis;
       _blockedSections = sections;
@@ -320,6 +352,26 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
     if (mounted) context.pop();
   }
 
+  void _setAllDay(bool value) {
+    setState(() {
+      if (value) {
+        _slotsBeforeAllDay = _slots;
+        _slots = [_allDaySlot];
+      } else {
+        final saved = _slotsBeforeAllDay;
+        // Se le fasce accantonate erano a loro volta un 24h (profilo aperto
+        // gia' in "tutto il giorno"), riproporle darebbe un toggle che si
+        // spegne senza cambiare nulla di visibile.
+        final usable =
+            saved != null &&
+            !(saved.length == 1 && saved.first.from == saved.first.to);
+        _slots = usable ? saved : [_defaultSlot];
+        _slotsBeforeAllDay = null;
+      }
+      _allDay = value;
+    });
+  }
+
   Future<void> _pickTime(int slotIndex, bool isStart) async {
     final slot = _slots[slotIndex];
     final picked = await showTimePicker(
@@ -505,6 +557,8 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                   ),
                   const SizedBox(height: 18),
                   Container(height: 1, color: KoruColors.surfaceElevated),
+                  const SizedBox(height: 6),
+                  _AllDayRow(value: _allDay, onChanged: _setAllDay),
                   for (var i = 0; i < _slots.length; i++) ...[
                     SizedBox(height: i == 0 ? 14 : 10),
                     Row(
@@ -513,7 +567,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                           child: _TimeField(
                             label: 'Start',
                             time: _slots[i].from,
-                            onTap: () => _pickTime(i, true),
+                            onTap: _allDay ? null : () => _pickTime(i, true),
                           ),
                         ),
                         const Padding(
@@ -528,7 +582,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                           child: _TimeField(
                             label: 'End',
                             time: _slots[i].to,
-                            onTap: () => _pickTime(i, false),
+                            onTap: _allDay ? null : () => _pickTime(i, false),
                           ),
                         ),
                         // Lo slot trailing esiste solo quando c'e' qualcosa da
@@ -552,19 +606,23 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                       ],
                     ),
                   ],
-                  const SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: _addSlot,
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text('Add time slot'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: KoruColors.primary,
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                  // Con "tutto il giorno" acceso non c'e' nulla da aggiungere:
+                  // una seconda fascia sarebbe inglobata dalla 24h.
+                  if (!_allDay) ...[
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: _addSlot,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('Add time slot'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: KoruColors.primary,
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -957,6 +1015,46 @@ class _DayCircle extends StatelessWidget {
   }
 }
 
+/// Toggle "All day": accende la fascia degenere 00:00 → 00:00 (vedi
+/// [_allDaySlot]) e mette in sola lettura i campi orari sottostanti.
+class _AllDayRow extends StatelessWidget {
+  const _AllDayRow({required this.value, required this.onChanged});
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'All day',
+                style: TextStyle(
+                  color: KoruColors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              SizedBox(height: 2),
+              Text(
+                'Active around the clock, 00:00 → 00:00',
+                style: TextStyle(
+                  color: KoruColors.textSecondary,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Switch(value: value, onChanged: onChanged),
+      ],
+    );
+  }
+}
+
 /// Campo orario tonale (M3 Expressive): etichetta piccola + ora grande dentro
 /// una superficie arrotondata.
 ///
@@ -972,7 +1070,12 @@ class _TimeField extends StatelessWidget {
   });
   final String label;
   final TimeOfDay time;
-  final VoidCallback onTap;
+
+  /// `null` = campo in sola lettura (caso "tutto il giorno": l'orario 00:00
+  /// resta visibile ma non si tocca, e' il toggle a governarlo).
+  final VoidCallback? onTap;
+
+  bool get _enabled => onTap != null;
 
   String _fmt() =>
       '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
@@ -1010,8 +1113,10 @@ class _TimeField extends StatelessWidget {
                 child: Text(
                   _fmt(),
                   maxLines: 1,
-                  style: const TextStyle(
-                    color: KoruColors.textPrimary,
+                  style: TextStyle(
+                    color: _enabled
+                        ? KoruColors.textPrimary
+                        : KoruColors.textSecondary,
                     fontSize: 24,
                     fontWeight: FontWeight.w600,
                     letterSpacing: -0.5,
