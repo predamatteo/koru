@@ -9,10 +9,22 @@ That is what this directory does.
 
 | File | Family | Copyright | License text |
 |---|---|---|---|
+| `InstrumentSerif-Regular.ttf`, `InstrumentSerif-Italic.ttf` | Instrument Serif | 2022 The Instrument Serif Project Authors | [`OFL-InstrumentSerif.txt`](OFL-InstrumentSerif.txt) |
+| `DMMono-Light.ttf`, `DMMono-Regular.ttf`, `DMMono-Medium.ttf` | DM Mono | 2020 The DM Mono Project Authors | [`OFL-DMMono.txt`](OFL-DMMono.txt) |
 | `Goldman-Regular.ttf` | Goldman | 2018 The Goldman Project Authors | [`OFL-Goldman.txt`](OFL-Goldman.txt) |
 | `Orbitron-Regular.ttf` | Orbitron | 2018 The Orbitron Project Authors — Reserved Font Name "Orbitron" | [`OFL-Orbitron.txt`](OFL-Orbitron.txt) |
 | `ArchitectsDaughter-Regular.ttf` | Architects Daughter | 2010 Kimberly Geswein | [`OFL-ArchitectsDaughter.txt`](OFL-ArchitectsDaughter.txt) |
 | `OpenDyslexic-Regular.otf` | OpenDyslexic | 2012–2019 Abbie Gonzalez — Reserved Font Name "OpenDyslexic" | [`OFL-OpenDyslexic.txt`](OFL-OpenDyslexic.txt) |
+
+## Two groups, two different roles
+
+Goldman, Orbitron, Architects Daughter and OpenDyslexic are **user-selectable**
+(Settings → Font, see `core/theme/font_catalog.dart`).
+
+Instrument Serif and DM Mono are not: they are the fixed typography of the
+launcher ("Inchiostro e ore", see `core/theme/koru_type.dart`), the same pact
+the clock had with Orbitron. They never appear in the font picker, so adding
+them to `KoruFont` is not required — but they *are* in `pubspec.yaml`.
 
 ## Reserved Font Names
 

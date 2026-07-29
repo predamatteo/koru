@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../constants/hive_keys.dart';
 import '../di/providers.dart';
+import '../theme/launcher_motion.dart';
 import '../../presentation/screens/all_apps/all_apps_screen.dart';
 import '../../presentation/screens/focus/focus_screen.dart';
 import '../../presentation/screens/focus/pomodoro_screen.dart';
@@ -59,6 +60,32 @@ class KoruRoutes {
   static const String focus = '/focus';
   static const String stats = '/stats';
   static const String settings = '/settings';
+}
+
+/// Il drawer "All apps" **sale**, non sfuma: è la stessa superficie che il
+/// dito ha tirato su dalla maniglia koru del launcher, e continua il gesto con
+/// la curva di [LauncherMotion]. La versione clamped della curva evita che il
+/// 2% di overshoot scopra il bordo inferiore a fine corsa.
+///
+/// Vale per entrambe le rotte che montano `AllAppsScreen` (`/launcher/drawer`
+/// e `/home/drawer`): è la stessa schermata, e due transizioni diverse per lo
+/// stesso posto si notano.
+CustomTransitionPage<void> _drawerPage(GoRouterState state, Widget child) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    transitionDuration: LauncherMotion.settleDuration,
+    reverseTransitionDuration: LauncherMotion.settleDuration,
+    child: child,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return SlideTransition(
+        position: animation.drive(
+          Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+              .chain(CurveTween(curve: LauncherMotion.settleClamped)),
+        ),
+        child: child,
+      );
+    },
+  );
 }
 
 final rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -130,11 +157,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: 'drawer',
-            builder: (context, state) => AllAppsScreen(
-              // `?focus=search` → apre il drawer con la ricerca già in focus
-              // (azione swipe "Ricerca app"). Senza il param resta off.
-              autofocusSearch:
-                  state.uri.queryParameters['focus'] == 'search',
+            pageBuilder: (context, state) => _drawerPage(
+              state,
+              AllAppsScreen(
+                // `?focus=search` → apre il drawer con la ricerca già in focus
+                // (azione swipe "Ricerca app"). Senza il param resta off.
+                autofocusSearch:
+                    state.uri.queryParameters['focus'] == 'search',
+              ),
             ),
           ),
           GoRoute(
@@ -197,7 +227,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'drawer',
                     parentNavigatorKey: rootNavigatorKey,
-                    builder: (context, state) => const AllAppsScreen(),
+                    pageBuilder: (context, state) =>
+                        _drawerPage(state, const AllAppsScreen()),
                   ),
                 ],
               ),

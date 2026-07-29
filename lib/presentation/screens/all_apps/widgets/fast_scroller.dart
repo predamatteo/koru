@@ -1,16 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// Strip A-Z verticale. Tap/drag emette [onLetterSelected] con haptic feedback.
+import '../../../../core/theme/koru_type.dart';
+import '../../../../core/theme/launcher_phase.dart';
+
+/// Rail A-Z sul bordo destro del drawer. Tap/drag emette [onLetterSelected]
+/// con haptic feedback; [onScrubEnd] segnala il dito alzato.
+///
+/// Mono minuscolo e regolare al posto della strip Material sgraziata: le
+/// lettere presenti sono in `ink`, le assenti quasi svanite. Quella sotto il
+/// dito raddoppia e passa in accento — ed è l'unica che si muove.
+///
+/// Il feedback grande sta altrove: il chiamante disegna la *lettera fantasma*
+/// da 240px dietro la lista (vedi `AllAppsScreen`). Qui resta solo il righello.
 class FastScroller extends StatefulWidget {
   const FastScroller({
     super.key,
     required this.onLetterSelected,
     required this.availableLetters,
+    required this.phase,
+    this.onScrubEnd,
   });
 
   final ValueChanged<String> onLetterSelected;
   final Set<String> availableLetters;
+  final LauncherPhase phase;
+
+  /// Chiamato quando il dito lascia il rail (o dopo un tap): il chiamante lo
+  /// usa per far sparire la lettera fantasma.
+  final VoidCallback? onScrubEnd;
 
   static const List<String> alphabet = [
     '#', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I',
@@ -46,20 +64,24 @@ class _FastScrollerState extends State<FastScroller> {
     }
   }
 
+  void _release() {
+    setState(() => _activeLetter = null);
+    widget.onScrubEnd?.call();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final textColor = theme.iconTheme.color ?? Colors.white;
+    final phase = widget.phase;
 
     return GestureDetector(
       onVerticalDragStart: (d) => _handleDrag(d.localPosition.dy),
       onVerticalDragUpdate: (d) => _handleDrag(d.localPosition.dy),
-      onVerticalDragEnd: (_) => setState(() => _activeLetter = null),
-      onVerticalDragCancel: () => setState(() => _activeLetter = null),
+      onVerticalDragEnd: (_) => _release(),
+      onVerticalDragCancel: _release,
       onTapUp: (d) {
         _handleDrag(d.localPosition.dy);
         Future.delayed(const Duration(milliseconds: 300), () {
-          if (mounted) setState(() => _activeLetter = null);
+          if (mounted) _release();
         });
       },
       behavior: HitTestBehavior.opaque,
@@ -74,16 +96,18 @@ class _FastScrollerState extends State<FastScroller> {
             return Expanded(
               child: Center(
                 child: AnimatedScale(
-                  scale: isActive ? 1.5 : 1.0,
+                  scale: isActive ? 2.1 : 1.0,
                   duration: const Duration(milliseconds: 150),
                   child: Text(
                     letter,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                      color: isAvailable
-                          ? (isActive ? textColor : textColor.withAlpha(180))
-                          : textColor.withAlpha(60),
+                    style: KoruType.mono(
+                      size: 9,
+                      trackEm: 0.02,
+                      weight: isActive ? FontWeight.w500 : FontWeight.w400,
+                      color: isActive
+                          ? phase.accent
+                          : (isAvailable ? phase.ink : phase.ink2),
+                      opacity: isAvailable || isActive ? 1 : 0.3,
                     ),
                   ),
                 ),

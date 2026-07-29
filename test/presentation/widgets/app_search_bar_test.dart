@@ -1,24 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:koru/core/theme/launcher_phase.dart';
 import 'package:koru/presentation/providers/app_list_provider.dart';
 import 'package:koru/presentation/screens/all_apps/widgets/app_search_bar.dart';
 
 import '../../_helpers/widget_test_utils.dart';
 
+const _bar = AppSearchBar(phase: LauncherPhase.night, matchCount: 34);
+
 void main() {
   group('AppSearchBar', () {
-    testWidgets('renders a TextField with the "Search apps" hint',
+    testWidgets('is a bare writing line: slash, field, count — no Material box',
         (tester) async {
-      await pumpKoruWidget(tester, const AppSearchBar());
+      await pumpKoruWidget(tester, _bar);
 
       expect(find.byType(TextField), findsOneWidget);
-      expect(find.text('Search apps'), findsOneWidget);
-      expect(find.byIcon(Icons.search), findsOneWidget);
+      expect(find.text('TYPE TO FILTER'), findsOneWidget);
+      expect(find.text('/'), findsOneWidget);
+      // Il campo ricerca non è più un box grigio con la lente: zero icone.
+      expect(find.byType(Icon), findsNothing);
     });
 
     testWidgets('accepts text input and updates the controller', (tester) async {
-      await pumpKoruWidget(tester, const AppSearchBar());
+      await pumpKoruWidget(tester, _bar);
 
       await tester.enterText(find.byType(TextField), 'whatsapp');
       await tester.pump();
@@ -34,7 +39,7 @@ void main() {
           child: Builder(builder: (context) {
             container = ProviderScope.containerOf(context);
             return const MaterialApp(
-              home: Scaffold(body: AppSearchBar()),
+              home: Scaffold(body: _bar),
             );
           }),
         ),
@@ -48,30 +53,29 @@ void main() {
       expect(container.read(appSearchQueryProvider), 'spotify');
     });
 
-    testWidgets('clear icon (X) is hidden when text is empty', (tester) async {
-      await pumpKoruWidget(tester, const AppSearchBar());
+    testWidgets('CLR is hidden when the field is empty', (tester) async {
+      await pumpKoruWidget(tester, _bar);
 
-      expect(find.byIcon(Icons.close), findsNothing);
+      expect(find.text('CLR'), findsNothing);
     });
 
-    testWidgets('clear icon (X) appears once text is entered', (tester) async {
-      await pumpKoruWidget(tester, const AppSearchBar());
+    testWidgets('CLR appears once text is entered', (tester) async {
+      await pumpKoruWidget(tester, _bar);
 
       await tester.enterText(find.byType(TextField), 'foo');
       await tester.pump();
 
-      expect(find.byIcon(Icons.close), findsOneWidget);
+      expect(find.text('CLR'), findsOneWidget);
     });
 
-    testWidgets('tapping clear (X) wipes the field and the provider',
-        (tester) async {
+    testWidgets('tapping CLR wipes the field and the provider', (tester) async {
       late ProviderContainer container;
       await tester.pumpWidget(
         ProviderScope(
           child: Builder(builder: (context) {
             container = ProviderScope.containerOf(context);
             return const MaterialApp(
-              home: Scaffold(body: AppSearchBar()),
+              home: Scaffold(body: _bar),
             );
           }),
         ),
@@ -84,11 +88,11 @@ void main() {
 
       expect(container.read(appSearchQueryProvider), 'instagram');
 
-      await tester.tap(find.byIcon(Icons.close));
+      await tester.tap(find.text('CLR'));
       await tester.pump();
 
       expect(container.read(appSearchQueryProvider), '');
-      expect(find.byIcon(Icons.close), findsNothing);
+      expect(find.text('CLR'), findsNothing);
     });
 
     testWidgets(
@@ -100,7 +104,7 @@ void main() {
           child: Builder(builder: (context) {
             container = ProviderScope.containerOf(context);
             return const MaterialApp(
-              home: Scaffold(body: AppSearchBar()),
+              home: Scaffold(body: _bar),
             );
           }),
         ),

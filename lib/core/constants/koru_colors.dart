@@ -43,6 +43,16 @@ class KoruColors {
   static const Color textPrimary = Color(0xFFE7EAE4); // --tx
   static const Color textSecondary = Color(0xFF8E948C); // --tx2
 
+  // ── Text attenuato — fascia NOTTE del launcher ─────────────────────────
+  // Il launcher "Inchiostro e ore" cambia la LUCE, non la tinta: di notte
+  // scende la superficie (s1 → bg) e il testo si attenua. Le superfici e
+  // l'outline pescano dalla scala tonale già esistente sopra; queste due
+  // tinte sono l'unica libertà presa — [textPrimary]/[textSecondary]
+  // desaturati e abbassati di luminosità, stessa famiglia sage-neutra.
+  // Usati SOLO da `LauncherPhase.night`, mai dal resto dell'app.
+  static const Color textPrimaryDimmed = Color(0xFFC9CEC6);
+  static const Color textSecondaryDimmed = Color(0xFF6E746D);
+
   // ── Outline / dividers ─────────────────────────────────────────────────
   static const Color outline = Color(0xFF333934); // --out
 

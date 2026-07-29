@@ -1,22 +1,86 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
+import '../../../../core/theme/koru_type.dart';
+import '../../../../core/theme/launcher_phase.dart';
 import '../../../../data/database/app_database.dart';
 import '../../../../platform/blocking_channel.dart';
 import '../../../providers/app_list_provider.dart';
 import '../../../providers/favorites_provider.dart';
 
+/// Misure delle righe del drawer.
+///
+/// Vivono qui e non sparse nei widget perché sono un **contratto**: la
+/// fast-scrollbar (`FastScroller` → `AllAppsScreen._computeSectionOffsets`)
+/// calcola dove saltare sommando queste altezze senza misurare l'albero. Se
+/// cambi una dimensione qui e non lì, il salto su una lettera atterra sul
+/// posto sbagliato.
+abstract final class AppListMetrics {
+  const AppListMetrics._();
+
+  /// Lettera di sezione: enorme e quasi trasparente, sta *sotto* i nomi come
+  /// il titolo corrente di una pagina, non sopra come un'etichetta.
+  static const double headerFontSize = 46;
+  static const double headerPadTop = 16;
+  static const double headerPadBottom = 2;
+
+  /// Nome app in modalità sfoglia (nessuna query).
+  static const double browseFontSize = 25;
+  static const double browseOpacity = 0.92;
+
+  /// Altezza minima di una riga app: il testo è più basso, ma il bersaglio
+  /// per il dito no.
+  static const double minRowHeight = 46;
+  static const double rowPadding = 12;
+
+  static const double topPadding = 4;
+
+  /// Corridoio riservato al rail A-Z sul bordo destro.
+  static const double railGutter = 44;
+
+  static double headerHeight(TextScaler textScaler) =>
+      textScaler.scale(headerFontSize) + headerPadTop + headerPadBottom;
+
+  static double rowHeight(TextScaler textScaler, double fontSize) =>
+      math.max(minRowHeight, textScaler.scale(fontSize) + rowPadding);
+}
+
+/// Scala dei risultati di ricerca: **la rilevanza si legge come dimensione**.
+/// Il match migliore è grande e pieno, gli altri arretrano. Oltre il quinto la
+/// scala si appiattisce invece di continuare a sparire.
+const List<double> _kSearchSizes = [34, 29, 26, 24, 22];
+const List<double> _kSearchOpacities = [1, 0.9, 0.8, 0.72, 0.64];
+
+/// Le app del drawer come **parole su una pagina**, non righe di una lista.
+///
+/// Due modalità, con due gerarchie diverse:
+///
+/// - **sfoglia** (nessuna query) — sezioni A-Z, con la lettera in serif
+///   gigante al 15% di opacità dietro i nomi;
+/// - **ricerca** — lista piatta ordinata per rilevanza
+///   ([rankedSearchResultsProvider]), dove il rango si legge nella dimensione
+///   del testo e la parte che combacia è dipinta in accento.
+///
+/// In entrambe il contenuto è **ancorato al fondo**: pochi risultati stanno
+/// vicino alla riga di query e al pollice, non appesi in cima allo schermo.
 class AppListView extends ConsumerWidget {
-  const AppListView({required this.scrollController, super.key});
+  const AppListView({
+    required this.scrollController,
+    required this.phase,
+    super.key,
+  });
 
   final ScrollController scrollController;
+  final LauncherPhase phase;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final grouped = ref.watch(groupedAppsProvider);
+    final searching = ref.watch(appSearchQueryProvider).trim().isNotEmpty;
     final blocking = ref.watch(platformChannelServiceProvider).blocking;
     // PERF: Set per lookup O(1). `favs.contains` veniva chiamato 2 volte per
     // ogni tile (isFavorite + menu contestuale) su una List → O(n) per tile.
@@ -26,54 +90,135 @@ class AppListView extends ConsumerWidget {
     final folders =
         ref.watch(foldersProvider).valueOrNull ?? const <LauncherFolder>[];
 
-    if (grouped.isEmpty) {
-      return Center(
-        child: Text(
-          'No matching apps',
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: KoruColors.textSecondary),
-        ),
-      );
-    }
-
-    // PERF: appiattiamo i gruppi in un'unica lista [header | app] e usiamo
-    // ListView.builder, così solo le righe visibili vengono costruite. Prima
+    // PERF: appiattiamo tutto in un'unica lista di righe e usiamo
+    // ListView.builder, così solo quelle visibili vengono costruite. Prima
     // `ListView(children:)` materializzava il Widget di OGNI app a ogni rebuild
-    // (es. a ogni keystroke di ricerca). Le altezze restano fisse (header 40 /
-    // tile 50): coerenti con `_computeSectionOffsets` della FastScroller, e il
-    // `padding: top: 4` sostituisce il vecchio SizedBox(height: 4) iniziale,
-    // preservando gli offset di scroll.
-    final rows = <Object>[];
-    for (final entry in grouped.entries) {
-      rows.add(entry.key); // String → header di sezione
-      rows.addAll(entry.value); // InstalledAppInfo → riga app
-    }
+    // (es. a ogni keystroke di ricerca).
+    final rows = searching
+        ? _searchRows(ref.watch(rankedSearchResultsProvider))
+        : _browseRows(ref.watch(groupedAppsProvider));
 
-    return ListView.builder(
-      controller: scrollController,
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(top: 4, right: 42),
-      itemCount: rows.length,
-      itemBuilder: (context, i) {
-        final row = rows[i];
-        if (row is String) return _SectionHeader(letter: row);
-        final app = row as InstalledAppInfo;
-        return _AppTile(
-          app: app,
-          isFavorite: favs.contains(app.packageName),
-          onTap: () => blocking.launchApp(app.packageName),
-          onLongPress: () => showAppContextMenu(
-            context: context,
-            app: app,
-            isFavorite: favs.contains(app.packageName),
-            currentFolderId: null,
-            folders: folders,
-            favoritesController: favoritesController,
-            blocking: blocking,
+    if (rows.isEmpty) return _EmptyResults(phase: phase);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final textScaler = MediaQuery.textScalerOf(context);
+        return ListView.builder(
+          controller: scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.only(
+            top: _topPadding(rows, constraints.maxHeight, textScaler),
+            right: AppListMetrics.railGutter,
           ),
+          itemCount: rows.length,
+          itemBuilder: (context, i) {
+            final row = rows[i];
+            return switch (row) {
+              _HeaderRow(:final letter) =>
+                _SectionHeader(letter: letter, phase: phase),
+              _AppRow(:final ranked, :final size, :final opacity) => _AppTile(
+                  ranked: ranked,
+                  phase: phase,
+                  fontSize: size,
+                  opacity: opacity,
+                  isFavorite: favs.contains(ranked.app.packageName),
+                  onTap: () => blocking.launchApp(ranked.app.packageName),
+                  onLongPress: () => showAppContextMenu(
+                    context: context,
+                    app: ranked.app,
+                    isFavorite: favs.contains(ranked.app.packageName),
+                    currentFolderId: null,
+                    folders: folders,
+                    favoritesController: favoritesController,
+                    blocking: blocking,
+                  ),
+                ),
+            };
+          },
         );
       },
+    );
+  }
+
+  List<_Row> _browseRows(Map<String, List<InstalledAppInfo>> grouped) {
+    final rows = <_Row>[];
+    for (final entry in grouped.entries) {
+      rows.add(_HeaderRow(entry.key));
+      for (final app in entry.value) {
+        rows.add(
+          _AppRow(
+            RankedApp(app: app),
+            AppListMetrics.browseFontSize,
+            AppListMetrics.browseOpacity,
+          ),
+        );
+      }
+    }
+    return rows;
+  }
+
+  List<_Row> _searchRows(List<RankedApp> ranked) {
+    return [
+      for (var i = 0; i < ranked.length; i++)
+        _AppRow(
+          ranked[i],
+          _kSearchSizes[math.min(i, _kSearchSizes.length - 1)],
+          _kSearchOpacities[math.min(i, _kSearchOpacities.length - 1)],
+        ),
+    ];
+  }
+
+  /// Ancoraggio al fondo: padding superiore pari allo spazio avanzato. Vale
+  /// `AppListMetrics.topPadding` esattamente quando il contenuto scrolla,
+  /// quindi non sposta mai gli offset su cui salta la fast-scrollbar.
+  double _topPadding(
+    List<_Row> rows,
+    double viewportHeight,
+    TextScaler textScaler,
+  ) {
+    var content = 0.0;
+    for (final row in rows) {
+      content += switch (row) {
+        _HeaderRow() => AppListMetrics.headerHeight(textScaler),
+        _AppRow(:final size) => AppListMetrics.rowHeight(textScaler, size),
+      };
+    }
+    return math.max(AppListMetrics.topPadding, viewportHeight - content);
+  }
+}
+
+sealed class _Row {
+  const _Row();
+}
+
+class _HeaderRow extends _Row {
+  const _HeaderRow(this.letter);
+  final String letter;
+}
+
+class _AppRow extends _Row {
+  const _AppRow(this.ranked, this.size, this.opacity);
+  final RankedApp ranked;
+  final double size;
+  final double opacity;
+}
+
+class _EmptyResults extends StatelessWidget {
+  const _EmptyResults({required this.phase});
+
+  final LauncherPhase phase;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.bottomLeft,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+        child: Text(
+          'No matching apps',
+          style: KoruType.serif(size: 25, color: phase.ink2),
+        ),
+      ),
     );
   }
 }
@@ -547,62 +692,123 @@ class _FolderNameDialogState extends State<_FolderNameDialog> {
   }
 }
 
+/// Lettera di sezione: serif enorme al 15% di opacità. Non è un'etichetta
+/// sopra un gruppo — è il segno d'acqua della pagina che stai sfogliando, e
+/// per questo non compete con i nomi delle app.
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.letter});
+  const _SectionHeader({required this.letter, required this.phase});
 
   final String letter;
+  final LauncherPhase phase;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 40,
-      alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Text(
-        letter,
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-          color: KoruColors.textSecondary,
-          letterSpacing: 3,
-          fontWeight: FontWeight.w500,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        24,
+        AppListMetrics.headerPadTop,
+        24,
+        AppListMetrics.headerPadBottom,
+      ),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          letter,
+          style: KoruType.serif(
+            size: AppListMetrics.headerFontSize,
+            color: phase.ink,
+            opacity: 0.15,
+          ),
         ),
       ),
     );
   }
 }
 
+/// Una app: una parola. La parte che combacia con la query è l'unico pezzo in
+/// accento — il match si legge dentro il nome, senza evidenziazione a blocco.
+///
+/// Il preferito è marcato da un punto in accento a fine riga invece che da una
+/// stella: nel drawer non entra nessuna icona.
 class _AppTile extends StatelessWidget {
   const _AppTile({
-    required this.app,
+    required this.ranked,
+    required this.phase,
+    required this.fontSize,
+    required this.opacity,
     required this.isFavorite,
     required this.onTap,
     required this.onLongPress,
   });
 
-  final InstalledAppInfo app;
+  final RankedApp ranked;
+  final LauncherPhase phase;
+  final double fontSize;
+  final double opacity;
   final bool isFavorite;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
+    final base = KoruType.serif(
+      size: fontSize,
+      height: 1.1,
+      color: phase.ink,
+      opacity: opacity,
+    );
+    final label = ranked.app.label;
+
     return InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
-      child: SizedBox(
-        height: 50,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minHeight: AppListMetrics.minRowHeight,
+        ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: AppListMetrics.rowPadding / 2,
+          ),
           child: Row(
             children: [
               Expanded(
-                child: Text(
-                  app.label,
-                  style: Theme.of(context).textTheme.bodyLarge,
+                child: Text.rich(
+                  ranked.hasMatch
+                      ? TextSpan(
+                          children: [
+                            TextSpan(text: label.substring(0, ranked.matchStart)),
+                            TextSpan(
+                              text: label.substring(
+                                ranked.matchStart,
+                                ranked.matchStart + ranked.matchLength,
+                              ),
+                              style: TextStyle(color: phase.accent),
+                            ),
+                            TextSpan(
+                              text: label
+                                  .substring(ranked.matchStart + ranked.matchLength),
+                            ),
+                          ],
+                        )
+                      : TextSpan(text: label),
+                  style: base,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (isFavorite)
-                const Icon(Icons.star, size: 16, color: KoruColors.primary),
+              if (isFavorite) ...[
+                const SizedBox(width: 10),
+                Text(
+                  '•',
+                  style: KoruType.mono(
+                    size: 10,
+                    color: phase.accent,
+                    opacity: 0.7,
+                  ),
+                ),
+              ],
             ],
           ),
         ),

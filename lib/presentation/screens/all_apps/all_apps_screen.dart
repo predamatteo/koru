@@ -1,12 +1,31 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
+import '../../../core/theme/koru_type.dart';
+import '../../../core/theme/launcher_phase.dart';
+import '../../../platform/blocking_channel.dart';
 import '../../providers/app_list_provider.dart';
 import '../../widgets/koru_pull_to_refresh.dart';
+import '../../widgets/minute_tick_builder.dart';
 import 'widgets/app_list_view.dart';
 import 'widgets/app_search_bar.dart';
 import 'widgets/fast_scroller.dart';
 
+/// Il drawer "tutte le app" — la seconda metà di "Inchiostro e ore".
+///
+/// Cosa cambia rispetto alla schermata di prima, e perché:
+///
+/// - **niente AppBar.** Era il capo di una pagina di impostazioni prestato a
+///   un launcher. Al suo posto una riga meta in mono: ora, quante app, e la
+///   parola `CLOSE`.
+/// - **la query sta in basso**, sopra la tastiera ([AppSearchBar]), e la lista
+///   è ancorata al fondo: i risultati crescono verso il pollice.
+/// - **la lettera fantasma**: mentre il dito scorre il rail A-Z, la lettera
+///   appare in serif da 240px dietro la lista. Il feedback è grande, il
+///   righello resta piccolo.
 class AllAppsScreen extends ConsumerStatefulWidget {
   const AllAppsScreen({super.key, this.autofocusSearch = false});
 
@@ -22,6 +41,10 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
     with WidgetsBindingObserver {
   late final ScrollController _scrollController = ScrollController();
   final Map<String, double> _sectionOffsets = {};
+
+  /// Lettera mostrata in gigante dietro la lista mentre si scorre il rail.
+  String? _ghostLetter;
+  Timer? _ghostTimer;
 
   @override
   void initState() {
@@ -43,6 +66,7 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
 
   @override
   void dispose() {
+    _ghostTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _scrollController.dispose();
     super.dispose();
@@ -62,27 +86,30 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
     }
   }
 
-  void _computeSectionOffsets(Map<String, dynamic> grouped) {
+  void _computeSectionOffsets(Map<String, List<InstalledAppInfo>> grouped) {
     _sectionOffsets.clear();
-    // Le altezze base (50px tile / 40px header) sono quelle definite in
-    // _AppTile e _SectionHeader. Se l'utente ha aumentato la font-scale di
-    // sistema (Accessibility → Display size & text), le tile crescono e i
-    // calcoli hard-coded portano il jump della fast-scrollbar ad ancorarsi
-    // su offset sbagliati. Scaliamo via TextScaler così il jump resta
-    // accurato anche per font scale 1.3x/1.5x.
+    // Le altezze vengono da [AppListMetrics] — la stessa fonte che
+    // `AppListView` usa per disegnare. Se l'utente ha aumentato la font-scale
+    // di sistema (Accessibility → Display size & text) le righe crescono, e
+    // senza `TextScaler` il salto della fast-scrollbar si ancorerebbe su
+    // offset sbagliati.
     final textScaler = MediaQuery.textScalerOf(context);
-    final tileHeight = textScaler.scale(50.0);
-    final headerHeight = textScaler.scale(40.0);
-    double offset = 4.0;
+    final headerHeight = AppListMetrics.headerHeight(textScaler);
+    final tileHeight = AppListMetrics.rowHeight(
+      textScaler,
+      AppListMetrics.browseFontSize,
+    );
+    var offset = AppListMetrics.topPadding;
     for (final entry in grouped.entries) {
       _sectionOffsets[entry.key] = offset;
-      offset += headerHeight;
-      final list = entry.value as List;
-      offset += list.length * tileHeight;
+      offset += headerHeight + entry.value.length * tileHeight;
     }
   }
 
   void _onLetterSelected(String letter) {
+    _ghostTimer?.cancel();
+    if (_ghostLetter != letter) setState(() => _ghostLetter = letter);
+
     final grouped = ref.read(groupedAppsProvider);
     _computeSectionOffsets(grouped);
     final target = _sectionOffsets[letter];
@@ -93,6 +120,13 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
         curve: Curves.easeOut,
       );
     }
+  }
+
+  void _onScrubEnd() {
+    _ghostTimer?.cancel();
+    _ghostTimer = Timer(const Duration(milliseconds: 500), () {
+      if (mounted) setState(() => _ghostLetter = null);
+    });
   }
 
   @override
@@ -107,57 +141,162 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
     // ottenevano l'opposto invertendo la semantica dell'API.
     final appsAsync = ref.watch(installedAppsProvider);
     final grouped = ref.watch(groupedAppsProvider);
+    final totalApps = ref.watch(visibleAppsProvider).length;
+    final searching = ref.watch(appSearchQueryProvider).trim().isNotEmpty;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('All apps'),
-        leading: const BackButton(),
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            AppSearchBar(autofocus: widget.autofocusSearch),
-            Expanded(
-              child: appsAsync.when(
-                skipLoadingOnRefresh: true,
-                skipLoadingOnReload: true,
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (err, _) => Center(
-                  child: Text(
-                    err.toString(),
-                    style: Theme.of(context).textTheme.bodyMedium,
+    return LauncherPhaseBuilder(
+      builder: (context, phase) => Scaffold(
+        backgroundColor: phase.background,
+        body: SafeArea(
+          child: Column(
+            children: [
+              _DrawerHeader(phase: phase, totalApps: totalApps),
+              Expanded(
+                child: appsAsync.when(
+                  skipLoadingOnRefresh: true,
+                  skipLoadingOnReload: true,
+                  loading: () => Center(
+                    child: CircularProgressIndicator(color: phase.accent),
                   ),
-                ),
-                data: (_) => Stack(
-                  children: [
-                    KoruPullToRefresh(
-                      // PERF: il drawer rinfresca SOLO l'inventario app (già
-                      // auto-rinfrescato da PACKAGE_*/resume) invece di
-                      // invalidare ~28 provider via il refresh globale.
-                      refreshOverride: (ref) async {
-                        ref.invalidate(installedAppsProvider);
-                        ref.invalidate(installedPackageNamesProvider);
-                        ref.invalidate(launcherPackagesProvider);
-                        await Future<void>.delayed(
-                          const Duration(milliseconds: 450),
-                        );
-                      },
-                      child: AppListView(scrollController: _scrollController),
-                    ),
-                    Positioned(
-                      top: 0,
-                      bottom: 0,
-                      right: 0,
-                      child: FastScroller(
-                        availableLetters: grouped.keys.toSet(),
-                        onLetterSelected: _onLetterSelected,
+                  error: (err, _) => Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Text(
+                        err.toString(),
+                        style: KoruType.serif(
+                          size: 20,
+                          height: 1.3,
+                          color: phase.ink2,
+                        ),
                       ),
                     ),
-                  ],
+                  ),
+                  data: (_) => Stack(
+                    children: [
+                      if (_ghostLetter != null)
+                        _GhostLetter(letter: _ghostLetter!, phase: phase),
+                      KoruPullToRefresh(
+                        // PERF: il drawer rinfresca SOLO l'inventario app (già
+                        // auto-rinfrescato da PACKAGE_*/resume) invece di
+                        // invalidare ~28 provider via il refresh globale.
+                        refreshOverride: (ref) async {
+                          ref.invalidate(installedAppsProvider);
+                          ref.invalidate(installedPackageNamesProvider);
+                          ref.invalidate(launcherPackagesProvider);
+                          await Future<void>.delayed(
+                            const Duration(milliseconds: 450),
+                          );
+                        },
+                        child: AppListView(
+                          scrollController: _scrollController,
+                          phase: phase,
+                        ),
+                      ),
+                      // Il rail salta alle sezioni A-Z, che durante la ricerca
+                      // non esistono (la lista è piatta e ordinata per
+                      // rilevanza): mostrarlo lì sarebbe un comando inerte.
+                      if (!searching)
+                        Positioned(
+                          top: 0,
+                          bottom: 0,
+                          right: 0,
+                          child: FastScroller(
+                            phase: phase,
+                            availableLetters: grouped.keys.toSet(),
+                            onLetterSelected: _onLetterSelected,
+                            onScrubEnd: _onScrubEnd,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              AppSearchBar(
+                phase: phase,
+                matchCount: ref.watch(filteredAppsProvider).length,
+                autofocus: widget.autofocusSearch,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Riga meta in cima al drawer: ora e inventario a sinistra, `CLOSE` a destra.
+/// Sostituisce l'AppBar — nessun titolo, nessuna freccia indietro.
+class _DrawerHeader extends StatelessWidget {
+  const _DrawerHeader({required this.phase, required this.totalApps});
+
+  final LauncherPhase phase;
+  final int totalApps;
+
+  static final DateFormat _timeFormat = DateFormat.Hm();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 46,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 22),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            MinuteTickBuilder(
+              builder: (context, now) => Text(
+                '${_timeFormat.format(now)} · $totalApps APPS',
+                style: KoruType.mono(
+                  size: 10,
+                  color: phase.ink2,
+                  trackEm: phase.trackEm,
+                ),
+              ),
+            ),
+            GestureDetector(
+              onTap: () => Navigator.maybePop(context),
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 0, 8),
+                child: Text(
+                  'CLOSE',
+                  style: KoruType.mono(
+                    size: 10,
+                    color: phase.accent,
+                    trackEm: phase.trackEm,
+                  ),
                 ),
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// La lettera che il dito sta scorrendo sul rail, in serif da 240px dietro la
+/// lista. Non intercetta tocchi: è un segno d'acqua, non un controllo.
+class _GhostLetter extends StatelessWidget {
+  const _GhostLetter({required this.letter, required this.phase});
+
+  final String letter;
+  final LauncherPhase phase;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      right: 26,
+      bottom: 0,
+      child: IgnorePointer(
+        child: Text(
+          letter,
+          style: KoruType.serif(
+            size: 240,
+            height: 0.7,
+            color: phase.ink,
+            opacity: 0.13,
+          ),
         ),
       ),
     );

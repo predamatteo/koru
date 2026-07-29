@@ -1,8 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
+import '../../../../core/theme/koru_type.dart';
+import '../../../../core/theme/launcher_phase.dart';
 import '../../../../data/database/app_database.dart';
 import '../../../../domain/entities/launcher_item.dart';
 import '../../../../platform/blocking_channel.dart';
@@ -17,7 +20,14 @@ import '../../all_apps/widgets/app_list_view.dart';
 /// - Drag (long-press + trascina) = riordina gli elementi top-level; app
 ///   sciolte e cartelle condividono lo stesso ordinamento.
 ///
-/// IMPORTANTE: la lista ha scroll proprio (non più `shrinkWrap +
+/// **Composizione "Inchiostro e ore"**: parole su una pagina, non righe di una
+/// lista. Serif editoriale allineato a sinistra, e il *peso segue la
+/// posizione* — il primo preferito è il più grande e opaco, gli ultimi
+/// arretrano ([_sizeFor] / [_opacityFor]). Riordinare non sposta soltanto: ri-
+/// pesa. Il blocco è ancorato al FONDO, sotto il pollice, non centrato
+/// verticalmente come in ogni altro launcher (vedi [_topPadding]).
+///
+/// IMPORTANTE: la lista ha scroll proprio (non `shrinkWrap +
 /// NeverScrollableScrollPhysics` dentro un `SingleChildScrollView` esterno).
 /// Quel pattern impediva l'auto-scroll durante il drag perché
 /// `ReorderableListView` ha bisogno di una `Scrollable` propria per scrollare
@@ -28,11 +38,28 @@ import '../../all_apps/widgets/app_list_view.dart';
 /// persistito): all'apertura del launcher le cartelle partono collassate, per
 /// una home pulita.
 class FavoritesList extends ConsumerStatefulWidget {
-  const FavoritesList({super.key});
+  const FavoritesList({required this.phase, super.key});
+
+  final LauncherPhase phase;
 
   @override
   ConsumerState<FavoritesList> createState() => _FavoritesListState();
 }
+
+/// Scala tipografica dei preferiti: il peso è funzione della posizione, non
+/// una proprietà dell'app. Oltre il quinto elemento la scala si appiattisce
+/// invece di sparire.
+const List<double> _kSizes = [35, 30, 27, 24, 22];
+const List<double> _kOpacities = [1, 0.92, 0.84, 0.74, 0.64];
+
+/// Righe indentate di una cartella aperta.
+const double _kFolderChildSize = 21;
+const double _kFolderChildGap = 14;
+const double _kFolderIndent = 22;
+
+double _sizeFor(int index) => _kSizes[math.min(index, _kSizes.length - 1)];
+double _opacityFor(int index) =>
+    _kOpacities[math.min(index, _kOpacities.length - 1)];
 
 class _FavoritesListState extends ConsumerState<FavoritesList> {
   final Set<int> _expandedFolderIds = {};
@@ -54,55 +81,94 @@ class _FavoritesListState extends ConsumerState<FavoritesList> {
         LauncherFolderItem(:final id) => (packageName: null, folderId: id),
       };
 
+  /// Ancoraggio al fondo. Il CSS del design è `flex:1; justify-content:
+  /// flex-end`: quando i preferiti non riempiono lo spazio scendono verso il
+  /// pollice invece di restare in alto. Qui l'equivalente è un padding
+  /// superiore pari allo spazio avanzato — che è `0` esattamente nel caso in
+  /// cui il contenuto scrolla, quindi non interferisce mai con lo scroll né
+  /// con gli offset del drag-reorder.
+  ///
+  /// Le altezze sono deterministiche perché le decidiamo noi: ogni riga è
+  /// `font-size` (line-height 1) + il respiro della fascia oraria. La
+  /// `TextScaler` di sistema scala solo la parte tipografica, come fa il testo
+  /// vero, così l'ancoraggio resta corretto anche a font-scale 1.5x.
+  double _topPadding(
+    List<LauncherItem> items,
+    double viewportHeight,
+    TextScaler textScaler,
+  ) {
+    var content = 0.0;
+    for (var i = 0; i < items.length; i++) {
+      content += textScaler.scale(_sizeFor(i)) + widget.phase.gap;
+      final item = items[i];
+      if (item is LauncherFolderItem && _expandedFolderIds.contains(item.id)) {
+        final rows = item.apps.isEmpty ? 1 : item.apps.length;
+        content +=
+            rows * (textScaler.scale(_kFolderChildSize) + _kFolderChildGap);
+      }
+    }
+    return math.max(0, viewportHeight - content - _kBottomPadding);
+  }
+
+  static const double _kBottomPadding = 4;
+
   @override
   Widget build(BuildContext context) {
     final items = ref.watch(launcherItemsProvider);
     if (items.isEmpty) {
-      return const _EmptyFavoritesHint();
+      return _EmptyFavoritesHint(phase: widget.phase);
     }
 
     final controller = ref.watch(favoritesControllerProvider);
     final blocking = ref.watch(platformChannelServiceProvider).blocking;
     final folders =
         ref.watch(foldersProvider).valueOrNull ?? const <LauncherFolder>[];
+    final textScaler = MediaQuery.textScalerOf(context);
 
-    return ReorderableListView.builder(
-      buildDefaultDragHandles: false,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: items.length,
-      onReorder: (oldIndex, newIndex) {
-        final reordered = List<LauncherItem>.from(items);
-        final adjusted = newIndex > oldIndex ? newIndex - 1 : newIndex;
-        final moved = reordered.removeAt(oldIndex);
-        reordered.insert(adjusted, moved);
-        controller.reorderTopLevel(
-          reordered.map(_refOf).toList(growable: false),
-        );
-      },
-      itemBuilder: (context, index) {
-        final item = items[index];
-        return switch (item) {
-          LauncherLooseApp(:final app) => _LooseAppTile(
-              key: ValueKey('app:${app.packageName}'),
-              index: index,
-              app: app,
-              folders: folders,
-              controller: controller,
-              blocking: blocking,
-            ),
-          LauncherFolderItem() => _FolderTile(
-              key: ValueKey('folder:${item.id}'),
-              index: index,
-              folder: item,
-              folders: folders,
-              expanded: _expandedFolderIds.contains(item.id),
-              onToggle: () => _toggleFolder(item.id),
-              onMenu: () => _showFolderMenu(item, controller),
-              controller: controller,
-              blocking: blocking,
-            ),
-        };
-      },
+    return LayoutBuilder(
+      builder: (context, constraints) => ReorderableListView.builder(
+        buildDefaultDragHandles: false,
+        padding: EdgeInsets.only(
+          top: _topPadding(items, constraints.maxHeight, textScaler),
+          bottom: _kBottomPadding,
+        ),
+        itemCount: items.length,
+        onReorder: (oldIndex, newIndex) {
+          final reordered = List<LauncherItem>.from(items);
+          final adjusted = newIndex > oldIndex ? newIndex - 1 : newIndex;
+          final moved = reordered.removeAt(oldIndex);
+          reordered.insert(adjusted, moved);
+          controller.reorderTopLevel(
+            reordered.map(_refOf).toList(growable: false),
+          );
+        },
+        itemBuilder: (context, index) {
+          final item = items[index];
+          return switch (item) {
+            LauncherLooseApp(:final app) => _LooseAppTile(
+                key: ValueKey('app:${app.packageName}'),
+                index: index,
+                phase: widget.phase,
+                app: app,
+                folders: folders,
+                controller: controller,
+                blocking: blocking,
+              ),
+            LauncherFolderItem() => _FolderTile(
+                key: ValueKey('folder:${item.id}'),
+                index: index,
+                phase: widget.phase,
+                folder: item,
+                folders: folders,
+                expanded: _expandedFolderIds.contains(item.id),
+                onToggle: () => _toggleFolder(item.id),
+                onMenu: () => _showFolderMenu(item, controller),
+                controller: controller,
+                blocking: blocking,
+              ),
+          };
+        },
+      ),
     );
   }
 
@@ -152,10 +218,16 @@ class _FavoritesListState extends ConsumerState<FavoritesList> {
 }
 
 /// Riga di una app preferita sciolta (fuori da ogni cartella).
+///
+/// Il respiro della fascia oraria è metà sopra e metà sotto il testo invece
+/// che tutto fra una riga e l'altra: visivamente identico, ma ogni parola
+/// diventa un bersaglio alto `font-size + gap` — 45-65px — invece dei 22px
+/// della sola riga di testo.
 class _LooseAppTile extends StatelessWidget {
   const _LooseAppTile({
     required super.key,
     required this.index,
+    required this.phase,
     required this.app,
     required this.folders,
     required this.controller,
@@ -163,6 +235,7 @@ class _LooseAppTile extends StatelessWidget {
   });
 
   final int index;
+  final LauncherPhase phase;
   final LauncherApp app;
   final List<LauncherFolder> folders;
   final FavoritesController controller;
@@ -184,17 +257,22 @@ class _LooseAppTile extends StatelessWidget {
           blocking: blocking,
         ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  app.label,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+          padding: EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: phase.gap / 2,
+          ),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              app.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: KoruType.serif(
+                size: _sizeFor(index),
+                color: phase.ink,
+                opacity: _opacityFor(index),
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -204,10 +282,14 @@ class _LooseAppTile extends StatelessWidget {
 
 /// Riga di una cartella + (se espansa) le app indentate sotto. È un unico item
 /// top-level: il drag sull'header trascina la cartella intera.
+///
+/// Il conteggio è mono a due cifre (`03`) e il segno di apertura è `+` / `−`
+/// in accento: dove prima c'erano due chevron di Material, ora c'è un carattere.
 class _FolderTile extends StatelessWidget {
   const _FolderTile({
     required super.key,
     required this.index,
+    required this.phase,
     required this.folder,
     required this.folders,
     required this.expanded,
@@ -218,6 +300,7 @@ class _FolderTile extends StatelessWidget {
   });
 
   final int index;
+  final LauncherPhase phase;
   final LauncherFolderItem folder;
   final List<LauncherFolder> folders;
   final bool expanded;
@@ -228,9 +311,9 @@ class _FolderTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ReorderableDelayedDragStartListener(
           index: index,
@@ -238,28 +321,39 @@ class _FolderTile extends StatelessWidget {
             onTap: onToggle,
             onLongPress: onMenu,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+              padding: EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: phase.gap / 2,
+              ),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
                 children: [
                   Flexible(
                     child: Text(
                       folder.name,
-                      textAlign: TextAlign.center,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium,
+                      style: KoruType.serif(
+                        size: _sizeFor(index),
+                        color: phase.ink,
+                        opacity: _opacityFor(index),
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 10),
                   Text(
-                    '${folder.count}',
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: KoruColors.textSecondary),
+                    '${folder.count}'.padLeft(2, '0'),
+                    style: KoruType.mono(
+                      size: 10,
+                      color: phase.ink2,
+                      trackEm: phase.trackEm,
+                    ),
                   ),
-                  Icon(
-                    expanded ? Icons.expand_more : Icons.chevron_right,
-                    size: 22,
-                    color: KoruColors.textSecondary,
+                  const SizedBox(width: 10),
+                  Text(
+                    expanded ? '−' : '+',
+                    style: KoruType.mono(size: 11, color: phase.accent),
                   ),
                 ],
               ),
@@ -267,67 +361,109 @@ class _FolderTile extends StatelessWidget {
           ),
         ),
         if (expanded)
-          if (folder.apps.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(left: 24, right: 24, bottom: 12),
-              child: Text(
-                'Empty folder',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: KoruColors.textSecondary),
+          Padding(
+            padding: const EdgeInsets.only(left: 24),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border(left: BorderSide(color: phase.hair)),
               ),
-            )
-          else
-            for (final app in folder.apps)
-              InkWell(
-                onTap: () => blocking.launchApp(app.packageName),
-                onLongPress: () => showAppContextMenu(
-                  context: context,
-                  app: InstalledAppInfo(
-                    packageName: app.packageName,
-                    label: app.label,
-                  ),
-                  isFavorite: true,
-                  currentFolderId: folder.id,
-                  folders: folders,
-                  favoritesController: controller,
-                  blocking: blocking,
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 24, vertical: 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          app.label,
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color: KoruColors.textSecondary,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (folder.apps.isEmpty)
+                    _FolderChild(phase: phase, label: 'Empty folder')
+                  else
+                    for (final app in folder.apps)
+                      _FolderChild(
+                        phase: phase,
+                        label: app.label,
+                        onTap: () => blocking.launchApp(app.packageName),
+                        onLongPress: () => showAppContextMenu(
+                          context: context,
+                          app: InstalledAppInfo(
+                            packageName: app.packageName,
+                            label: app.label,
                           ),
+                          isFavorite: true,
+                          currentFolderId: folder.id,
+                          folders: folders,
+                          favoritesController: controller,
+                          blocking: blocking,
                         ),
                       ),
-                    ],
-                  ),
-                ),
+                ],
               ),
+            ),
+          ),
       ],
     );
   }
 }
 
-class _EmptyFavoritesHint extends StatelessWidget {
-  const _EmptyFavoritesHint();
+/// Riga di una app dentro una cartella aperta: indentata oltre la hairline,
+/// più piccola e in `ink2` — è chiaramente subordinata alla parola sopra.
+class _FolderChild extends StatelessWidget {
+  const _FolderChild({
+    required this.phase,
+    required this.label,
+    this.onTap,
+    this.onLongPress,
+  });
+
+  final LauncherPhase phase;
+  final String label;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Text(
-        'Long-press an app in the drawer to add it here.',
-        textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: KoruColors.textSecondary,
+    return InkWell(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      child: Padding(
+        padding: const EdgeInsets.only(
+          left: _kFolderIndent,
+          right: 24,
+          top: _kFolderChildGap / 2,
+          bottom: _kFolderChildGap / 2,
+        ),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: KoruType.serif(
+              size: _kFolderChildSize,
+              color: phase.ink2,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyFavoritesHint extends StatelessWidget {
+  const _EmptyFavoritesHint({required this.phase});
+
+  final LauncherPhase phase;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.bottomLeft,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+        child: Text(
+          'Long-press an app in the drawer to add it here.',
+          style: KoruType.serif(
+            size: 22,
+            height: 1.25,
+            color: phase.ink2,
+          ),
+        ),
       ),
     );
   }

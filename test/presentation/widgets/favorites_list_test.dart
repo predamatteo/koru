@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koru/domain/entities/launcher_item.dart';
 import 'package:koru/presentation/providers/favorites_provider.dart';
+import 'package:koru/core/theme/launcher_phase.dart';
 import 'package:koru/presentation/screens/home/widgets/favorites_list.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -25,7 +26,7 @@ void main() {
         UncontrolledProviderScope(
           container: h.container,
           child: const MaterialApp(
-            home: Scaffold(body: FavoritesList()),
+            home: Scaffold(body: FavoritesList(phase: LauncherPhase.night)),
           ),
         ),
       );
@@ -61,7 +62,7 @@ void main() {
             home: Scaffold(
               body: SizedBox(
                 height: 400,
-                child: FavoritesList(),
+                child: FavoritesList(phase: LauncherPhase.night),
               ),
             ),
           ),
@@ -96,7 +97,7 @@ void main() {
             home: Scaffold(
               body: SizedBox(
                 height: 200,
-                child: FavoritesList(),
+                child: FavoritesList(phase: LauncherPhase.night),
               ),
             ),
           ),
@@ -135,7 +136,7 @@ void main() {
           container: h.container,
           child: const MaterialApp(
             home: Scaffold(
-              body: SizedBox(height: 400, child: FavoritesList()),
+              body: SizedBox(height: 400, child: FavoritesList(phase: LauncherPhase.night)),
             ),
           ),
         ),
@@ -144,7 +145,7 @@ void main() {
 
       // Collassata: nome + conteggio visibili, app nascoste.
       expect(find.text('Work'), findsOneWidget);
-      expect(find.text('2'), findsOneWidget);
+      expect(find.text('02'), findsOneWidget);
       expect(find.text('Slack'), findsNothing);
       expect(find.text('Gmail'), findsNothing);
 
@@ -181,7 +182,7 @@ void main() {
             home: Scaffold(
               body: SizedBox(
                 height: 200,
-                child: FavoritesList(),
+                child: FavoritesList(phase: LauncherPhase.night),
               ),
             ),
           ),

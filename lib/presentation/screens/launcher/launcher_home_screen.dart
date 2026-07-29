@@ -1,16 +1,23 @@
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/constants/koru_colors.dart';
 import '../../../core/di/providers.dart';
 import '../../../core/diagnostics/black_box.dart';
 import '../../../core/router/app_router.dart';
+import '../../../core/theme/koru_type.dart';
+import '../../../core/theme/launcher_motion.dart';
+import '../../../core/theme/launcher_phase.dart';
 import '../../../platform/permission_channel.dart';
 import '../../providers/app_list_provider.dart';
+import '../../providers/launcher_shortcuts_provider.dart';
 import '../../providers/launcher_swipe_actions_provider.dart';
 import '../../providers/open_apps_count_provider.dart';
+import '../../widgets/koru_spiral.dart';
 import '../home/widgets/circle_clock_widget.dart';
 import '../home/widgets/favorites_list.dart';
 import 'widgets/launcher_shortcut_buttons.dart';
@@ -24,9 +31,27 @@ const double _kSwipeVelocityThreshold = 320;
 /// attuale è `APPS OK`, che misura il drawer, non il primo frame del launcher).
 bool _launcherFirstFrameLogged = false;
 
-/// Schermata launcher: clock minimalista + favoriti + 2 shortcut
-/// personalizzabili (phone / camera di default) + link "All apps" e "K"
-/// (scorciatoia a Koru nella top-bar).
+/// Schermata launcher — **"Inchiostro e ore"**.
+///
+/// Un launcher che non si muove mai da solo, e che non è mai due volte lo
+/// stesso: palette, spaziatura e peso della tipografia sono derivati dall'ora
+/// ([LauncherPhase]), e il movimento esiste solo sotto il dito
+/// ([LauncherMotion]).
+///
+/// Tre regole, in ordine di importanza:
+///
+/// 1. **Fermo.** A dito alzato il launcher non disegna un frame: nessun loop,
+///    nessun `Timer.periodic`. Gli unici risvegli sono il confine del minuto
+///    (l'orologio, che comunque cambia) e il confine di fascia oraria — due
+///    volte al giorno.
+/// 2. **In movimento.** Il contenuto si solleva e arretra, la spirale koru si
+///    srotola sotto il dito, tutto rientra con la curva di [LauncherMotion].
+/// 3. **Il tempo è materia.** Due fasce, gli stessi token di Koru: cambia la
+///    luce, non la tinta.
+///
+/// Composizione asimmetrica: orologio in alto a sinistra, preferiti ancorati
+/// al pollice, mai il centrato-verticale di tutti. `TEL` e `CAM` sono parole,
+/// non icone — il dogma solo-testo vale anche per la UI del launcher.
 ///
 /// Mostrata SOLO quando Koru è lanciato via HOME intent (cioè è stato
 /// scelto come launcher di default). Accessibile sulla route `/launcher`,
@@ -39,7 +64,7 @@ class LauncherHomeScreen extends ConsumerStatefulWidget {
 }
 
 class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
-    with WidgetsBindingObserver, RouteAware {
+    with WidgetsBindingObserver, RouteAware, SingleTickerProviderStateMixin {
   ModalRoute<dynamic>? _subscribedRoute;
 
   /// Canale permessi cacheato in [initState]: il path di teardown
@@ -48,6 +73,22 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
   /// false durante dispose), il che lasciava l'esclusione gesture e lo
   /// shield recents nativi accesi e saltava removeObserver/super.dispose.
   late final PermissionChannel _permission;
+
+  /// Srotolamento: `0` = home ferma, `1` = drawer aperto. Guidato dal dito
+  /// durante il drag e portato a destinazione con [LauncherMotion.settle] al
+  /// rilascio. È un [AnimationController] e non uno stato in `setState` per
+  /// due ragioni: (a) fermo non consuma nulla — nessun ticker in corsa, (b) i
+  /// frame del drag ridisegnano solo i due [AnimatedBuilder] che lo ascoltano,
+  /// non l'intero albero con dentro la lista preferiti.
+  late final AnimationController _unfurl;
+
+  /// Trascinamento orizzontale accumulato (px, segno = verso del dito).
+  /// [ValueNotifier] e non `setState` per la stessa ragione: accende le
+  /// hairline laterali senza ricostruire la schermata a ogni frame.
+  final ValueNotifier<double> _hairDrag = ValueNotifier<double>(0);
+
+  bool _draggingUp = false;
+  double _dragStartY = 0;
 
   /// Overscroll-to-open: oltre questa quantità di overscroll verso il fondo
   /// (px logici, generata da un drag del dito) lo swipe-su SOPRA la lista apre
@@ -61,6 +102,10 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
   void initState() {
     super.initState();
     _permission = ref.read(platformChannelServiceProvider).permission;
+    _unfurl = AnimationController(
+      vsync: this,
+      duration: LauncherMotion.settleDuration,
+    );
     WidgetsBinding.instance.addObserver(this);
     if (!_launcherFirstFrameLogged) {
       _launcherFirstFrameLogged = true;
@@ -90,6 +135,8 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
   void dispose() {
     launcherRouteObserver.unsubscribe(this);
     _setLauncherActive(false);
+    _unfurl.dispose();
+    _hairDrag.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -97,7 +144,7 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
   // ─── RouteAware: gli override "da launcher" vivono SOLO quando è in cima ──
   // Due override sono scoping-sensibili e vanno spenti quando il launcher è
   // coperto: (1) l'esclusione gesture di sistema e (2) la nav bar nascosta. Il
-  // tasto "K" fa push di /home SOPRA il launcher (che resta montato sotto):
+  // tasto spirale fa push di /home SOPRA il launcher (che resta montato sotto):
   // senza scoping l'esclusione bloccherebbe back/home di sistema e la nav bar
   // resterebbe nascosta dentro l'app. didPushNext (coperto) → off; didPopNext /
   // didPush (riscoperto o primo mount) → on.
@@ -105,7 +152,13 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
   void didPush() => _setLauncherActive(true);
 
   @override
-  void didPopNext() => _setLauncherActive(true);
+  void didPopNext() {
+    _setLauncherActive(true);
+    // Rientro elastico della home quando il drawer (o qualsiasi altra route
+    // sovrapposta) si chiude. Ancorato qui e non a un `await context.push`
+    // così copre anche il back di sistema e il pop programmatico.
+    _settleHome();
+  }
 
   @override
   void didPushNext() => _setLauncherActive(false);
@@ -118,6 +171,7 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
     if (state == AppLifecycleState.resumed &&
         (ModalRoute.of(context)?.isCurrent ?? false)) {
       _setLauncherActive(true);
+      _settleHome();
     }
   }
 
@@ -155,6 +209,68 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
     _permission.setLauncherGestureExclusion(enabled);
   }
 
+  // ─── Srotolamento ────────────────────────────────────────────────────────
+
+  void _settleHome() {
+    if (_unfurl.value == 0) return;
+    _unfurl.animateTo(
+      0,
+      duration: LauncherMotion.settleDuration,
+      curve: LauncherMotion.settle,
+    );
+  }
+
+  void _onVerticalDragStart(DragStartDetails d) {
+    if (_unfurl.value > 0.5) return;
+    _dragStartY = d.globalPosition.dy;
+    _draggingUp = true;
+  }
+
+  void _onVerticalDragUpdate(DragUpdateDetails d) {
+    if (!_draggingUp) return;
+    // Solo verso l'alto: un drag verso il basso lascia lo srotolamento a 0.
+    final travelled = _dragStartY - d.globalPosition.dy;
+    _unfurl.value =
+        (travelled / LauncherMotion.unfurlDistance).clamp(0.0, 1.0);
+  }
+
+  void _onVerticalDragEnd(DragEndDetails d) {
+    if (!_draggingUp) return;
+    _draggingUp = false;
+    // Un flick corto ma deciso apre comunque: la velocità vale quanto la
+    // distanza (è il comportamento che il launcher aveva già prima del drag
+    // continuo, e che le dita abituate si aspettano).
+    final velocity = d.primaryVelocity ?? 0;
+    if (_unfurl.value > LauncherMotion.unfurlCommit ||
+        velocity <= -_kSwipeVelocityThreshold) {
+      _openAllApps();
+    } else {
+      _settleHome();
+    }
+  }
+
+  void _onVerticalDragCancel() {
+    if (!_draggingUp) return;
+    _draggingUp = false;
+    _settleHome();
+  }
+
+  // ─── Swipe laterali ──────────────────────────────────────────────────────
+
+  void _onHorizontalDragUpdate(DragUpdateDetails d) {
+    _hairDrag.value += d.delta.dx;
+  }
+
+  void _onHorizontalDragEnd(DragEndDetails d) {
+    _hairDrag.value = 0;
+    final v = d.primaryVelocity ?? 0;
+    if (v.abs() < _kSwipeVelocityThreshold) return;
+    // primaryVelocity > 0 = movimento verso destra.
+    _handleSwipe(
+      v > 0 ? LauncherSwipeDirection.right : LauncherSwipeDirection.left,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Pre-warm di [installedAppsProvider]: quando Koru e' launcher di
@@ -170,96 +286,116 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
     // [LauncherShortcutPickerScreen].
     ref.watch(installedAppsProvider);
 
-    return Scaffold(
-      body: SafeArea(
-        // GestureDetector a livello schermo per le swipe personalizzabili.
-        // `opaque` così riceve i drag anche sulle zone "vuote" del layout.
-        // Gli swipe ORIZZONTALI non confliggono con la FavoritesList (che
-        // gestisce solo drag verticali + long-press reorder). Lo swipe
-        // VERTICALE verso l'alto apre "All apps": nelle zone non scrollabili
-        // (clock, area bottoni) e quando la lista entra tutta (lo Scrollable
-        // rifiuta il drag → vince questo GestureDetector). Quando invece la
-        // lista ha contenuto scrollabile è lei a vincere l'arena e a scrollare;
-        // lì l'apertura avviene tirando OLTRE il fondo (overscroll-to-open,
-        // vedi [_onFavoritesScroll]).
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onHorizontalDragEnd: _onHorizontalDrag,
-          onVerticalDragEnd: _onVerticalDrag,
-          child: Column(
-            children: [
-            // Top bar: a sinistra il contatore "schede aperte" (apre il
-            // gestore schede di sistema), a destra il "K" logo-shortcut
-            // (rimpiazzabile con icona vera).
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return LauncherPhaseBuilder(
+      builder: (context, phase) => Scaffold(
+        backgroundColor: phase.background,
+        body: SafeArea(
+          // GestureDetector a livello schermo per le swipe personalizzabili.
+          // `opaque` così riceve i drag anche sulle zone "vuote" del layout.
+          // L'arena di Flutter fa da sola il lock d'asse fra i due
+          // riconoscitori: il primo movimento decide se è uno swipe laterale
+          // (hairline + azione configurabile) o lo srotolamento verticale.
+          // Quando la lista preferiti ha contenuto scrollabile è LEI a vincere
+          // l'arena verticale e a scrollare; lì l'apertura avviene tirando
+          // OLTRE il fondo (overscroll-to-open, vedi [_onFavoritesScroll]).
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragUpdate: _onHorizontalDragUpdate,
+            onHorizontalDragEnd: _onHorizontalDragEnd,
+            onHorizontalDragCancel: () => _hairDrag.value = 0,
+            onVerticalDragStart: _onVerticalDragStart,
+            onVerticalDragUpdate: _onVerticalDragUpdate,
+            onVerticalDragEnd: _onVerticalDragEnd,
+            onVerticalDragCancel: _onVerticalDragCancel,
+            child: AnimatedBuilder(
+              animation: _unfurl,
+              builder: (context, child) => _recede(_unfurl.value, child!),
+              // `child` è costruito una volta sola e riusato a ogni frame del
+              // drag: solo la trasformazione viene ricalcolata.
+              child: Stack(
                 children: [
-                  const _RecentsShortcut(),
-                  _KoruShortcut(
-                    onTap: () => context.push(KoruRoutes.home),
+                  _buildContent(phase),
+                  // Sopra il contenuto, non sotto: la zona tappabile del
+                  // filetto (20px, dentro il margine di 24px delle parole)
+                  // dev'essere raggiungibile. Copre molto meno dei due slot
+                  // freccia da 44px a tutta altezza che c'erano prima.
+                  _EdgeHairline(
+                    phase: phase,
+                    drag: _hairDrag,
+                    direction: LauncherSwipeDirection.right,
+                    action: _actionFor(LauncherSwipeDirection.right),
+                    onTap: () => _handleSwipe(LauncherSwipeDirection.right),
+                  ),
+                  _EdgeHairline(
+                    phase: phase,
+                    drag: _hairDrag,
+                    direction: LauncherSwipeDirection.left,
+                    action: _actionFor(LauncherSwipeDirection.left),
+                    onTap: () => _handleSwipe(LauncherSwipeDirection.left),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-            const CircleClockWidget(),
-            const SizedBox(height: 16),
-            // Area centrale: lista favoriti (testo centrato) affiancata dalle
-            // frecce di navigazione laterali. Le frecce sostituiscono gli hint
-            // testuali sx/dx: stessa azione dello swipe, senza label. La
-            // FavoritesList gestisce il proprio scroll (richiesto per
-            // l'auto-scroll durante il drag-reorder); l'Expanded esterno le dà
-            // l'altezza limitata che serve perché ReorderableListView non può
-            // vivere senza vincoli verticali. Gli slot freccia hanno larghezza
-            // fissa (anche quando vuoti) così la lista resta centrata simmetrica.
-            Expanded(
-              child: Row(
-                children: [
-                  // La freccia segue il VERSO DEL DITO, non punta verso il
-                  // bordo. Lo swipe-RIGHT (dito sx→dx) parte dal bordo SINISTRO
-                  // e l'icona punta a destra `›` (verso del movimento); lo
-                  // swipe-LEFT (dito dx→sx) parte dal bordo DESTRO e punta a
-                  // sinistra `‹`. Entrambe le frecce puntano quindi verso il
-                  // centro, seguendo la direzione del gesto.
-                  _buildSideArrow(
-                    LauncherSwipeDirection.right,
-                    Icons.chevron_right,
-                  ),
-                  Expanded(child: _buildFadedFavorites()),
-                  _buildSideArrow(
-                    LauncherSwipeDirection.left,
-                    Icons.chevron_left,
-                  ),
-                ],
-              ),
-            ),
-            _buildBottomBar(),
-            const SizedBox(height: 8),
-            ],
           ),
         ),
       ),
     );
   }
 
-  /// Freccia di navigazione laterale per gli swipe sx/dx. Slot a larghezza
-  /// fissa: se la direzione non ha azione assegnata resta uno spazio vuoto
-  /// (così la lista al centro non si sposta quando una sola freccia è attiva).
-  /// Tappabile: esegue la stessa azione dello swipe, così l'accesso resta
-  /// possibile anche dove la gesture di sistema interferisce. Nessuna label —
-  /// solo l'icona freccia.
-  Widget _buildSideArrow(LauncherSwipeDirection dir, IconData icon) {
-    const slotWidth = 44.0;
-    final action =
-        ref.watch(launcherSwipeActionsProvider)[dir] ?? LauncherSwipeAction.none;
-    if (action.type == LauncherSwipeActionType.none) {
-      return const SizedBox(width: slotWidth);
-    }
-    return SizedBox(
-      width: slotWidth,
-      child: _SideNavArrow(icon: icon, onTap: () => _handleSwipe(dir)),
+  /// La home arretra mentre il drawer sale: si solleva di
+  /// [LauncherMotion.homeLift], rimpicciolisce e sbiadisce. L'origine della
+  /// scala è al 20% dell'altezza (sotto l'orologio) e non al centro, così a
+  /// muoversi di più è il bordo inferiore — dove sta il dito.
+  Widget _recede(double p, Widget child) {
+    if (p == 0) return child;
+    const origin = Alignment(0, -0.6);
+    return Opacity(
+      // clamp difensivo: la curva di rientro scavalca leggermente la
+      // destinazione, e `Opacity` asserisce su valori fuori da [0, 1].
+      opacity: (1 - LauncherMotion.homeFade * p).clamp(0.0, 1.0),
+      child: Transform.translate(
+        offset: Offset(0, -LauncherMotion.homeLift * p),
+        child: Transform.scale(
+          scale: 1 - LauncherMotion.homeScale * p,
+          alignment: origin,
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent(LauncherPhase phase) {
+    return Column(
+      children: [
+        // Riga alta: schede aperte a sinistra, spirale koru a destra.
+        SizedBox(
+          height: 46,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 22),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _RecentsShortcut(phase: phase),
+                _KoruMark(
+                  phase: phase,
+                  onTap: () => context.push(KoruRoutes.home),
+                ),
+              ],
+            ),
+          ),
+        ),
+        // Le ore, in alto a sinistra. Non centrate: è la prima asimmetria.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: CircleClockWidget(phase: phase),
+          ),
+        ),
+        // I preferiti: ancorati al fondo, sotto il pollice.
+        Expanded(child: _buildFavorites(phase)),
+        _buildBottomBar(phase),
+      ],
     );
   }
 
@@ -269,7 +405,7 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
   /// launcher) e non dentro [FavoritesList], così non impatta gli altri usi.
   /// Il [NotificationListener] aggiunge l'overscroll-to-open (vedi
   /// [_onFavoritesScroll]) senza toccare scroll/reorder della lista.
-  Widget _buildFadedFavorites() {
+  Widget _buildFavorites(LauncherPhase phase) {
     return NotificationListener<ScrollNotification>(
       onNotification: _onFavoritesScroll,
       child: ShaderMask(
@@ -285,7 +421,7 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
           stops: [0.0, 0.04, 0.96, 1.0],
         ).createShader(bounds),
         blendMode: BlendMode.dstIn,
-        child: const FavoritesList(),
+        child: FavoritesList(phase: phase),
       ),
     );
   }
@@ -315,48 +451,58 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
     return false;
   }
 
-  /// Barra inferiore: shortcut telefono/camera agli angoli + hint "All apps"
-  /// centrato allo stesso livello. Lo swipe-su verso "All apps" è una gesture
-  /// FISSA del launcher (non configurabile, a differenza di sx/dx rese come
-  /// frecce laterali — vedi [_buildSideArrow]); l'hint resta sempre presente e
-  /// tappabile (stessa azione dello swipe, utile dove la gesture di sistema
-  /// interferisce). Lo Stack centra "All apps" tra le due icone senza overlap
-  /// dei tap: hint stretto al centro, icone ai bordi.
-  Widget _buildBottomBar() {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        const LauncherShortcutButtons(),
-        _SwipeHint(
-          icon: Icons.keyboard_arrow_up,
-          label: 'All apps',
-          onTap: _openAllApps,
+  /// Barra inferiore: `TEL` e `CAM` agli angoli, la maniglia koru al centro.
+  ///
+  /// La spirale non è un logo: è l'affordance. A riposo è arrotolata al 45%,
+  /// e si srotola man mano che il dito tira verso l'alto — il gesto e il segno
+  /// sono la stessa cosa. Resta tappabile: dove la gesture di sistema
+  /// interferisce, un tap apre comunque il drawer.
+  Widget _buildBottomBar(LauncherPhase phase) {
+    return SizedBox(
+      height: 78,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            LauncherShortcutWord(
+              slot: LauncherShortcutSlot.left,
+              label: 'TEL',
+              semanticLabel: 'Phone',
+              phase: phase,
+            ),
+            _AllAppsHandle(phase: phase, unfurl: _unfurl, onTap: _openAllApps),
+            LauncherShortcutWord(
+              slot: LauncherShortcutSlot.right,
+              label: 'CAM',
+              semanticLabel: 'Camera',
+              phase: phase,
+            ),
+          ],
         ),
-      ],
+      ),
     );
-  }
-
-  void _onHorizontalDrag(DragEndDetails d) {
-    final v = d.primaryVelocity ?? 0;
-    if (v.abs() < _kSwipeVelocityThreshold) return;
-    // primaryVelocity > 0 = movimento verso destra.
-    _handleSwipe(
-      v > 0 ? LauncherSwipeDirection.right : LauncherSwipeDirection.left,
-    );
-  }
-
-  void _onVerticalDrag(DragEndDetails d) {
-    final v = d.primaryVelocity ?? 0;
-    // Solo swipe verso l'alto (velocity negativa) → "All apps" (gesture fissa,
-    // non configurabile). Lo swipe verso il basso non è mappato.
-    if (v >= -_kSwipeVelocityThreshold) return;
-    _openAllApps();
   }
 
   /// Lo swipe verso l'alto (dal basso) è una gesture FISSA del launcher: apre
   /// sempre il drawer "All apps". Non è configurabile (a differenza di sx/dx),
   /// così l'accesso a tutte le app resta un gesto core garantito.
-  void _openAllApps() => context.push(KoruRoutes.launcherDrawer);
+  void _openAllApps() => _pushDrawer(KoruRoutes.launcherDrawer);
+
+  /// Porta lo srotolamento a fondo corsa e apre il drawer, che sale con la
+  /// stessa curva (vedi la transizione della route in `app_router.dart`). Il
+  /// rientro della home è gestito da [didPopNext].
+  void _pushDrawer(String location) {
+    _unfurl.animateTo(
+      1,
+      duration: LauncherMotion.settleDuration,
+      curve: LauncherMotion.settle,
+    );
+    context.push(location);
+  }
+
+  LauncherSwipeAction _actionFor(LauncherSwipeDirection dir) =>
+      ref.watch(launcherSwipeActionsProvider)[dir] ?? LauncherSwipeAction.none;
 
   void _handleSwipe(LauncherSwipeDirection dir) {
     final action =
@@ -365,9 +511,9 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
       case LauncherSwipeActionType.none:
         return;
       case LauncherSwipeActionType.allApps:
-        context.push(KoruRoutes.launcherDrawer);
+        _pushDrawer(KoruRoutes.launcherDrawer);
       case LauncherSwipeActionType.appSearch:
-        context.push('${KoruRoutes.launcherDrawer}?focus=search');
+        _pushDrawer('${KoruRoutes.launcherDrawer}?focus=search');
       case LauncherSwipeActionType.openApp:
         final pkg = action.packageName;
         if (pkg != null && pkg.isNotEmpty) {
@@ -377,128 +523,193 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
   }
 }
 
-/// Freccia di navigazione laterale (sx/dx): icona chevron centrata in uno slot
-/// alto e tappabile, senza label. Stile sobrio coerente con [_SwipeHint].
-class _SideNavArrow extends StatelessWidget {
-  const _SideNavArrow({required this.icon, required this.onTap});
-
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      customBorder: const CircleBorder(),
-      child: Center(
-        child: Icon(
-          icon,
-          size: 32,
-          color: KoruColors.textSecondary,
-        ),
-      ),
-    );
-  }
-}
-
-/// Hint minimale per uno swipe: freccia direzionale + label dell'azione.
-/// Tappabile (esegue l'azione). Stile sobrio coerente col launcher.
-class _SwipeHint extends StatelessWidget {
-  const _SwipeHint({
-    required this.icon,
-    required this.label,
+/// Filetto da 1px sul bordo laterale: l'indicatore degli swipe configurabili
+/// sx/dx, al posto dei due chevron Material.
+///
+/// A riposo è una hairline in `--hair`, praticamente muta. Durante un drag
+/// orizzontale il lato *verso cui va il dito* si accende in accento e si
+/// allunga proporzionalmente alla corsa: l'unica animazione laterale che
+/// esiste, e solo mentre il dito è giù.
+///
+/// La zona tappabile è larga 20px (dentro il margine di 24px della
+/// composizione, così non ruba tap alle parole dei preferiti) e replica
+/// l'azione dello swipe: è l'escape hatch dove la gesture di sistema
+/// interferisce, che prima davano le frecce. Se la direzione non ha un'azione
+/// assegnata il filetto resta spento e non tappabile — non promette nulla.
+class _EdgeHairline extends StatelessWidget {
+  const _EdgeHairline({
+    required this.phase,
+    required this.drag,
+    required this.direction,
+    required this.action,
     required this.onTap,
   });
 
-  final IconData icon;
-  final String label;
+  final LauncherPhase phase;
+  final ValueListenable<double> drag;
+  final LauncherSwipeDirection direction;
+  final LauncherSwipeAction action;
   final VoidCallback onTap;
+
+  /// Lo swipe-RIGHT (dito sx→dx) parte dal bordo SINISTRO, e viceversa: il
+  /// filetto che si accende è quello da cui il gesto nasce.
+  bool get _onLeftEdge => direction == LauncherSwipeDirection.right;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 16, color: KoruColors.textSecondary),
-            const SizedBox(width: 2),
-            Text(
-              label,
-              style: const TextStyle(
-                color: KoruColors.textSecondary,
-                fontSize: 13,
-                letterSpacing: 0.5,
-              ),
+    if (action.type == LauncherSwipeActionType.none) {
+      return const SizedBox.shrink();
+    }
+    return Align(
+      // 46% dell'altezza, dentro la fascia dei preferiti.
+      alignment: Alignment(_onLeftEdge ? -1 : 1, -0.08),
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          width: 20,
+          height: LauncherMotion.hairlineHeight + LauncherMotion.hairlineStretch,
+          child: Align(
+            alignment: _onLeftEdge ? Alignment.centerLeft : Alignment.centerRight,
+            child: ValueListenableBuilder<double>(
+              valueListenable: drag,
+              builder: (context, dx, _) {
+                final towardsThisEdge = _onLeftEdge ? dx > 0 : dx < 0;
+                final lit = towardsThisEdge
+                    ? math.min(1.0, dx.abs() / LauncherMotion.hairlineFullLit)
+                    : 0.0;
+                return Container(
+                  width: 1,
+                  height: LauncherMotion.hairlineHeight +
+                      LauncherMotion.hairlineStretch * lit,
+                  color: towardsThisEdge ? phase.accent : phase.hair,
+                );
+              },
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// Icona top-left del launcher: numero di "schede aperte in background" +
+/// La maniglia "tutte le app": spirale koru che si srotola col dito, più
+/// l'etichetta che si accende man mano.
+class _AllAppsHandle extends StatelessWidget {
+  const _AllAppsHandle({
+    required this.phase,
+    required this.unfurl,
+    required this.onTap,
+  });
+
+  final LauncherPhase phase;
+  final Animation<double> unfurl;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'All apps',
+      button: true,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 6),
+          child: AnimatedBuilder(
+            animation: unfurl,
+            builder: (context, _) {
+              final p = unfurl.value;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  KoruSpiral(
+                    size: 36,
+                    color: phase.ink2,
+                    strokeWidth: 4.6,
+                    progress: KoruSpiral.unfurl(p),
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    'ALL APPS',
+                    style: KoruType.mono(
+                      size: 9,
+                      color: phase.accent,
+                      trackEm: 0.24,
+                      opacity: (0.32 + 0.68 * p).clamp(0.0, 1.0),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Scorciatoia in alto a sinistra: numero di "schede aperte in background" +
 /// apertura del gestore schede (le recents di sistema, via
 /// AccessibilityService — vedi `openSystemRecents`). Il conteggio è
 /// l'approssimazione tracciata da OpenAppsTracker (app in foreground dal
-/// boot / ultimo reset). Stati:
+/// boot / ultimo reset). Un quadratino di 9px in hairline al posto di
+/// `Icons.filter_none`, e il conteggio a due cifre in mono: `04 OPEN`.
+///
+/// Stati:
 /// - servizio accessibilità OFF → nascosta (GLOBAL_ACTION_RECENTS impossibile
 ///   e il blocco gesture non è comunque operativo);
-/// - usage stats OFF → icona senza badge (conteggio non derivabile);
-/// - strict BLOCK_RECENT_APPS → disabilitata (lo strict richiuderebbe la
-///   schermata subito: niente flash-and-kick offerto dall'icona);
-/// - count == 0 → icona visibile senza badge (resta il bottone recents).
+/// - usage stats OFF → etichetta senza conteggio (non derivabile);
+/// - strict BLOCK_RECENT_APPS → attenuata e non tappabile (lo strict
+///   richiuderebbe la schermata subito: niente flash-and-kick offerto);
+/// - count == 0 → etichetta senza conteggio (resta il bottone recents).
+///
 /// Long-press: azzera il contatore (escape hatch dell'approssimazione, es.
 /// dopo aver chiuso le schede una a una senza "Cancella tutto").
 class _RecentsShortcut extends ConsumerWidget {
-  const _RecentsShortcut();
+  const _RecentsShortcut({required this.phase});
+
+  final LauncherPhase phase;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final capability = ref.watch(recentsIconCapabilityProvider).valueOrNull;
     if (capability == null || !capability.iconVisible) {
-      // Slot della stessa altezza del "K": il layout non salta quando la
+      // Slot della stessa altezza della spirale: il layout non salta quando la
       // capability arriva o cambia.
       return const SizedBox(width: 40, height: 40);
     }
     final count = ref.watch(openAppsCountProvider).valueOrNull ?? 0;
     final enabled = capability.tapEnabled;
-    final color = enabled ? KoruColors.primary : KoruColors.textSecondary;
     final showBadge = capability.badgeVisible && count > 0;
+    final color = enabled
+        ? phase.ink2
+        : phase.ink2.withValues(alpha: 0.45);
 
-    return Material(
-      color: KoruColors.primary.withAlpha(enabled ? 40 : 20),
-      shape: const StadiumBorder(),
-      child: InkWell(
-        onTap: enabled ? () => _openRecents(context, ref) : null,
-        onLongPress: enabled ? () => _resetCount(context, ref) : null,
-        customBorder: const StadiumBorder(),
-        child: SizedBox(
-          height: 40,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.filter_none, size: 18, color: color),
-                if (showBadge) ...[
-                  const SizedBox(width: 6),
-                  Text(
-                    '$count',
-                    style: TextStyle(
-                      color: color,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ],
+    return GestureDetector(
+      onTap: enabled ? () => _openRecents(context, ref) : null,
+      onLongPress: enabled ? () => _resetCount(context, ref) : null,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(border: Border.all(color: color)),
             ),
-          ),
+            const SizedBox(width: 8),
+            Text(
+              showBadge ? '${'$count'.padLeft(2, '0')} OPEN' : 'OPEN',
+              style: KoruType.mono(
+                size: 10,
+                color: color,
+                trackEm: phase.trackEm,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -535,33 +746,27 @@ class _RecentsShortcut extends ConsumerWidget {
   }
 }
 
-/// Placeholder circolare con la lettera "K" — da rimpiazzare con il
-/// logo spirale Koru vero quando sarà disponibile.
-class _KoruShortcut extends StatelessWidget {
-  const _KoruShortcut({required this.onTap});
+/// Il marchio Koru in alto a destra: la spirale, srotolata, in accento.
+/// Tap → dashboard (`/home`). Sostituisce il cerchio con la lettera "K".
+class _KoruMark extends StatelessWidget {
+  const _KoruMark({required this.phase, required this.onTap});
+
+  final LauncherPhase phase;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: KoruColors.primary.withAlpha(40),
-      shape: const CircleBorder(),
-      child: InkWell(
+    return Semantics(
+      label: 'Koru dashboard',
+      button: true,
+      child: GestureDetector(
         onTap: onTap,
-        customBorder: const CircleBorder(),
-        child: const SizedBox(
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
           width: 40,
           height: 40,
           child: Center(
-            child: Text(
-              'K',
-              style: TextStyle(
-                color: KoruColors.primary,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0,
-              ),
-            ),
+            child: KoruSpiral(size: 26, color: phase.accent),
           ),
         ),
       ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:koru/core/theme/launcher_phase.dart';
 import 'package:koru/presentation/screens/all_apps/widgets/fast_scroller.dart';
 
 import '../../_helpers/widget_test_utils.dart';
@@ -10,6 +11,7 @@ void main() {
       await pumpKoruWidget(
         tester,
         FastScroller(
+          phase: LauncherPhase.night,
           onLetterSelected: (_) {},
           availableLetters: const {'A', 'B', 'C'},
         ),
@@ -36,6 +38,7 @@ void main() {
         SizedBox(
           height: 600,
           child: FastScroller(
+            phase: LauncherPhase.night,
             onLetterSelected: (l) => selected = l,
             availableLetters: const {'A', 'B', 'M', 'Z'},
           ),
@@ -64,7 +67,11 @@ void main() {
       (tester) async {
         await pumpKoruWidget(
           tester,
-          FastScroller(onLetterSelected: (_) {}, availableLetters: const {'A'}),
+          FastScroller(
+            phase: LauncherPhase.night,
+            onLetterSelected: (_) {},
+            availableLetters: const {'A'},
+          ),
         );
 
         // Trova due Text widget e confronta gli style: "A" available, "Z" no.
@@ -89,6 +96,7 @@ void main() {
         SizedBox(
           height: 540,
           child: FastScroller(
+            phase: LauncherPhase.night,
             onLetterSelected: selected.add,
             availableLetters: FastScroller.alphabet.toSet(),
           ),

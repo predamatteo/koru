@@ -1,142 +1,87 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import '../../../../core/constants/koru_colors.dart';
+import '../../../../core/theme/koru_type.dart';
+import '../../../../core/theme/launcher_phase.dart';
 import '../../../providers/battery_provider.dart';
+import '../../../widgets/minute_tick_builder.dart';
 
-/// Orologio minimalista per il launcher: ora + data + indicatore batteria
-/// discreto sotto. Senza cornice circolare — estetica pulita e centrata.
+/// Le **ore**, metà del nome del launcher.
 ///
-/// Il font dei numeri è fisso su Orbitron per un look "digital" distintivo,
-/// indipendente dalla scelta globale dell'utente nelle Settings.
-class CircleClockWidget extends ConsumerStatefulWidget {
-  const CircleClockWidget({super.key, this.onTap});
+/// Serif editoriale allineato a sinistra, non digitale centrato: è il primo
+/// segno che questo non è un launcher come gli altri. Sotto, una sola riga
+/// mono di meta — data, batteria, fascia — al posto della vecchia colonna
+/// data + icona batteria + percentuale.
+///
+/// L'ora è formattata `HH:mm`: cambia al massimo una volta al minuto, ed è
+/// esattamente quanto spesso questo widget si ridisegna (vedi
+/// [MinuteTickBuilder]).
+class CircleClockWidget extends ConsumerWidget {
+  const CircleClockWidget({required this.phase, super.key, this.onTap});
 
+  final LauncherPhase phase;
   final VoidCallback? onTap;
 
-  @override
-  ConsumerState<CircleClockWidget> createState() => _CircleClockWidgetState();
-}
-
-class _CircleClockWidgetState extends ConsumerState<CircleClockWidget> {
-  Timer? _clockTimer;
-  DateTime _now = DateTime.now();
-
   static final DateFormat _timeFormat = DateFormat.Hm();
-  static final DateFormat _dateFormat = DateFormat('EEE, d MMM');
+  static final DateFormat _dateFormat = DateFormat('EEE d MMM');
 
   @override
-  void initState() {
-    super.initState();
-    // Il formato HH:mm cambia al massimo una volta al minuto: schedulare un
-    // tick al secondo causa ~60 rebuild inutili al minuto solo per
-    // refreshare un widget statico. Schedula invece al prossimo confine
-    // di minuto, e si ri-schedula da solo dopo ogni tick.
-    _scheduleTick();
-  }
-
-  void _scheduleTick() {
-    _now = DateTime.now();
-    final next = DateTime(
-      _now.year,
-      _now.month,
-      _now.day,
-      _now.hour,
-      _now.minute + 1,
-    );
-    _clockTimer = Timer(next.difference(_now), () {
-      if (!mounted) return;
-      setState(() => _now = DateTime.now());
-      _scheduleTick();
-    });
-  }
-
-  @override
-  void dispose() {
-    _clockTimer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+  Widget build(BuildContext context, WidgetRef ref) {
     final batteryLevel = ref.watch(batteryLevelProvider).valueOrNull;
     final isCharging = ref.watch(isChargingProvider).valueOrNull ?? false;
-    final foreground =
-        theme.textTheme.bodyMedium?.color ?? KoruColors.textPrimary;
-
-    final timeString = _timeFormat.format(_now);
-    final dateString = _dateFormat.format(_now);
 
     return GestureDetector(
-      onTap: widget.onTap,
+      onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
+      child: MinuteTickBuilder(
+        builder: (context, now) => Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Il 104px è la misura di riferimento; FittedBox la riduce solo
+            // se il formato locale è più largo (es. `10:44 PM` a 12 ore).
             FittedBox(
               fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
               child: Text(
-                timeString,
-                style: theme.textTheme.displayLarge?.copyWith(
-                  fontFamily: 'Orbitron',
-                  fontWeight: FontWeight.w300,
-                  letterSpacing: 2,
-                  color: foreground,
-                  fontSize: 72,
-                ),
+                _timeFormat.format(now),
                 maxLines: 1,
+                style: KoruType.serif(
+                  size: 104,
+                  height: 0.84,
+                  letterSpacingEm: -0.03,
+                  color: phase.ink,
+                  opacity: phase.clockOpacity,
+                ),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 16),
             Text(
-              dateString,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: foreground.withAlpha(180),
-                letterSpacing: 1,
+              _metaLine(now, batteryLevel, isCharging),
+              style: KoruType.mono(
+                size: 10,
+                color: phase.ink2,
+                trackEm: phase.trackEm,
               ),
             ),
-            if (batteryLevel != null) ...[
-              const SizedBox(height: 6),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    isCharging
-                        ? Icons.bolt
-                        : _batteryIconFor(batteryLevel),
-                    size: 14,
-                    color: foreground.withAlpha(140),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '$batteryLevel%',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: foreground.withAlpha(140),
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
-              ),
-            ],
           ],
         ),
       ),
     );
   }
 
-  IconData _batteryIconFor(int level) {
-    if (level >= 90) return Icons.battery_full;
-    if (level >= 70) return Icons.battery_6_bar;
-    if (level >= 50) return Icons.battery_4_bar;
-    if (level >= 30) return Icons.battery_3_bar;
-    if (level >= 15) return Icons.battery_2_bar;
-    return Icons.battery_1_bar;
+  /// `MON 9 JUN · 76% CHARGING · NIGHT` — una riga sola, segmenti separati da
+  /// `·`. Il segmento batteria sparisce se il livello non è ancora noto,
+  /// invece di lasciare un buco o uno `0%` finto.
+  String _metaLine(DateTime now, int? batteryLevel, bool isCharging) {
+    final parts = <String>[_dateFormat.format(now).toUpperCase()];
+    if (batteryLevel != null && batteryLevel >= 0) {
+      // Nessuna icona: il dogma solo-testo del launcher vale anche qui, dove
+      // prima c'erano `Icons.bolt` / `Icons.battery_*`.
+      parts.add(isCharging ? '$batteryLevel% CHARGING' : '$batteryLevel%');
+    }
+    parts.add(phase.label);
+    return parts.join(' · ');
   }
 }

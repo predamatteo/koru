@@ -236,6 +236,73 @@ final filteredAppsProvider = Provider<List<InstalledAppInfo>>((ref) {
       .toList(growable: false);
 });
 
+/// Una app nei risultati di ricerca, con l'intervallo di label che combacia
+/// con la query. È l'unico pezzo di testo dipinto in accento nel drawer: il
+/// match si vede *dentro* la parola, senza evidenziazioni a blocco.
+///
+/// [matchStart] è `-1` quando la corrispondenza sta nel package name e non
+/// nella label visibile (es. cercando "com.spotify"): la riga compare, ma non
+/// c'è niente da evidenziare.
+class RankedApp {
+  const RankedApp({
+    required this.app,
+    this.matchStart = -1,
+    this.matchLength = 0,
+  });
+
+  final InstalledAppInfo app;
+  final int matchStart;
+  final int matchLength;
+
+  bool get hasMatch => matchStart >= 0 && matchLength > 0;
+}
+
+/// Risultati di ricerca **ordinati per rilevanza**, non per alfabeto.
+///
+/// Chi digita "ga" cerca *Garmin*, non *Instagram*: le label che iniziano con
+/// la query vengono prima, poi quelle che la contengono, infine i match sul
+/// solo package name. Dentro ogni gruppo resta l'ordine alfabetico della lista
+/// base, così il risultato è stabile fra un carattere e l'altro.
+///
+/// La lista che ne esce è **piatta**: durante la ricerca il drawer non ha
+/// intestazioni di sezione — la gerarchia la porta la dimensione del testo
+/// (i primi risultati sono più grandi), non una lettera.
+final rankedSearchResultsProvider = Provider<List<RankedApp>>((ref) {
+  final base = ref.watch(visibleAppsProvider);
+  final query = ref.watch(appSearchQueryProvider).trim().toLowerCase();
+  if (query.isEmpty) return const [];
+
+  final prefix = <RankedApp>[];
+  final infix = <RankedApp>[];
+  final packageOnly = <RankedApp>[];
+  for (final app in base) {
+    final lower = app.label.toLowerCase();
+    final at = lower.indexOf(query);
+    // `toLowerCase()` può cambiare la LUNGHEZZA della stringa (es. 'İ' U+0130
+    // diventa due code unit): in quei casi gli offset trovati sul lowercase
+    // non sono validi sulla label originale e `substring` taglierebbe nel
+    // posto sbagliato — o lancerebbe. La riga compare comunque, senza
+    // evidenziazione.
+    final offsetsUsable = lower.length == app.label.length;
+    if (at == 0) {
+      prefix.add(
+        offsetsUsable
+            ? RankedApp(app: app, matchStart: 0, matchLength: query.length)
+            : RankedApp(app: app),
+      );
+    } else if (at > 0) {
+      infix.add(
+        offsetsUsable
+            ? RankedApp(app: app, matchStart: at, matchLength: query.length)
+            : RankedApp(app: app),
+      );
+    } else if (app.packageName.toLowerCase().contains(query)) {
+      packageOnly.add(RankedApp(app: app));
+    }
+  }
+  return [...prefix, ...infix, ...packageOnly];
+});
+
 /// App raggruppate per lettera iniziale (A-Z, # per non-alfabetiche).
 final groupedAppsProvider = Provider<Map<String, List<InstalledAppInfo>>>((ref) {
   final apps = ref.watch(filteredAppsProvider);
