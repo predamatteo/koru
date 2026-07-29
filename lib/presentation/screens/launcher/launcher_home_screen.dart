@@ -16,6 +16,7 @@ import '../../providers/app_list_provider.dart';
 import '../../providers/launcher_shortcuts_provider.dart';
 import '../../providers/launcher_swipe_actions_provider.dart';
 import '../../providers/open_apps_count_provider.dart';
+import '../../widgets/koru_spiral.dart';
 import '../home/widgets/circle_clock_widget.dart';
 import '../home/widgets/favorites_list.dart';
 import 'widgets/launcher_shortcut_buttons.dart';
@@ -741,8 +742,12 @@ class _RecentsShortcut extends ConsumerWidget {
   }
 }
 
-/// Pastiglia Koru in alto a destra: container tonale dell'accento della fascia
-/// con la "K". Tap → dashboard (`/home`).
+/// Pastiglia Koru in alto a destra: la spirale del marchio dentro il container
+/// tonale dell'accento della fascia. Tap → dashboard (`/home`).
+///
+/// È un marchio di prodotto in un container tonale — il pattern che Material 3
+/// prevede per l'identità dell'app — non la lettera "K" che ha fatto da
+/// segnaposto finché il logo non è esistito.
 class _KoruMark extends StatelessWidget {
   const _KoruMark({required this.phase, required this.onTap});
 
@@ -764,13 +769,7 @@ class _KoruMark extends StatelessWidget {
             width: 44,
             height: 44,
             child: Center(
-              child: Text(
-                'K',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: phase.onAccentContainer,
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
+              child: KoruSpiral(size: 22, color: phase.onAccentContainer),
             ),
           ),
         ),
