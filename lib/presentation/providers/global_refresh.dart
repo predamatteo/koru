@@ -112,3 +112,62 @@ Future<void> refreshAllKoruData(WidgetRef ref) async {
   invalidateAllKoruData(ref);
   await Future<void>.delayed(const Duration(milliseconds: 450));
 }
+
+/// I provider di dati che alimentano la schermata Statistiche.
+///
+/// Sottoinsieme di [_koruDataProviders]: il tap sul widget home apre `/stats`
+/// e deve rinfrescare QUELLA schermata — far pagare a una navigazione anche
+/// una riscansione del PackageManager o dei profili sarebbe sproporzionato.
+final List<ProviderOrFamily> _statsScreenProviders = [
+  // ── Screen time (UsageStatsManager nativo) — il dato mostrato dal widget ─
+  periodUsageProvider,
+  previousPeriodScreenTimeMsProvider,
+  weeklyDailyUsageProvider,
+
+  // ── Blocchi & focus (stream SQLite, scritti anche dal native) ───────────
+  blockTriggeredCountProvider,
+  blockSkippedCountProvider,
+  focusTimeMsProvider,
+
+  // ── Mood, streak, achievement (SQLite) ─────────────────────────────────
+  todayMoodProvider,
+  streakSnapshotProvider,
+  unlockedAchievementIdsProvider,
+  achievementStatsProvider,
+];
+
+/// Quanto al massimo la navigazione verso `/stats` può restare in attesa dei
+/// dati freschi prima di partire comunque.
+const _statsRefreshTimeout = Duration(milliseconds: 1200);
+
+/// Rinfresca i dati della schermata Statistiche e ATTENDE le query native di
+/// screen time prima di restituire il controllo.
+///
+/// Serve al tap sul widget home (`goToRoute` → `/stats`): il widget disegna il
+/// tempo d'uso letto dal native un istante prima, mentre i provider Dart
+/// possono averne in cache uno vecchio di ore — l'invalidate-su-resume di
+/// `events_refresher` è throttled a 45s e di proposito NON tocca lo screen
+/// time. Senza questa attesa l'utente tocca "3h 12m" e atterra su una cifra
+/// diversa, che poi cambia sotto i suoi occhi.
+///
+/// Attendiamo solo le due letture di UsageStatsManager: i provider derivati
+/// (`periodScreenTimeMsProvider`, `topAppsByUsageProvider`) ricompletano in un
+/// microtask dalla sorgente ormai fresca, e gli stream SQLite sono immediati.
+///
+/// Il timeout tiene la navigazione reattiva: se il canale nativo è lento (o il
+/// permesso Usage Access è stato revocato) la schermata si apre lo stesso e si
+/// popola quando i dati arrivano.
+Future<void> refreshStatsScreenData(Ref ref) async {
+  for (final provider in _statsScreenProviders) {
+    ref.invalidate(provider);
+  }
+  try {
+    await Future.wait([
+      ref.read(periodUsageProvider.future),
+      ref.read(previousPeriodScreenTimeMsProvider.future),
+    ]).timeout(_statsRefreshTimeout);
+  } catch (_) {
+    // Timeout, canale nativo giù o permesso revocato: non è un motivo per
+    // NON aprire la schermata, che sa già gestire il dato mancante.
+  }
+}

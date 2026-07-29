@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/router/app_router.dart';
 import '../../domain/entities/statistics_period.dart';
+import 'global_refresh.dart';
 import 'screen_time_provider.dart';
 import 'statistics_providers.dart';
 
@@ -80,18 +81,30 @@ final homeIntentListenerProvider = Provider<void>((ref) {
         // trasformando il deterrent in qualcosa che si può far sparire
         // dall'esterno. Se siamo sul prompt, la navigazione non passa.
         if (currentLocation(ctx) == backdoorRoute) break;
-        if (route == KoruRoutes.stats) {
-          // Il widget è etichettato "OGGI" e mostra sempre [mezzanotte, ora].
-          // `selectedPeriodProvider` e `selectedStatsDayProvider` sono stato UI
-          // che sopravvive alla navigazione: senza reset, un utente che aveva
-          // lasciato le statistiche su "This week" (o su un giorno del grafico)
-          // toccherebbe un widget che dice 3h 12m e atterrerebbe su una
-          // schermata che ne mostra 19h — stesso dato, due numeri.
-          ref.read(selectedPeriodProvider.notifier).state =
-              StatisticsPeriod.today;
-          ref.read(selectedStatsDayProvider.notifier).state = null;
+        if (route != KoruRoutes.stats) {
+          ctx.go(route);
+          break;
         }
-        ctx.go(route);
+        // Il widget è etichettato "OGGI" e mostra sempre [mezzanotte, ora].
+        // `selectedPeriodProvider` e `selectedStatsDayProvider` sono stato UI
+        // che sopravvive alla navigazione: senza reset, un utente che aveva
+        // lasciato le statistiche su "This week" (o su un giorno del grafico)
+        // toccherebbe un widget che dice 3h 12m e atterrerebbe su una
+        // schermata che ne mostra 19h — stesso dato, due numeri.
+        ref.read(selectedPeriodProvider.notifier).state =
+            StatisticsPeriod.today;
+        ref.read(selectedStatsDayProvider.notifier).state = null;
+        // Stesso motivo, ma sull'asse del TEMPO: i provider Dart possono avere
+        // in cache uno screen time vecchio di ore. Aggiorniamo PRIMA di aprire
+        // la schermata (con timeout interno), così la pagina appare già con i
+        // numeri del widget invece di correggersi sotto gli occhi dell'utente.
+        await refreshStatsScreenData(ref);
+        // Post-await: il context può essere cambiato o sparito, e il prompt
+        // del backdoor code potrebbe essersi aperto nel frattempo (SEC-12).
+        final target = rootNavigatorKey.currentContext;
+        if (target == null || !target.mounted) break;
+        if (currentLocation(target) == backdoorRoute) break;
+        target.go(route);
         break;
     }
   });
