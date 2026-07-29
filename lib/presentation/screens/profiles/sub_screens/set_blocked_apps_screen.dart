@@ -6,6 +6,7 @@ import '../../../../core/constants/koru_colors.dart';
 import '../../../../platform/blocking_channel.dart';
 import '../../../providers/app_list_provider.dart';
 import '../../../providers/profile_providers.dart';
+import '../../../providers/screen_time_provider.dart';
 import '../../../widgets/app_icon.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
 
@@ -26,15 +27,23 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
   final _searchController = TextEditingController();
   String _query = '';
 
+  /// Le app "più usate della settimana" da mostrare in cima alla lista, in
+  /// ordine di utilizzo desc. `null` finché il ranking non è disponibile
+  /// (vedi [_ensureSuggestions]).
+  List<String>? _suggested;
+
   @override
   void initState() {
     super.initState();
     // Pre-fetch della lista app: anche se il provider è cached, la prima
     // lettura (primo entering) è asincrona — triggeriamo subito così Flutter
     // inizia il MethodChannel call in parallelo alla transition di navigazione.
+    // Stesso discorso per il ranking settimanale (query UsageStatsManager):
+    // parte insieme allo scan del PackageManager invece che dopo.
     Future.microtask(() {
       if (!mounted) return;
       ref.read(installedAppsProvider);
+      ref.read(weeklyTopAppsProvider);
       _hydrate();
     });
   }
@@ -92,9 +101,66 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
         .toList(growable: false);
   }
 
+  /// Calcola UNA SOLA VOLTA i suggerimenti "most used this week", appena il
+  /// ranking settimanale è disponibile.
+  ///
+  /// Il congelamento è intenzionale: ricalcolandoli a ogni build, spuntare un
+  /// suggerimento lo renderebbe "già selezionato" — sparirebbe da sotto il
+  /// dito dell'utente e la lista scorrerebbe su. Una volta scelti, i tre
+  /// restano lì finché non si esce dalla schermata.
+  ///
+  /// Non blocca il primo paint: se la query di UsageStatsManager è più lenta
+  /// dello scan del PackageManager, la lista compare senza sezione e i
+  /// suggerimenti si aggiungono quando il ranking arriva. Se il permesso
+  /// Usage Access manca (provider in errore) `weekly` resta `null` e la
+  /// schermata si comporta esattamente come prima.
+  void _ensureSuggestions(
+    List<InstalledAppInfo> apps,
+    List<AppUsageInfo>? weekly,
+  ) {
+    if (_suggested != null || weekly == null) return;
+    _suggested = mostUsedAppSuggestions(
+      weeklyRanking: weekly,
+      installedPackages: {for (final a in apps) a.packageName},
+      alreadySelected: _selected,
+    );
+  }
+
+  /// Righe della lista: i suggerimenti in cima (con le rispettive
+  /// intestazioni di sezione), poi tutte le altre app in ordine alfabetico.
+  ///
+  /// Durante una ricerca i suggerimenti sono disattivati: chi digita sta
+  /// cercando un'app precisa, e vedersi in testa tre risultati che non
+  /// c'entrano con la query sarebbe solo rumore.
+  List<_PickerRow> _rows(List<InstalledAppInfo> filtered) {
+    final suggested = _query.trim().isEmpty
+        ? (_suggested ?? const <String>[])
+        : const <String>[];
+    if (suggested.isEmpty) {
+      return [for (final a in filtered) _PickerRow.app(a)];
+    }
+    final byPackage = {for (final a in filtered) a.packageName: a};
+    final pinned = [
+      for (final pkg in suggested)
+        if (byPackage[pkg] != null) byPackage[pkg]!,
+    ];
+    if (pinned.isEmpty) {
+      return [for (final a in filtered) _PickerRow.app(a)];
+    }
+    final pinnedPackages = {for (final a in pinned) a.packageName};
+    return [
+      const _PickerRow.header('Most used this week'),
+      for (final a in pinned) _PickerRow.app(a),
+      const _PickerRow.header('All apps'),
+      for (final a in filtered)
+        if (!pinnedPackages.contains(a.packageName)) _PickerRow.app(a),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final appsAsync = ref.watch(installedAppsProvider);
+    final weekly = ref.watch(weeklyTopAppsProvider).valueOrNull;
 
     return Scaffold(
       appBar: AppBar(
@@ -145,6 +211,7 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
             if (!_loaded) {
               return const Center(child: CircularProgressIndicator());
             }
+            _ensureSuggestions(apps, weekly);
             final filtered = _filter(apps);
             if (filtered.isEmpty) {
               return Center(
@@ -156,11 +223,14 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
                 ),
               );
             }
+            final rows = _rows(filtered);
             return ListView.builder(
               physics: const AlwaysScrollableScrollPhysics(),
-              itemCount: filtered.length,
+              itemCount: rows.length,
               itemBuilder: (context, i) {
-                final app = filtered[i];
+                final header = rows[i].header;
+                if (header != null) return _SectionHeader(header);
+                final app = rows[i].app!;
                 final checked = _selected.contains(app.packageName);
                 return CheckboxListTile(
                   value: checked,
@@ -197,6 +267,40 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
               },
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+/// Una riga della lista del picker: o un'intestazione di sezione, o un'app.
+/// Esattamente uno dei due campi è non-null.
+class _PickerRow {
+  const _PickerRow.header(this.header) : app = null;
+  const _PickerRow.app(this.app) : header = null;
+
+  final String? header;
+  final InstalledAppInfo? app;
+}
+
+/// Intestazione di sezione della lista, nello stile delle label delle
+/// Statistiche (maiuscolo, primary, tracking largo).
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+      child: Text(
+        text.toUpperCase(),
+        style: TextStyle(
+          color: KoruColors.primary.withAlpha(220),
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 2,
         ),
       ),
     );

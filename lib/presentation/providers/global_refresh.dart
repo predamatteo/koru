@@ -61,6 +61,7 @@ final List<ProviderOrFamily> _koruDataProviders = [
   periodUsageProvider,
   previousPeriodScreenTimeMsProvider,
   weeklyDailyUsageProvider,
+  weeklyTopAppsProvider,
 
   // ── Profili (SQLite) ───────────────────────────────────────────────────
   profilesProvider,

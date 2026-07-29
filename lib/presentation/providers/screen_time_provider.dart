@@ -38,6 +38,62 @@ final topAppsByUsageProvider =
   return sorted.take(limit).toList(growable: false);
 });
 
+/// Utilizzo foreground per-app degli ULTIMI 7 GIORNI, ordinato desc.
+///
+/// Deliberatamente indipendente da `selectedPeriodProvider` (e quindi da
+/// [periodUsageProvider]): i suggerimenti "le più usate della settimana" del
+/// picker app devono restare la settimana anche mentre la schermata
+/// Statistiche è impostata su "oggi" o "mese".
+///
+/// Stessa finestra di [weeklyDailyUsageProvider] — 6 giorni pieni indietro +
+/// la parte di oggi trascorsa, ancorata alla mezzanotte locale con
+/// `DateTime(y, m, d - 6)` e non con `add(Duration(days:))`, così il confine
+/// resta corretto anche a cavallo dei cambi di ora legale.
+final weeklyTopAppsProvider = FutureProvider<List<AppUsageInfo>>((ref) async {
+  final now = DateTime.now();
+  final firstDay = DateTime(now.year, now.month, now.day - 6);
+  final blocking = ref.watch(platformChannelServiceProvider).blocking;
+  final list = await blocking.getUsageStats(
+    startMs: firstDay.millisecondsSinceEpoch,
+    endMs: now.millisecondsSinceEpoch,
+  );
+  return [...list]..sort((a, b) => b.totalTimeMs.compareTo(a.totalTimeMs));
+});
+
+/// Package di Koru stessa: mai proposta come suggerimento. È il launcher
+/// di default dell'utente, quindi domina sistematicamente la classifica di
+/// utilizzo — e suggerire di bloccarla non ha senso.
+const _koruPackage = 'com.dev.koru';
+
+/// Le [limit] app più usate della settimana da proporre in cima a un picker
+/// di app, a partire dal ranking di [weeklyTopAppsProvider].
+///
+/// Scarta, scorrendo la classifica dall'alto:
+///   - le app GIÀ selezionate (proporle non aggiungerebbe nulla) — al loro
+///     posto risale la successiva, così i suggerimenti utili restano [limit];
+///   - le app non più presenti in [installedPackages] (UsageStatsManager
+///     conserva ~7-10 giorni di eventi, quindi la classifica può contenere
+///     package disinstallati nel frattempo);
+///   - Koru stessa e le voci a tempo zero.
+List<String> mostUsedAppSuggestions({
+  required List<AppUsageInfo> weeklyRanking,
+  required Set<String> installedPackages,
+  required Set<String> alreadySelected,
+  int limit = 3,
+}) {
+  final suggestions = <String>[];
+  for (final app in weeklyRanking) {
+    if (suggestions.length >= limit) break;
+    final pkg = app.packageName;
+    if (app.totalTimeMs <= 0) continue;
+    if (pkg == _koruPackage) continue;
+    if (alreadySelected.contains(pkg)) continue;
+    if (!installedPackages.contains(pkg)) continue;
+    suggestions.add(pkg);
+  }
+  return suggestions;
+}
+
 /// Giorno selezionato nella vista settimana, come mezzanotte locale in ms,
 /// oppure `null` = aggregato dell'intera settimana.
 ///

@@ -143,6 +143,143 @@ void main() {
     });
   });
 
+  group('weeklyTopAppsProvider', () {
+    test('sorts by totalTimeMs descending over a ~7-day window', () async {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      ({int start, int end})? captured;
+      when(() => h.blocking.getUsageStats(
+            startMs: any(named: 'startMs'),
+            endMs: any(named: 'endMs'),
+          )).thenAnswer((inv) async {
+        captured = (
+          start: inv.namedArguments[#startMs] as int,
+          end: inv.namedArguments[#endMs] as int,
+        );
+        return [
+          AppUsageInfo(
+              packageName: 'com.a', totalTimeMs: 1000, lastTimeUsed: 0),
+          AppUsageInfo(
+              packageName: 'com.b', totalTimeMs: 5000, lastTimeUsed: 0),
+          AppUsageInfo(
+              packageName: 'com.c', totalTimeMs: 2000, lastTimeUsed: 0),
+        ];
+      });
+
+      final ranking = await h.container.read(weeklyTopAppsProvider.future);
+      expect(ranking.map((a) => a.packageName), ['com.b', 'com.c', 'com.a']);
+
+      expect(captured, isNotNull);
+      final spanDays = (captured!.end - captured!.start) / (24 * 3600 * 1000);
+      expect(spanDays, greaterThan(5.9));
+      expect(spanDays, lessThan(7.1));
+    });
+
+    test('does not depend on the statistics period selection', () async {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      final ranges = <({int start, int end})>[];
+      when(() => h.blocking.getUsageStats(
+            startMs: any(named: 'startMs'),
+            endMs: any(named: 'endMs'),
+          )).thenAnswer((inv) async {
+        ranges.add((
+          start: inv.namedArguments[#startMs] as int,
+          end: inv.namedArguments[#endMs] as int,
+        ));
+        return const <AppUsageInfo>[];
+      });
+
+      h.container.read(selectedPeriodProvider.notifier).state =
+          StatisticsPeriod.today;
+      await h.container.read(weeklyTopAppsProvider.future);
+      final first = ranges.single;
+
+      // Cambiare periodo NON deve invalidare il ranking settimanale.
+      h.container.read(selectedPeriodProvider.notifier).state =
+          StatisticsPeriod.week;
+      await h.container.read(weeklyTopAppsProvider.future);
+
+      expect(ranges, hasLength(1));
+      expect(first.end - first.start, greaterThan(0));
+    });
+  });
+
+  group('mostUsedAppSuggestions', () {
+    List<AppUsageInfo> ranking(List<(String, int)> entries) => [
+          for (final (pkg, ms) in entries)
+            AppUsageInfo(packageName: pkg, totalTimeMs: ms, lastTimeUsed: 0),
+        ];
+
+    test('returns the top 3 by weekly usage', () {
+      final out = mostUsedAppSuggestions(
+        weeklyRanking: ranking([
+          ('com.a', 5000),
+          ('com.b', 4000),
+          ('com.c', 3000),
+          ('com.d', 2000),
+        ]),
+        installedPackages: {'com.a', 'com.b', 'com.c', 'com.d'},
+        alreadySelected: const {},
+      );
+      expect(out, ['com.a', 'com.b', 'com.c']);
+    });
+
+    test('skips apps already selected and promotes the next ones', () {
+      final out = mostUsedAppSuggestions(
+        weeklyRanking: ranking([
+          ('com.a', 5000),
+          ('com.b', 4000),
+          ('com.c', 3000),
+          ('com.d', 2000),
+          ('com.e', 1000),
+        ]),
+        installedPackages: {'com.a', 'com.b', 'com.c', 'com.d', 'com.e'},
+        alreadySelected: const {'com.a', 'com.c'},
+      );
+      expect(out, ['com.b', 'com.d', 'com.e']);
+    });
+
+    test('skips packages that are no longer installed', () {
+      final out = mostUsedAppSuggestions(
+        weeklyRanking: ranking([
+          ('com.gone', 9000),
+          ('com.a', 5000),
+          ('com.b', 4000),
+        ]),
+        installedPackages: {'com.a', 'com.b'},
+        alreadySelected: const {},
+      );
+      expect(out, ['com.a', 'com.b']);
+    });
+
+    test('never suggests Koru itself nor zero-time entries', () {
+      final out = mostUsedAppSuggestions(
+        weeklyRanking: ranking([
+          ('com.dev.koru', 99000),
+          ('com.zero', 0),
+          ('com.a', 1000),
+        ]),
+        installedPackages: {'com.dev.koru', 'com.zero', 'com.a'},
+        alreadySelected: const {},
+      );
+      expect(out, ['com.a']);
+    });
+
+    test('returns fewer than 3 when there are not enough candidates', () {
+      expect(
+        mostUsedAppSuggestions(
+          weeklyRanking: ranking([('com.a', 1000)]),
+          installedPackages: {'com.a'},
+          alreadySelected: const {'com.a'},
+        ),
+        isEmpty,
+      );
+    });
+  });
+
   group('weeklyDailyUsageProvider', () {
     test('returns 7 ascending days, zero-filled, mapping native data',
         () async {
