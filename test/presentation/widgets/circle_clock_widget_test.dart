@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:koru/core/theme/app_theme.dart';
 import 'package:koru/core/theme/launcher_phase.dart';
 import 'package:koru/presentation/providers/battery_provider.dart';
 import 'package:koru/presentation/screens/home/widgets/circle_clock_widget.dart';
@@ -24,13 +25,17 @@ void main() {
       );
 
       expect(find.byType(CircleClockWidget), findsOneWidget);
-      // Nessuna icona: la riga meta è tutta testo (era `Icons.bolt` +
-      // `Icons.battery_*` in colonna sotto l'ora).
+      // Senza livello noto niente segmento batteria: nessun `%`, nessuna icona.
       expect(find.byType(Icon), findsNothing);
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is Text && (w.data ?? '').contains('%'),
+        ),
+        findsNothing,
+      );
     });
 
-    testWidgets('the meta line carries the phase label but no battery segment '
-        'while the level is unknown', (tester) async {
+    testWidgets('renders the hour in a scale-down FittedBox', (tester) async {
       await pumpKoruWidgetNoSettle(
         tester,
         const CircleClockWidget(phase: LauncherPhase.night),
@@ -41,14 +46,41 @@ void main() {
         ],
       );
 
-      final meta = _metaLine(tester);
-      expect(meta, endsWith('NIGHT'));
-      expect(meta, isNot(contains('%')));
-      // L'ora è resa nella sua FittedBox, separata dalla riga meta.
       expect(find.byType(FittedBox), findsOneWidget);
     });
 
-    testWidgets('the meta line shows the battery percentage when known',
+    testWidgets('follows the font picked in Settings, never a hardcoded family',
+        (tester) async {
+      // Regressione: l'orologio ha usato prima Orbitron e poi un serif fissi,
+      // ignorando Impostazioni → Font. Con una famiglia insolita nel tema,
+      // OGNI riga del widget deve adottarla.
+      await pumpKoruWidgetNoSettle(
+        tester,
+        const CircleClockWidget(phase: LauncherPhase.night),
+        theme: AppTheme.dark(fontFamily: 'ArchitectsDaughter'),
+        overrides: [
+          batteryStateProvider.overrideWith((ref) {
+            return Stream<BatteryState>.value(
+              const BatteryState(level: 87, charging: false),
+            );
+          }),
+        ],
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      final texts = tester.widgetList<Text>(find.byType(Text));
+      expect(texts, isNotEmpty);
+      for (final t in texts) {
+        expect(
+          t.style?.fontFamily,
+          'ArchitectsDaughter',
+          reason: 'testo: "${t.data}"',
+        );
+      }
+    });
+
+    testWidgets('shows battery percentage when the level is known',
         (tester) async {
       await pumpKoruWidgetNoSettle(
         tester,
@@ -65,14 +97,11 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
-      final meta = _metaLine(tester);
-      expect(meta, contains('87%'));
-      expect(meta, isNot(contains('CHARGING')));
-      expect(meta, endsWith('DAY'));
+      expect(find.text('87%'), findsOneWidget);
+      expect(find.byIcon(Icons.bolt), findsNothing);
     });
 
-    testWidgets('charging is spelled out in the meta line, not shown as a bolt',
-        (tester) async {
+    testWidgets('shows the bolt icon when charging', (tester) async {
       await pumpKoruWidgetNoSettle(
         tester,
         const CircleClockWidget(phase: LauncherPhase.night),
@@ -87,8 +116,8 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
-      expect(_metaLine(tester), contains('42% CHARGING'));
-      expect(find.byIcon(Icons.bolt), findsNothing);
+      expect(find.text('42%'), findsOneWidget);
+      expect(find.byIcon(Icons.bolt), findsOneWidget);
     });
 
     testWidgets('tap on the clock invokes onTap callback', (tester) async {
@@ -131,13 +160,4 @@ void main() {
       expect(colonFinder, findsAtLeastNWidgets(1));
     });
   });
-}
-
-/// La riga meta è l'unico `Text` che contiene il separatore ` · `.
-String _metaLine(WidgetTester tester) {
-  final finder = find.byWidgetPredicate(
-    (w) => w is Text && (w.data ?? '').contains(' · '),
-  );
-  expect(finder, findsOneWidget);
-  return tester.widget<Text>(finder).data!;
 }

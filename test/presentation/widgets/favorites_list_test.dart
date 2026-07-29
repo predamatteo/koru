@@ -145,7 +145,7 @@ void main() {
 
       // Collassata: nome + conteggio visibili, app nascoste.
       expect(find.text('Work'), findsOneWidget);
-      expect(find.text('02'), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
       expect(find.text('Slack'), findsNothing);
       expect(find.text('Gmail'), findsNothing);
 

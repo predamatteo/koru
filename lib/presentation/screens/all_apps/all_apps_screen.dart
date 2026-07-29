@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import '../../../core/theme/koru_type.dart';
+import '../../../core/constants/koru_colors.dart';
 import '../../../core/theme/launcher_phase.dart';
 import '../../../platform/blocking_channel.dart';
 import '../../providers/app_list_provider.dart';
@@ -14,18 +14,17 @@ import 'widgets/app_list_view.dart';
 import 'widgets/app_search_bar.dart';
 import 'widgets/fast_scroller.dart';
 
-/// Il drawer "tutte le app" — la seconda metà di "Inchiostro e ore".
+/// Il drawer "tutte le app".
 ///
-/// Cosa cambia rispetto alla schermata di prima, e perché:
+/// Material 3 Expressive con i token di Koru, più tre scelte che restano
+/// diverse da una lista di sistema:
 ///
 /// - **niente AppBar.** Era il capo di una pagina di impostazioni prestato a
-///   un launcher. Al suo posto una riga meta in mono: ora, quante app, e la
-///   parola `CLOSE`.
-/// - **la query sta in basso**, sopra la tastiera ([AppSearchBar]), e la lista
-///   è ancorata al fondo: i risultati crescono verso il pollice.
-/// - **la lettera fantasma**: mentre il dito scorre il rail A-Z, la lettera
-///   appare in serif da 240px dietro la lista. Il feedback è grande, il
-///   righello resta piccolo.
+///   un launcher. Al suo posto una riga leggera: ora, quante app, e `Close`.
+/// - **la ricerca sta in basso**, sopra la tastiera ([AppSearchBar]), e la
+///   lista è ancorata al fondo: i risultati crescono verso il pollice.
+/// - **la pastiglia della lettera**: mentre il dito scorre il rail A-Z, la
+///   lettera corrente compare in un container tonale accanto al righello.
 class AllAppsScreen extends ConsumerStatefulWidget {
   const AllAppsScreen({super.key, this.autofocusSearch = false});
 
@@ -42,9 +41,9 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
   late final ScrollController _scrollController = ScrollController();
   final Map<String, double> _sectionOffsets = {};
 
-  /// Lettera mostrata in gigante dietro la lista mentre si scorre il rail.
-  String? _ghostLetter;
-  Timer? _ghostTimer;
+  /// Lettera mostrata nella pastiglia accanto al rail mentre lo si scorre.
+  String? _scrubLetter;
+  Timer? _scrubTimer;
 
   @override
   void initState() {
@@ -66,7 +65,7 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
 
   @override
   void dispose() {
-    _ghostTimer?.cancel();
+    _scrubTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _scrollController.dispose();
     super.dispose();
@@ -94,10 +93,14 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
     // senza `TextScaler` il salto della fast-scrollbar si ancorerebbe su
     // offset sbagliati.
     final textScaler = MediaQuery.textScalerOf(context);
-    final headerHeight = AppListMetrics.headerHeight(textScaler);
+    final textTheme = Theme.of(context).textTheme;
+    final headerHeight = AppListMetrics.headerHeight(
+      textScaler,
+      textTheme.titleSmall?.fontSize ?? AppListMetrics.headerFontFallback,
+    );
     final tileHeight = AppListMetrics.rowHeight(
       textScaler,
-      AppListMetrics.browseFontSize,
+      textTheme.bodyLarge?.fontSize ?? AppListMetrics.rowFontFallback,
     );
     var offset = AppListMetrics.topPadding;
     for (final entry in grouped.entries) {
@@ -107,8 +110,8 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
   }
 
   void _onLetterSelected(String letter) {
-    _ghostTimer?.cancel();
-    if (_ghostLetter != letter) setState(() => _ghostLetter = letter);
+    _scrubTimer?.cancel();
+    if (_scrubLetter != letter) setState(() => _scrubLetter = letter);
 
     final grouped = ref.read(groupedAppsProvider);
     _computeSectionOffsets(grouped);
@@ -123,9 +126,9 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
   }
 
   void _onScrubEnd() {
-    _ghostTimer?.cancel();
-    _ghostTimer = Timer(const Duration(milliseconds: 500), () {
-      if (mounted) setState(() => _ghostLetter = null);
+    _scrubTimer?.cancel();
+    _scrubTimer = Timer(const Duration(milliseconds: 500), () {
+      if (mounted) setState(() => _scrubLetter = null);
     });
   }
 
@@ -163,18 +166,15 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       child: Text(
                         err.toString(),
-                        style: KoruType.serif(
-                          size: 20,
-                          height: 1.3,
-                          color: phase.ink2,
-                        ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(color: KoruColors.textSecondary),
                       ),
                     ),
                   ),
                   data: (_) => Stack(
                     children: [
-                      if (_ghostLetter != null)
-                        _GhostLetter(letter: _ghostLetter!, phase: phase),
                       KoruPullToRefresh(
                         // PERF: il drawer rinfresca SOLO l'inventario app (già
                         // auto-rinfrescato da PACKAGE_*/resume) invece di
@@ -195,7 +195,7 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
                       // Il rail salta alle sezioni A-Z, che durante la ricerca
                       // non esistono (la lista è piatta e ordinata per
                       // rilevanza): mostrarlo lì sarebbe un comando inerte.
-                      if (!searching)
+                      if (!searching) ...[
                         Positioned(
                           top: 0,
                           bottom: 0,
@@ -207,6 +207,12 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
                             onScrubEnd: _onScrubEnd,
                           ),
                         ),
+                        if (_scrubLetter != null)
+                          _ScrubIndicator(
+                            letter: _scrubLetter!,
+                            phase: phase,
+                          ),
+                      ],
                     ],
                   ),
                 ),
@@ -224,7 +230,7 @@ class _AllAppsScreenState extends ConsumerState<AllAppsScreen>
   }
 }
 
-/// Riga meta in cima al drawer: ora e inventario a sinistra, `CLOSE` a destra.
+/// Riga in cima al drawer: ora e inventario a sinistra, `Close` a destra.
 /// Sostituisce l'AppBar — nessun titolo, nessuna freccia indietro.
 class _DrawerHeader extends StatelessWidget {
   const _DrawerHeader({required this.phase, required this.totalApps});
@@ -236,37 +242,25 @@ class _DrawerHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return SizedBox(
-      height: 46,
+      height: 56,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 22),
+        padding: const EdgeInsets.only(left: 24, right: 8),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             MinuteTickBuilder(
               builder: (context, now) => Text(
-                '${_timeFormat.format(now)} · $totalApps APPS',
-                style: KoruType.mono(
-                  size: 10,
-                  color: phase.ink2,
-                  trackEm: phase.trackEm,
-                ),
+                '${_timeFormat.format(now)} · $totalApps apps',
+                style: theme.textTheme.labelLarge
+                    ?.copyWith(color: KoruColors.textSecondary),
               ),
             ),
-            GestureDetector(
-              onTap: () => Navigator.maybePop(context),
-              behavior: HitTestBehavior.opaque,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 0, 8),
-                child: Text(
-                  'CLOSE',
-                  style: KoruType.mono(
-                    size: 10,
-                    color: phase.accent,
-                    trackEm: phase.trackEm,
-                  ),
-                ),
-              ),
+            TextButton(
+              onPressed: () => Navigator.maybePop(context),
+              style: TextButton.styleFrom(foregroundColor: phase.accent),
+              child: const Text('Close'),
             ),
           ],
         ),
@@ -275,10 +269,11 @@ class _DrawerHeader extends StatelessWidget {
   }
 }
 
-/// La lettera che il dito sta scorrendo sul rail, in serif da 240px dietro la
-/// lista. Non intercetta tocchi: è un segno d'acqua, non un controllo.
-class _GhostLetter extends StatelessWidget {
-  const _GhostLetter({required this.letter, required this.phase});
+/// La lettera che il dito sta scorrendo sul rail, in un container tonale
+/// accanto al righello. Non intercetta tocchi: è un indicatore, non un
+/// controllo.
+class _ScrubIndicator extends StatelessWidget {
+  const _ScrubIndicator({required this.letter, required this.phase});
 
   final String letter;
   final LauncherPhase phase;
@@ -286,16 +281,25 @@ class _GhostLetter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Positioned(
-      right: 26,
+      right: AppListMetrics.railGutter + 8,
+      top: 0,
       bottom: 0,
-      child: IgnorePointer(
-        child: Text(
-          letter,
-          style: KoruType.serif(
-            size: 240,
-            height: 0.7,
-            color: phase.ink,
-            opacity: 0.13,
+      child: Center(
+        child: IgnorePointer(
+          child: Container(
+            width: 56,
+            height: 56,
+            alignment: Alignment.center,
+            decoration: ShapeDecoration(
+              color: phase.accentContainer,
+              shape: const StadiumBorder(),
+            ),
+            child: Text(
+              letter,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    color: phase.onAccentContainer,
+                  ),
+            ),
           ),
         ),
       ),

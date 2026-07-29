@@ -11,15 +11,15 @@ const _bar = AppSearchBar(phase: LauncherPhase.night, matchCount: 34);
 
 void main() {
   group('AppSearchBar', () {
-    testWidgets('is a bare writing line: slash, field, count — no Material box',
+    testWidgets('renders a Material search field with the "Search apps" hint',
         (tester) async {
       await pumpKoruWidget(tester, _bar);
 
       expect(find.byType(TextField), findsOneWidget);
-      expect(find.text('TYPE TO FILTER'), findsOneWidget);
-      expect(find.text('/'), findsOneWidget);
-      // Il campo ricerca non è più un box grigio con la lente: zero icone.
-      expect(find.byType(Icon), findsNothing);
+      expect(find.text('Search apps'), findsOneWidget);
+      expect(find.byIcon(Icons.search), findsOneWidget);
+      // Il conteggio dei risultati vive in coda al campo.
+      expect(find.text('34'), findsOneWidget);
     });
 
     testWidgets('accepts text input and updates the controller', (tester) async {
@@ -53,22 +53,22 @@ void main() {
       expect(container.read(appSearchQueryProvider), 'spotify');
     });
 
-    testWidgets('CLR is hidden when the field is empty', (tester) async {
+    testWidgets('clear icon (X) is hidden when text is empty', (tester) async {
       await pumpKoruWidget(tester, _bar);
 
-      expect(find.text('CLR'), findsNothing);
+      expect(find.byIcon(Icons.close), findsNothing);
     });
 
-    testWidgets('CLR appears once text is entered', (tester) async {
+    testWidgets('clear icon (X) appears once text is entered', (tester) async {
       await pumpKoruWidget(tester, _bar);
 
       await tester.enterText(find.byType(TextField), 'foo');
       await tester.pump();
 
-      expect(find.text('CLR'), findsOneWidget);
+      expect(find.byIcon(Icons.close), findsOneWidget);
     });
 
-    testWidgets('tapping CLR wipes the field and the provider', (tester) async {
+    testWidgets('tapping clear (X) wipes the field and the provider', (tester) async {
       late ProviderContainer container;
       await tester.pumpWidget(
         ProviderScope(
@@ -88,11 +88,11 @@ void main() {
 
       expect(container.read(appSearchQueryProvider), 'instagram');
 
-      await tester.tap(find.text('CLR'));
+      await tester.tap(find.byIcon(Icons.close));
       await tester.pump();
 
       expect(container.read(appSearchQueryProvider), '');
-      expect(find.text('CLR'), findsNothing);
+      expect(find.byIcon(Icons.close), findsNothing);
     });
 
     testWidgets(

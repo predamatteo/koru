@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koru/core/constants/koru_colors.dart';
 import 'package:koru/core/theme/launcher_phase.dart';
@@ -67,11 +68,11 @@ void main() {
   });
 
   group('palette', () {
-    test('surfaces and outline come from the existing Koru tonal scale', () {
+    test('surfaces and edges come from the existing Koru tonal scale', () {
       expect(LauncherPhase.day.background, KoruColors.surface);
       expect(LauncherPhase.night.background, KoruColors.backgroundBase);
-      expect(LauncherPhase.day.hair, KoruColors.outline);
-      expect(LauncherPhase.night.hair, KoruColors.surfaceElevated);
+      expect(LauncherPhase.day.edge, KoruColors.outline);
+      expect(LauncherPhase.night.edge, KoruColors.surfaceElevated);
     });
 
     test('one accent per band, both already in the Koru palette', () {
@@ -79,18 +80,54 @@ void main() {
       expect(LauncherPhase.night.accent, KoruColors.tertiary);
     });
 
-    test('night lowers the light: dimmer text, wider breathing, faded clock',
-        () {
-      expect(LauncherPhase.night.ink, isNot(LauncherPhase.day.ink));
-      expect(LauncherPhase.night.gap, greaterThan(LauncherPhase.day.gap));
+    test('each accent is paired with its own Material 3 tonal container', () {
+      expect(LauncherPhase.day.accentContainer, KoruColors.primaryContainer);
       expect(
-        LauncherPhase.night.trackEm,
-        greaterThan(LauncherPhase.day.trackEm),
+        LauncherPhase.day.onAccentContainer,
+        KoruColors.onPrimaryContainer,
       );
+      expect(
+        LauncherPhase.night.accentContainer,
+        KoruColors.tertiaryContainer,
+      );
+      expect(
+        LauncherPhase.night.onAccentContainer,
+        KoruColors.onTertiaryContainer,
+      );
+    });
+
+    test('night lowers the light: wider breathing, faded clock', () {
+      expect(LauncherPhase.night.gap, greaterThan(LauncherPhase.day.gap));
       expect(
         LauncherPhase.night.clockOpacity,
         lessThan(LauncherPhase.day.clockOpacity),
       );
+    });
+
+    test('no launcher-only tint: every colour is a KoruColors token', () {
+      final palette = <Color>{
+        KoruColors.surface,
+        KoruColors.backgroundBase,
+        KoruColors.outline,
+        KoruColors.surfaceElevated,
+        KoruColors.primary,
+        KoruColors.primaryContainer,
+        KoruColors.onPrimaryContainer,
+        KoruColors.tertiary,
+        KoruColors.tertiaryContainer,
+        KoruColors.onTertiaryContainer,
+      };
+      for (final phase in LauncherPhase.values) {
+        for (final colour in [
+          phase.background,
+          phase.accent,
+          phase.accentContainer,
+          phase.onAccentContainer,
+          phase.edge,
+        ]) {
+          expect(palette, contains(colour), reason: '${phase.name}: $colour');
+        }
+      }
     });
   });
 }

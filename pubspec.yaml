@@ -71,25 +71,10 @@ flutter:
     - assets/icons/
     - assets/presets/
 
+  # Famiglie selezionabili dall'utente (Settings → Font). Nessun'altra:
+  # launcher e drawer usano la type scale Material 3 del tema, quindi seguono
+  # la scelta fatta qui invece di imporre una famiglia propria.
   fonts:
-    # ── Launcher "Inchiostro e ore" ───────────────────────────────────────
-    # Le due famiglie della composizione del launcher (vedi core/theme/
-    # koru_type.dart). NON sono scelte dall'utente nelle Settings: il
-    # launcher usa sempre queste, come l'orologio usava sempre Orbitron.
-    - family: InstrumentSerif
-      fonts:
-        - asset: assets/fonts/InstrumentSerif-Regular.ttf
-        - asset: assets/fonts/InstrumentSerif-Italic.ttf
-          style: italic
-    - family: DMMono
-      fonts:
-        - asset: assets/fonts/DMMono-Light.ttf
-          weight: 300
-        - asset: assets/fonts/DMMono-Regular.ttf
-          weight: 400
-        - asset: assets/fonts/DMMono-Medium.ttf
-          weight: 500
-    # ── Famiglie selezionabili dall'utente (Settings → Font) ──────────────
     - family: Goldman
       fonts:
         - asset: assets/fonts/Goldman-Regular.ttf

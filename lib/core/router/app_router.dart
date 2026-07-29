@@ -63,9 +63,8 @@ class KoruRoutes {
 }
 
 /// Il drawer "All apps" **sale**, non sfuma: è la stessa superficie che il
-/// dito ha tirato su dalla maniglia koru del launcher, e continua il gesto con
-/// la curva di [LauncherMotion]. La versione clamped della curva evita che il
-/// 2% di overshoot scopra il bordo inferiore a fine corsa.
+/// dito ha tirato su dalla maniglia del launcher, e continua il gesto con
+/// l'easing *emphasized* di Material 3 ([LauncherMotion.settle]).
 ///
 /// Vale per entrambe le rotte che montano `AllAppsScreen` (`/launcher/drawer`
 /// e `/home/drawer`): è la stessa schermata, e due transizioni diverse per lo
@@ -80,7 +79,7 @@ CustomTransitionPage<void> _drawerPage(GoRouterState state, Widget child) {
       return SlideTransition(
         position: animation.drive(
           Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
-              .chain(CurveTween(curve: LauncherMotion.settleClamped)),
+              .chain(CurveTween(curve: LauncherMotion.settle)),
         ),
         child: child,
       );

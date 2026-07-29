@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:koru/core/theme/launcher_phase.dart';
 import 'package:koru/presentation/providers/launcher_shortcuts_provider.dart';
 import 'package:koru/presentation/screens/launcher/widgets/launcher_shortcut_buttons.dart';
 import 'package:mocktail/mocktail.dart';
@@ -26,22 +25,19 @@ Widget _wrap(ProviderContainer container, Widget child) {
   );
 }
 
-/// I due shortcut come li monta la barra inferiore del launcher: parole, non
-/// icone (`TEL` / `CAM`).
+/// I due shortcut come li monta la barra inferiore del launcher.
 const _bar = Row(
   mainAxisAlignment: MainAxisAlignment.spaceBetween,
   children: [
-    LauncherShortcutWord(
+    LauncherShortcutButton(
       slot: LauncherShortcutSlot.left,
-      label: 'TEL',
+      icon: Icons.phone_outlined,
       semanticLabel: 'Phone',
-      phase: LauncherPhase.night,
     ),
-    LauncherShortcutWord(
+    LauncherShortcutButton(
       slot: LauncherShortcutSlot.right,
-      label: 'CAM',
+      icon: Icons.camera_alt_outlined,
       semanticLabel: 'Camera',
-      phase: LauncherPhase.night,
     ),
   ],
 );
@@ -51,8 +47,8 @@ void main() {
     registerFallbackValue('');
   });
 
-  group('LauncherShortcutWord', () {
-    testWidgets('smoke: renders the two shortcuts as words, not icons',
+  group('LauncherShortcutButton', () {
+    testWidgets('smoke: renders two icon buttons (phone + camera)',
         (tester) async {
       final h = buildTestContainer(extra: [
         effectiveShortcutPackageProvider(LauncherShortcutSlot.left)
@@ -65,13 +61,11 @@ void main() {
       await tester.pumpWidget(_wrap(h.container, _bar));
       await tester.pumpAndSettle();
 
-      expect(find.text('TEL'), findsOneWidget);
-      expect(find.text('CAM'), findsOneWidget);
-      // Il dogma solo-testo vale anche per la UI del launcher.
-      expect(find.byType(Icon), findsNothing);
+      expect(find.byIcon(Icons.phone_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.camera_alt_outlined), findsOneWidget);
     });
 
-    testWidgets('left word tap launches the left shortcut package',
+    testWidgets('left button tap launches the left shortcut package',
         (tester) async {
       final h = buildTestContainer(extra: [
         effectiveShortcutPackageProvider(LauncherShortcutSlot.left)
@@ -86,14 +80,14 @@ void main() {
       await tester.pumpWidget(_wrap(h.container, _bar));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('TEL'));
+      await tester.tap(find.byIcon(Icons.phone_outlined));
       await tester.pump();
 
       verify(() => h.blocking.launchApp('com.dialer.left')).called(1);
       verifyNever(() => h.blocking.launchApp('com.camera.right'));
     });
 
-    testWidgets('right word tap launches the right shortcut package',
+    testWidgets('right button tap launches the right shortcut package',
         (tester) async {
       final h = buildTestContainer(extra: [
         effectiveShortcutPackageProvider(LauncherShortcutSlot.left)
@@ -108,7 +102,7 @@ void main() {
       await tester.pumpWidget(_wrap(h.container, _bar));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('CAM'));
+      await tester.tap(find.byIcon(Icons.camera_alt_outlined));
       await tester.pump();
 
       verify(() => h.blocking.launchApp('com.camera.right')).called(1);
@@ -128,7 +122,7 @@ void main() {
       await tester.pumpWidget(_wrap(h.container, _bar));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('TEL'));
+      await tester.tap(find.byIcon(Icons.phone_outlined));
       await tester.pump();
 
       verifyNever(() => h.blocking.launchApp(any()));
@@ -149,15 +143,15 @@ void main() {
       await tester.pumpWidget(_wrap(h.container, _bar));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('TEL'));
+      await tester.tap(find.byIcon(Icons.phone_outlined));
       await tester.pump();
-      await tester.tap(find.text('CAM'));
+      await tester.tap(find.byIcon(Icons.camera_alt_outlined));
       await tester.pump();
 
       verifyNever(() => h.blocking.launchApp(any()));
     });
 
-    testWidgets('long-press on the left word navigates to the picker',
+    testWidgets('long-press on the left button navigates to the picker',
         (tester) async {
       final h = buildTestContainer(extra: [
         effectiveShortcutPackageProvider(LauncherShortcutSlot.left)
@@ -172,7 +166,7 @@ void main() {
       await tester.pumpWidget(_wrap(h.container, _bar));
       await tester.pumpAndSettle();
 
-      await tester.longPress(find.text('TEL'));
+      await tester.longPress(find.byIcon(Icons.phone_outlined));
       await tester.pumpAndSettle();
 
       // Il fake destination della rotta mostra "Picker".

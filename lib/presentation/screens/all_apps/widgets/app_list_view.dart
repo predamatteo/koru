@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
-import '../../../../core/theme/koru_type.dart';
 import '../../../../core/theme/launcher_phase.dart';
 import '../../../../data/database/app_database.dart';
 import '../../../../platform/blocking_channel.dart';
@@ -23,51 +22,42 @@ import '../../../providers/favorites_provider.dart';
 abstract final class AppListMetrics {
   const AppListMetrics._();
 
-  /// Lettera di sezione: enorme e quasi trasparente, sta *sotto* i nomi come
-  /// il titolo corrente di una pagina, non sopra come un'etichetta.
-  static const double headerFontSize = 46;
-  static const double headerPadTop = 16;
-  static const double headerPadBottom = 2;
+  /// Intestazione di sezione A-Z: `titleSmall` in accento, come i subheader
+  /// delle liste Material 3.
+  static const double headerPadding = 26;
 
-  /// Nome app in modalità sfoglia (nessuna query).
-  static const double browseFontSize = 25;
-  static const double browseOpacity = 0.92;
-
-  /// Altezza minima di una riga app: il testo è più basso, ma il bersaglio
-  /// per il dito no.
-  static const double minRowHeight = 46;
-  static const double rowPadding = 12;
+  /// Altezza di una riga app: la one-line list item di Material 3.
+  static const double minRowHeight = 56;
+  static const double rowPadding = 24;
 
   static const double topPadding = 4;
 
   /// Corridoio riservato al rail A-Z sul bordo destro.
   static const double railGutter = 44;
 
-  static double headerHeight(TextScaler textScaler) =>
-      textScaler.scale(headerFontSize) + headerPadTop + headerPadBottom;
+  /// Fallback usati solo quando il tema non definisce la voce della type
+  /// scale (non succede col tema di Koru).
+  static const double headerFontFallback = 14; // titleSmall
+  static const double rowFontFallback = 16; // bodyLarge
+
+  static double headerHeight(TextScaler textScaler, double fontSize) =>
+      textScaler.scale(fontSize) + headerPadding;
 
   static double rowHeight(TextScaler textScaler, double fontSize) =>
       math.max(minRowHeight, textScaler.scale(fontSize) + rowPadding);
 }
 
-/// Scala dei risultati di ricerca: **la rilevanza si legge come dimensione**.
-/// Il match migliore è grande e pieno, gli altri arretrano. Oltre il quinto la
-/// scala si appiattisce invece di continuare a sparire.
-const List<double> _kSearchSizes = [34, 29, 26, 24, 22];
-const List<double> _kSearchOpacities = [1, 0.9, 0.8, 0.72, 0.64];
-
-/// Le app del drawer come **parole su una pagina**, non righe di una lista.
+/// Le app del drawer.
 ///
 /// Due modalità, con due gerarchie diverse:
 ///
-/// - **sfoglia** (nessuna query) — sezioni A-Z, con la lettera in serif
-///   gigante al 15% di opacità dietro i nomi;
+/// - **sfoglia** (nessuna query) — sezioni A-Z con l'intestazione in accento;
 /// - **ricerca** — lista piatta ordinata per rilevanza
-///   ([rankedSearchResultsProvider]), dove il rango si legge nella dimensione
-///   del testo e la parte che combacia è dipinta in accento.
+///   ([rankedSearchResultsProvider]), con la parte che combacia dipinta in
+///   accento dentro il nome.
 ///
 /// In entrambe il contenuto è **ancorato al fondo**: pochi risultati stanno
-/// vicino alla riga di query e al pollice, non appesi in cima allo schermo.
+/// vicino al campo di ricerca e al pollice, non appesi in cima allo schermo.
 class AppListView extends ConsumerWidget {
   const AppListView({
     required this.scrollController,
@@ -80,6 +70,14 @@ class AppListView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final headerStyle = theme.textTheme.titleSmall?.copyWith(
+      color: phase.accent,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 1.2,
+    );
+    final rowStyle = theme.textTheme.bodyLarge;
+
     final searching = ref.watch(appSearchQueryProvider).trim().isNotEmpty;
     final blocking = ref.watch(platformChannelServiceProvider).blocking;
     // PERF: Set per lookup O(1). `favs.contains` veniva chiamato 2 volte per
@@ -95,10 +93,12 @@ class AppListView extends ConsumerWidget {
     // `ListView(children:)` materializzava il Widget di OGNI app a ogni rebuild
     // (es. a ogni keystroke di ricerca).
     final rows = searching
-        ? _searchRows(ref.watch(rankedSearchResultsProvider))
+        ? [
+            for (final r in ref.watch(rankedSearchResultsProvider)) _AppRow(r),
+          ]
         : _browseRows(ref.watch(groupedAppsProvider));
 
-    if (rows.isEmpty) return _EmptyResults(phase: phase);
+    if (rows.isEmpty) return const _EmptyResults();
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -107,7 +107,15 @@ class AppListView extends ConsumerWidget {
           controller: scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.only(
-            top: _topPadding(rows, constraints.maxHeight, textScaler),
+            top: _topPadding(
+              rows: rows,
+              viewportHeight: constraints.maxHeight,
+              textScaler: textScaler,
+              headerFontSize:
+                  headerStyle?.fontSize ?? AppListMetrics.headerFontFallback,
+              rowFontSize:
+                  rowStyle?.fontSize ?? AppListMetrics.rowFontFallback,
+            ),
             right: AppListMetrics.railGutter,
           ),
           itemCount: rows.length,
@@ -115,12 +123,11 @@ class AppListView extends ConsumerWidget {
             final row = rows[i];
             return switch (row) {
               _HeaderRow(:final letter) =>
-                _SectionHeader(letter: letter, phase: phase),
-              _AppRow(:final ranked, :final size, :final opacity) => _AppTile(
+                _SectionHeader(letter: letter, style: headerStyle),
+              _AppRow(:final ranked) => _AppTile(
                   ranked: ranked,
                   phase: phase,
-                  fontSize: size,
-                  opacity: opacity,
+                  style: rowStyle,
                   isFavorite: favs.contains(ranked.app.packageName),
                   onTap: () => blocking.launchApp(ranked.app.packageName),
                   onLongPress: () => showAppContextMenu(
@@ -145,42 +152,28 @@ class AppListView extends ConsumerWidget {
     for (final entry in grouped.entries) {
       rows.add(_HeaderRow(entry.key));
       for (final app in entry.value) {
-        rows.add(
-          _AppRow(
-            RankedApp(app: app),
-            AppListMetrics.browseFontSize,
-            AppListMetrics.browseOpacity,
-          ),
-        );
+        rows.add(_AppRow(RankedApp(app: app)));
       }
     }
     return rows;
   }
 
-  List<_Row> _searchRows(List<RankedApp> ranked) {
-    return [
-      for (var i = 0; i < ranked.length; i++)
-        _AppRow(
-          ranked[i],
-          _kSearchSizes[math.min(i, _kSearchSizes.length - 1)],
-          _kSearchOpacities[math.min(i, _kSearchOpacities.length - 1)],
-        ),
-    ];
-  }
-
   /// Ancoraggio al fondo: padding superiore pari allo spazio avanzato. Vale
   /// `AppListMetrics.topPadding` esattamente quando il contenuto scrolla,
   /// quindi non sposta mai gli offset su cui salta la fast-scrollbar.
-  double _topPadding(
-    List<_Row> rows,
-    double viewportHeight,
-    TextScaler textScaler,
-  ) {
+  double _topPadding({
+    required List<_Row> rows,
+    required double viewportHeight,
+    required TextScaler textScaler,
+    required double headerFontSize,
+    required double rowFontSize,
+  }) {
     var content = 0.0;
     for (final row in rows) {
       content += switch (row) {
-        _HeaderRow() => AppListMetrics.headerHeight(textScaler),
-        _AppRow(:final size) => AppListMetrics.rowHeight(textScaler, size),
+        _HeaderRow() =>
+          AppListMetrics.headerHeight(textScaler, headerFontSize),
+        _AppRow() => AppListMetrics.rowHeight(textScaler, rowFontSize),
       };
     }
     return math.max(AppListMetrics.topPadding, viewportHeight - content);
@@ -197,26 +190,25 @@ class _HeaderRow extends _Row {
 }
 
 class _AppRow extends _Row {
-  const _AppRow(this.ranked, this.size, this.opacity);
+  const _AppRow(this.ranked);
   final RankedApp ranked;
-  final double size;
-  final double opacity;
 }
 
 class _EmptyResults extends StatelessWidget {
-  const _EmptyResults({required this.phase});
-
-  final LauncherPhase phase;
+  const _EmptyResults();
 
   @override
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.bottomLeft,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
         child: Text(
           'No matching apps',
-          style: KoruType.serif(size: 25, color: phase.ink2),
+          style: Theme.of(context)
+              .textTheme
+              .bodyMedium
+              ?.copyWith(color: KoruColors.textSecondary),
         ),
       ),
     );
@@ -692,50 +684,38 @@ class _FolderNameDialogState extends State<_FolderNameDialog> {
   }
 }
 
-/// Lettera di sezione: serif enorme al 15% di opacità. Non è un'etichetta
-/// sopra un gruppo — è il segno d'acqua della pagina che stai sfogliando, e
-/// per questo non compete con i nomi delle app.
+/// Intestazione di sezione A-Z, nello stile dei subheader delle liste
+/// Material 3: `titleSmall` in accento, spaziata.
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.letter, required this.phase});
+  const _SectionHeader({required this.letter, required this.style});
 
   final String letter;
-  final LauncherPhase phase;
+  final TextStyle? style;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         24,
-        AppListMetrics.headerPadTop,
+        AppListMetrics.headerPadding / 2,
         24,
-        AppListMetrics.headerPadBottom,
+        AppListMetrics.headerPadding / 2,
       ),
       child: Align(
         alignment: Alignment.centerLeft,
-        child: Text(
-          letter,
-          style: KoruType.serif(
-            size: AppListMetrics.headerFontSize,
-            color: phase.ink,
-            opacity: 0.15,
-          ),
-        ),
+        child: Text(letter, style: style),
       ),
     );
   }
 }
 
-/// Una app: una parola. La parte che combacia con la query è l'unico pezzo in
-/// accento — il match si legge dentro il nome, senza evidenziazione a blocco.
-///
-/// Il preferito è marcato da un punto in accento a fine riga invece che da una
-/// stella: nel drawer non entra nessuna icona.
+/// Riga app. La parte che combacia con la query è l'unico pezzo in accento —
+/// il match si legge dentro il nome, senza evidenziazione a blocco.
 class _AppTile extends StatelessWidget {
   const _AppTile({
     required this.ranked,
     required this.phase,
-    required this.fontSize,
-    required this.opacity,
+    required this.style,
     required this.isFavorite,
     required this.onTap,
     required this.onLongPress,
@@ -743,20 +723,13 @@ class _AppTile extends StatelessWidget {
 
   final RankedApp ranked;
   final LauncherPhase phase;
-  final double fontSize;
-  final double opacity;
+  final TextStyle? style;
   final bool isFavorite;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
-    final base = KoruType.serif(
-      size: fontSize,
-      height: 1.1,
-      color: phase.ink,
-      opacity: opacity,
-    );
     final label = ranked.app.label;
 
     return InkWell(
@@ -784,7 +757,10 @@ class _AppTile extends StatelessWidget {
                                 ranked.matchStart,
                                 ranked.matchStart + ranked.matchLength,
                               ),
-                              style: TextStyle(color: phase.accent),
+                              style: TextStyle(
+                                color: phase.accent,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                             TextSpan(
                               text: label
@@ -793,22 +769,13 @@ class _AppTile extends StatelessWidget {
                           ],
                         )
                       : TextSpan(text: label),
-                  style: base,
+                  style: style,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (isFavorite) ...[
-                const SizedBox(width: 10),
-                Text(
-                  '•',
-                  style: KoruType.mono(
-                    size: 10,
-                    color: phase.accent,
-                    opacity: 0.7,
-                  ),
-                ),
-              ],
+              if (isFavorite)
+                Icon(Icons.star, size: 16, color: phase.accent),
             ],
           ),
         ),

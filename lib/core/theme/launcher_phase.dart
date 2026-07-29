@@ -4,88 +4,79 @@ import 'package:flutter/widgets.dart';
 
 import '../constants/koru_colors.dart';
 
-/// Fascia oraria del launcher "Inchiostro e ore".
+/// Fascia oraria del launcher.
 ///
-/// Il launcher deriva la propria **luce** dall'ora: palette, spaziatura e peso
-/// della tipografia cambiano fra giorno e notte. Le fasce sono **due, non
+/// Il launcher deriva la propria **luce** dall'ora: cambia la superficie di un
+/// gradino, l'accento e il respiro fra le righe. Le fasce sono **due, non
 /// quattro** — in una giornata l'utente vede due stati e *un* accento per
 /// volta.
 ///
-/// Nessuna tinta nuova: le superfici e l'outline pescano dalla scala tonale
-/// che [KoruColors] ha già (`bg · s1 · s2 · s3 · outline`), e l'accento si
-/// sposta fra i due che Koru ha già — sage [KoruColors.primary] di giorno,
-/// sand [KoruColors.tertiary] di notte. L'unica libertà è attenuare il testo
-/// di notte ([KoruColors.textPrimaryDimmed] / [KoruColors.textSecondaryDimmed]).
+/// Nessuna tinta dedicata: ogni valore qui sotto è un token che [KoruColors]
+/// ha già. Le superfici pescano dalla scala tonale (`bg · s1 · s3 · outline`)
+/// e l'accento si sposta fra i due che l'app usa ovunque — sage
+/// [KoruColors.primary] di giorno, sand [KoruColors.tertiary] di notte, con i
+/// rispettivi container Material 3 per i bottoni tonali.
 ///
-/// Cambia la superficie di un gradino (`s1 → bg`), il testo si attenua, il
-/// respiro si allarga: nient'altro.
+/// Il testo NON cambia colore fra le fasce: resta `textPrimary` /
+/// `textSecondary` come nel resto dell'app. L'unica attenuazione è
+/// [clockOpacity] sull'orologio.
 enum LauncherPhase {
-  /// 07:00 – 19:59. Superficie di un gradino sopra il fondo, contrasto pieno,
-  /// righe più vicine, accento sage.
+  /// 07:00 – 19:59. Superficie di un gradino sopra il fondo, righe più
+  /// vicine, accento sage.
   day(
-    label: 'DAY',
     background: KoruColors.surface,
-    ink: KoruColors.textPrimary,
-    ink2: KoruColors.textSecondary,
-    hair: KoruColors.outline,
     accent: KoruColors.primary,
-    trackEm: 0.12,
+    accentContainer: KoruColors.primaryContainer,
+    onAccentContainer: KoruColors.onPrimaryContainer,
+    edge: KoruColors.outline,
     gap: 22,
     clockOpacity: 1,
   ),
 
-  /// 20:00 – 06:59. Il fondo più scuro che Koru ha, testo attenuato, orologio
-  /// al 78%, respiro largo, accento sand (più caldo e meno sveglio del sage).
+  /// 20:00 – 06:59. Il fondo più scuro che Koru ha, respiro largo, orologio
+  /// al 78%, accento sand (più caldo e meno sveglio del sage).
   night(
-    label: 'NIGHT',
     background: KoruColors.backgroundBase,
-    ink: KoruColors.textPrimaryDimmed,
-    ink2: KoruColors.textSecondaryDimmed,
-    hair: KoruColors.surfaceElevated,
     accent: KoruColors.tertiary,
-    trackEm: 0.20,
+    accentContainer: KoruColors.tertiaryContainer,
+    onAccentContainer: KoruColors.onTertiaryContainer,
+    edge: KoruColors.surfaceElevated,
     gap: 30,
     clockOpacity: 0.78,
   );
 
   const LauncherPhase({
-    required this.label,
     required this.background,
-    required this.ink,
-    required this.ink2,
-    required this.hair,
     required this.accent,
-    required this.trackEm,
+    required this.accentContainer,
+    required this.onAccentContainer,
+    required this.edge,
     required this.gap,
     required this.clockOpacity,
   });
 
-  /// Etichetta mostrata nella riga meta sotto l'orologio.
-  final String label;
-
-  /// Fondo dello schermo (`--bg`).
+  /// Fondo dello schermo.
   final Color background;
 
-  /// Testo primario (`--ink`): orologio, preferiti, nomi app.
-  final Color ink;
-
-  /// Testo secondario (`--ink2`): meta, etichette mono, rail A-Z.
-  final Color ink2;
-
-  /// Hairline (`--hair`): i filetti da 1px — bordi laterali, separatori.
-  final Color hair;
-
-  /// Accento (`--acc`): uno solo per fascia. Spirale, caret, match di ricerca.
+  /// Accento della fascia: uno solo per volta. Maniglia, caret, match di
+  /// ricerca, intestazioni di sezione.
   final Color accent;
 
-  /// Letter-spacing delle etichette mono, in `em` (`--track`). Va moltiplicato
-  /// per la font-size — vedi `KoruType.mono`.
-  final double trackEm;
+  /// Container tonale M3 dell'accento — sfondo dei bottoni tonali (chip
+  /// schede aperte, pastiglia Koru).
+  final Color accentContainer;
 
-  /// Respiro verticale fra i preferiti, in px logici (`--gap`).
+  /// Contenuto sopra [accentContainer].
+  final Color onAccentContainer;
+
+  /// Colore dei bordi/indicatori sottili (indicatori di swipe laterali,
+  /// separatore della barra di ricerca).
+  final Color edge;
+
+  /// Respiro verticale fra i preferiti, in px logici.
   final double gap;
 
-  /// Opacità dell'orologio (`--clockop`): pieno di giorno, 78% di notte.
+  /// Opacità dell'orologio: pieno di giorno, attenuato di notte.
   final double clockOpacity;
 
   /// Prima ora della fascia [day] (inclusa).

@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../../core/theme/koru_type.dart';
+import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/theme/launcher_phase.dart';
 
 /// Rail A-Z sul bordo destro del drawer. Tap/drag emette [onLetterSelected]
 /// con haptic feedback; [onScrubEnd] segnala il dito alzato.
 ///
-/// Mono minuscolo e regolare al posto della strip Material sgraziata: le
-/// lettere presenti sono in `ink`, le assenti quasi svanite. Quella sotto il
-/// dito raddoppia e passa in accento — ed è l'unica che si muove.
+/// Lettere in `labelSmall` della type scale: quelle presenti in
+/// `textPrimary`, le assenti quasi svanite. Quella sotto il dito cresce e
+/// passa in accento — ed è l'unica che si muove.
 ///
-/// Il feedback grande sta altrove: il chiamante disegna la *lettera fantasma*
-/// da 240px dietro la lista (vedi `AllAppsScreen`). Qui resta solo il righello.
+/// Il feedback grande sta altrove: il chiamante disegna la pastiglia con la
+/// lettera corrente accanto al rail (vedi `AllAppsScreen`).
 class FastScroller extends StatefulWidget {
   const FastScroller({
     super.key,
@@ -72,6 +72,7 @@ class _FastScrollerState extends State<FastScroller> {
   @override
   Widget build(BuildContext context) {
     final phase = widget.phase;
+    final base = Theme.of(context).textTheme.labelSmall;
 
     return GestureDetector(
       onVerticalDragStart: (d) => _handleDrag(d.localPosition.dy),
@@ -96,18 +97,19 @@ class _FastScrollerState extends State<FastScroller> {
             return Expanded(
               child: Center(
                 child: AnimatedScale(
-                  scale: isActive ? 2.1 : 1.0,
+                  scale: isActive ? 1.8 : 1.0,
                   duration: const Duration(milliseconds: 150),
                   child: Text(
                     letter,
-                    style: KoruType.mono(
-                      size: 9,
-                      trackEm: 0.02,
-                      weight: isActive ? FontWeight.w500 : FontWeight.w400,
+                    style: base?.copyWith(
+                      fontWeight:
+                          isActive ? FontWeight.w700 : FontWeight.w500,
                       color: isActive
                           ? phase.accent
-                          : (isAvailable ? phase.ink : phase.ink2),
-                      opacity: isAvailable || isActive ? 1 : 0.3,
+                          : (isAvailable
+                              ? KoruColors.textPrimary
+                              : KoruColors.textSecondary
+                                  .withValues(alpha: 0.3)),
                     ),
                   ),
                 ),
