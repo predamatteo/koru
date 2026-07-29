@@ -53,8 +53,8 @@ const _allDaySlot = _TimeSlotData(
   to: TimeOfDay(hour: 0, minute: 0),
 );
 
-/// Fascia proposta quando l'utente spegne "tutto il giorno" senza averne mai
-/// impostata una propria.
+/// Fascia di partenza di un profilo nuovo, e quella riproposta quando l'utente
+/// spegne "tutto il giorno" senza averne mai impostata una propria.
 const _defaultSlot = _TimeSlotData(
   from: TimeOfDay(hour: 9, minute: 0),
   to: TimeOfDay(hour: 17, minute: 0),
@@ -67,10 +67,10 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
   int _blockingMode = BlockingMode.blocklist;
   int _typeCombinations = ProfileType.time;
 
-  /// Un profilo nuovo nasce "tutto il giorno": la finestra oraria e' un
-  /// vincolo che l'utente aggiunge, non uno che si ritrova addosso.
-  bool _allDay = true;
-  List<_TimeSlotData> _slots = [_allDaySlot];
+  /// "Tutto il giorno" e' un'opzione, non il punto di partenza: un profilo
+  /// nuovo nasce con la fascia 09:00-17:00.
+  bool _allDay = false;
+  List<_TimeSlotData> _slots = [_defaultSlot];
 
   /// Fasce dell'utente messe da parte mentre "tutto il giorno" e' acceso, per
   /// restituirle intatte se lo rispegne senza uscire dall'editor.
