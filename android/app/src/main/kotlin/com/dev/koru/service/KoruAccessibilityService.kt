@@ -15,8 +15,11 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.dev.koru.BuildConfig
+import com.dev.koru.browser.BrowserConfig
 import com.dev.koru.browser.BrowserConfigLoader
 import com.dev.koru.browser.BrowserUrlDetector
+import com.dev.koru.browser.TabNeutralizePolicy
+import com.dev.koru.browser.TabNeutralizer
 import com.dev.koru.browser.WebsiteMatcher
 import com.dev.koru.contract.BlockingContract
 import com.dev.koru.content.InAppContentDetector
@@ -1711,7 +1714,14 @@ class KoruAccessibilityService : AccessibilityService() {
                 }
 
                 // Nessun profilo blocca questo pkg — se avevamo un overlay, dismiss.
-                if (currentlyBlockingPackage != null) {
+                //
+                // Eccezione: stiamo liberando la scheda di QUESTO browser. La
+                // navigazione verso about:blank genera un content-change che
+                // atterra proprio qui, e il browser come *app* non è bloccato da
+                // nessun profilo: senza questa guardia l'overlay appena mostrato
+                // verrebbe smontato un istante prima del HOME, e l'utente
+                // vedrebbe solo un lampo. Vedi neutralizeTabThenGoHome.
+                if (currentlyBlockingPackage != null && !isNeutralizingTabFor(packageName)) {
                     currentlyBlockingPackage = null
                     mainHandler.post { dismissOverlay() }
                     BlockEventLogger.emitBlockingState(false, "", null)
@@ -2101,7 +2111,13 @@ class KoruAccessibilityService : AccessibilityService() {
             // che spesso è la stessa scheda. La user-intent "non aprire
             // questo sito" si soddisfa solo chiudendo il browser fino
             // a fuori — HOME è il fix per gli stessi pattern di IG/YT.
-            performGoHomeForBlock(forceHome = true, blockedPackage = packageName)
+            //
+            // Prima del HOME però liberiamo la scheda: finché resta parcheggiata
+            // sul dominio bloccato il browser è inapribile (la riapertura
+            // ripristina quella scheda → ri-blocco → HOME, in loop). Vedi
+            // TabNeutralizePolicy. Il HOME parte dalla callback, sempre, anche
+            // quando la scheda non si è potuta liberare.
+            neutralizeTabThenGoHome(packageName, configs)
             val now = System.currentTimeMillis()
             BlockEventLogger.logBlockSessionAndAccess(
                 applicationContext,
@@ -2111,6 +2127,49 @@ class KoruAccessibilityService : AccessibilityService() {
                 timestamp = now,
             )
             return
+        }
+    }
+
+    /// Package la cui scheda browser stiamo liberando ORA, e fino a quando il
+    /// dismiss automatico dell'overlay resta sospeso per lui. Vedi
+    /// [TabNeutralizePolicy.SUPPRESS_DISMISS_MS] per il perché.
+    @Volatile private var tabNeutralizePkg: String? = null
+    @Volatile private var tabNeutralizeUntilMs = 0L
+
+    /// True se `packageName` è nella finestra di neutralizzazione: il ramo
+    /// "nessun profilo blocca questo pkg" deve tenersi l'overlay invece di
+    /// smontarlo. Fail-secure: può solo posticipare un dismiss, mai saltare un
+    /// blocco, ed è limitato nel tempo anche se la callback non arrivasse mai.
+    private fun isNeutralizingTabFor(packageName: String): Boolean =
+        packageName == tabNeutralizePkg && System.currentTimeMillis() < tabNeutralizeUntilMs
+
+    /// Libera la scheda rimasta sul sito bloccato e POI va in HOME.
+    ///
+    /// L'ordine è vincolato in entrambe le direzioni: l'overlay è già stato
+    /// mostrato (maschera la manipolazione della barra degli indirizzi e
+    /// preserva la latenza evento→overlay ottimizzata in precedenza), mentre il
+    /// HOME deve aspettare perché dopo di esso il browser è in background e il
+    /// suo albero accessibility non è più raggiungibile.
+    ///
+    /// `onDone` è garantita esattamente una volta da [TabNeutralizer], quindi il
+    /// blocco viene applicato anche quando la scheda non si è potuta liberare —
+    /// in quel caso il comportamento è identico a prima di questa feature.
+    private fun neutralizeTabThenGoHome(packageName: String, configs: List<BrowserConfig>) {
+        tabNeutralizePkg = packageName
+        tabNeutralizeUntilMs = System.currentTimeMillis() + TabNeutralizePolicy.SUPPRESS_DISMISS_MS
+        TabNeutralizer.neutralize(
+            rootProvider = { try { rootInActiveWindow } catch (_: Exception) { null } },
+            configs = configs,
+            handler = mainHandler,
+        ) { freed ->
+            BlackBox.log("WEBSITE", "scheda liberata=$freed pkg=$packageName → HOME")
+            // NB: la finestra di sospensione NON viene chiusa qui — deve
+            // scadere da sola. Gli eventi di content-change generati dalla
+            // navigazione verso about:blank arrivano DOPO questa callback (e
+            // anche dopo il HOME): azzerarla adesso la chiuderebbe proprio un
+            // istante prima del momento per cui esiste, e l'overlay verrebbe
+            // smontato lasciando l'utente in home senza nessun feedback.
+            performGoHomeForBlock(forceHome = true, blockedPackage = packageName)
         }
     }
 
