@@ -70,9 +70,16 @@ object UsageWidgetModel {
     }
 
     /// Snapshot completo renderizzato dal widget.
+    ///
+    /// [reelsToday] è il numero di reel/short scrollati oggi
+    /// ([com.dev.koru.service.ReelCountStore]). A differenza di tutto il resto
+    /// NON viene da UsageStats: è un contatore che Koru tiene da sé, quindi
+    /// resta valido anche se il conteggio del tempo d'uso è a zero, e vale 0
+    /// quando l'utente ha spento la feature.
     data class Snapshot(
         val totalMs: Long,
         val rows: List<Row>,
+        val reelsToday: Int = 0,
     )
 
     // ── Altezze (dp) usate per decidere quante righe entrano ────────────────
@@ -253,6 +260,21 @@ object UsageWidgetModel {
         if (used >= limitMinutes) return BarState.OVER
         return if (used.toDouble() / limitMinutes > 0.8) BarState.NEAR else BarState.UNDER
     }
+
+    /// La pill dei reel si mostra solo se c'è qualcosa da dire. Uno "0" fisso
+    /// accanto al tempo d'uso non è un dato, è arredamento — e su un utente che
+    /// non apre mai Reels resterebbe lì per sempre.
+    fun showsReelPill(reelsToday: Int): Boolean = reelsToday > 0
+
+    /// Testo della pill dei reel.
+    ///
+    /// Numero intero, senza abbreviazioni: `1.2k` avrebbe richiesto la stessa
+    /// identica regola di arrotondamento anche nella card in-app (la parità fra
+    /// widget e app è un contratto, vedi la nota di classe), e "1500" occupa
+    /// quanto "3h 12m" — cioè lo spazio c'è. Il clamp a 0 rende la funzione
+    /// totale: un conteggio negativo non è raggiungibile ma non deve comunque
+    /// poter finire sullo schermo.
+    fun formatReelCount(reelsToday: Int): String = reelsToday.coerceAtLeast(0).toString()
 
     /// Rapporto used/cap NON clampato: usato solo per l'ordinamento, così
     /// un'app al 300% del cap resta sopra a una al 100%.

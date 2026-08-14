@@ -34,6 +34,14 @@ object WatchedPackageCalculator {
      *   profili abilitati a monte, via `getEnabledProfiles`).
      * @param limitPackages package con un daily limit ATTIVO (minutes > 0),
      *   indipendenti dai profili — il fix di questo enforcement gap.
+     * @param observationPackages package osservati per pura OSSERVAZIONE, non
+     *   per bloccarli: oggi Instagram/YouTube per il contatore dei reel (vedi
+     *   [ReelCountStore]). Sono la stessa classe di bug di `limitPackages`,
+     *   dall'altro lato: chi non ha messo Instagram in un profilo ne' sotto un
+     *   cap non riceverebbe alcun evento, e il contatore mostrerebbe zero per
+     *   sempre senza che nulla segnali il perche'. Il chiamante passa un set
+     *   VUOTO quando la feature e' spenta, cosi' l'utente che la disattiva
+     *   smette davvero di pagarne il costo in eventi.
      * @param knownBrowsers / settingsPackages / skipPackages / selfPackage i
      *   set statici sempre osservati (browser per il website blocking, settings
      *   per lo strict mode, skip+self per ricevere l'evento di ritorno a HOME).
@@ -45,12 +53,13 @@ object WatchedPackageCalculator {
         settingsPackages: Set<String>,
         skipPackages: Set<String>,
         selfPackage: String,
+        observationPackages: Set<String> = emptySet(),
     ): Set<String> {
         val profilePackages = profileApps.values
             .flatten()
             .map { it.packageName }
             .toSet()
-        return profilePackages + limitPackages + knownBrowsers +
+        return profilePackages + limitPackages + observationPackages + knownBrowsers +
             settingsPackages + skipPackages + selfPackage
     }
 }

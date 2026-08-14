@@ -334,4 +334,57 @@ class UsageWidgetModelTest {
         )
         assertThat(UsageWidgetModel.rowsFittingHeight(4000, candidates)).isEqualTo(2)
     }
+
+    // -------- Pill del contatore reel --------
+
+    @Test
+    fun reelPill_isHiddenAtZero() {
+        // Uno "0" perenne accanto al tempo d'uso non è un dato.
+        assertThat(UsageWidgetModel.showsReelPill(0)).isFalse()
+        assertThat(UsageWidgetModel.showsReelPill(1)).isTrue()
+    }
+
+    @Test
+    fun reelPill_isHiddenOnNegativeCounts() {
+        assertThat(UsageWidgetModel.showsReelPill(-5)).isFalse()
+    }
+
+    @Test
+    fun formatReelCount_isThePlainInteger() {
+        // Nessuna abbreviazione: la stessa regola dovrebbe valere anche nella
+        // card in-app, e ogni formattazione in più è una parità in più da
+        // mantenere fra i due lati.
+        assertThat(UsageWidgetModel.formatReelCount(0)).isEqualTo("0")
+        assertThat(UsageWidgetModel.formatReelCount(7)).isEqualTo("7")
+        assertThat(UsageWidgetModel.formatReelCount(1500)).isEqualTo("1500")
+    }
+
+    @Test
+    fun formatReelCount_clampsNegativeInput() {
+        assertThat(UsageWidgetModel.formatReelCount(-3)).isEqualTo("0")
+    }
+
+    @Test
+    fun snapshotDefaultsToNoReels() {
+        // Il campo è opzionale: uno snapshot costruito senza contatore (o con
+        // la feature spenta) non deve far comparire la pill.
+        val snapshot = UsageWidgetModel.Snapshot(totalMs = min(30), rows = emptyList())
+        assertThat(snapshot.reelsToday).isEqualTo(0)
+        assertThat(UsageWidgetModel.showsReelPill(snapshot.reelsToday)).isFalse()
+    }
+
+    @Test
+    fun reelCount_doesNotAffectRowFitting() {
+        // La pill vive DENTRO l'header, quindi il budget di altezza per le
+        // righe non cambia: è tutto il motivo per cui sta lì invece che su una
+        // riga propria. Se qualcuno la sposta, questo test non se ne accorge da
+        // solo — ma HEADER_DP sì, e lì il commento spiega il vincolo.
+        val candidates = List(3) {
+            UsageWidgetModel.Row("pkg$it", "App $it", min(10), null, false)
+        }
+        val height = UsageWidgetModel.ROOT_VPADDING_DP +
+            UsageWidgetModel.HEADER_DP +
+            3 * UsageWidgetModel.PLAIN_ROW_DP
+        assertThat(UsageWidgetModel.rowsFittingHeight(height, candidates)).isEqualTo(3)
+    }
 }

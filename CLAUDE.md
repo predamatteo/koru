@@ -155,9 +155,10 @@ channel class rather than scattering `MethodChannel` instances.
 
 `android/.../widget/` is a **fully native** App Widget (RemoteViews, no Glance, no
 Flutter engine): it shows today's screen time plus the per-app *time limits* —
-the `AppUsageLimitsStore` caps only, not profile-driven blocking. It reads
-`UsageCounter` + `AppUsageLimitsStore` directly, so it never touches Drift or the
-platform channels.
+the `AppUsageLimitsStore` caps only, not profile-driven blocking — and a header
+pill with today's reel count (see below). It reads `UsageCounter` +
+`AppUsageLimitsStore` + `ReelCountStore` directly, so it never touches Drift or
+the platform channels.
 
 Two things to keep in mind when touching it:
 
@@ -174,6 +175,31 @@ Two things to keep in mind when touching it:
    single `@Volatile` read when no widget is placed and defers all I/O to its own
    HandlerThread. Do not add a polling loop — see the battery audit constraints in
    `LockRunnable.checkAndBlock`.
+
+### The reel counter (observation, not enforcement)
+
+Instagram Reels / YouTube Shorts swipes are counted from `TYPE_VIEW_SCROLLED`
+events. There is no API for "a reel was swiped": the count is **inferred** from
+the item index reported by the pager, so treat it as an estimate.
+
+Three things that break it silently, in order of likelihood:
+
+1. **View-ids.** The scroll only counts if `event.source`'s `viewIdResourceName`
+   is in `REELS_PAGER` / `SHORTS_PAGER` (`res/raw/*_view_ids.json`). An Instagram
+   or YouTube update that renames those ids takes the counter to zero with no
+   error. The JSONs are hot-updatable for exactly this reason.
+2. **The watched set.** IG/YT reach the service only because
+   `WatchedPackageCalculator` gets them via `observationPackages`, gated on
+   `UiSettingsStore.isReelCounterEnabled`. Drop that and the feature works only
+   for users who already block those apps.
+3. **The index signal.** `ReelSwipeCounter` counts index *transitions*; if a view
+   stops reporting `fromIndex`/`toIndex` it degrades to a time debounce.
+   `Result.viaIndex` says which path fired — it is logged to BlackBox under the
+   `REELS` tag, sampled, and it is the first thing to check on-device.
+
+Counts live in `ReelCountStore` (a `FileBackedStore`, write-behind: a process
+kill can lose a handful). Never move them into Drift — the widget reads them and
+must stay Drift-free.
 
 ### Launcher vs. shell routing
 

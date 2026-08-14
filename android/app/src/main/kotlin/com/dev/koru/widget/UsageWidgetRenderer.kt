@@ -65,6 +65,10 @@ internal object UsageWidgetRenderer {
             // Usage access non concesso: il tap porta direttamente alla
             // schermata di sistema dove si concede, non dentro Koru.
             views.setTextViewText(R.id.widget_header_total, "--")
+            // Anche la pill dei reel sparisce: il widget sta dicendo "non
+            // riesco a misurare", e un numero solo accanto a quel messaggio
+            // sembrerebbe contraddirlo.
+            views.setViewVisibility(R.id.widget_header_reels, View.GONE)
             showMessage(views, context.getString(R.string.koru_widget_no_permission))
             views.setOnClickPendingIntent(android.R.id.background, usageAccessSettingsIntent(context))
             return views
@@ -74,6 +78,7 @@ internal object UsageWidgetRenderer {
             R.id.widget_header_total,
             UsageWidgetModel.formatDurationMs(snapshot.totalMs),
         )
+        renderReelPill(context, views, snapshot.reelsToday)
         views.setOnClickPendingIntent(android.R.id.background, openStatsIntent(context))
 
         val maxRows = UsageWidgetModel.rowsFittingHeight(
@@ -102,6 +107,38 @@ internal object UsageWidgetRenderer {
             views.addView(R.id.widget_rows, buildRow(context, row))
         }
         return views
+    }
+
+    /**
+     * Pill "reel scrollati oggi" nell'header.
+     *
+     * La visibilità è impostata ESPLICITAMENTE su entrambi i rami e non solo
+     * quando c'è qualcosa da mostrare: le RemoteViews vengono riusate dall'host
+     * fra un update e l'altro, quindi una pill lasciata VISIBLE dal render
+     * precedente resterebbe con il numero di ieri dopo il rollover di
+     * mezzanotte — lo stesso motivo per cui `widget_empty` viene sempre
+     * impostata dal renderer invece di affidarsi al default del layout.
+     */
+    private fun renderReelPill(context: Context, views: RemoteViews, reelsToday: Int) {
+        if (!UsageWidgetModel.showsReelPill(reelsToday)) {
+            views.setViewVisibility(R.id.widget_header_reels, View.GONE)
+            return
+        }
+        views.setTextViewText(
+            R.id.widget_header_reels,
+            UsageWidgetModel.formatReelCount(reelsToday),
+        )
+        // Il significato per esteso: la pill mostra il solo numero, e senza
+        // questa un lettore di schermo annuncerebbe "132" e basta.
+        views.setContentDescription(
+            R.id.widget_header_reels,
+            context.resources.getQuantityString(
+                R.plurals.koru_widget_reels_description,
+                reelsToday,
+                reelsToday,
+            ),
+        )
+        views.setViewVisibility(R.id.widget_header_reels, View.VISIBLE)
     }
 
     /// Riga singola, completamente configurata PRIMA di essere appesa.

@@ -34,6 +34,7 @@ class WatchedPackageCalculatorTest {
     private fun calc(
         profileApps: Map<Int, List<NativeAppRelation>> = emptyMap(),
         limitPackages: Set<String> = emptySet(),
+        observationPackages: Set<String> = emptySet(),
     ) = WatchedPackageCalculator.calculate(
         profileApps = profileApps,
         limitPackages = limitPackages,
@@ -41,6 +42,7 @@ class WatchedPackageCalculatorTest {
         settingsPackages = settings,
         skipPackages = skip,
         selfPackage = SELF,
+        observationPackages = observationPackages,
     )
 
     @Test
@@ -88,6 +90,35 @@ class WatchedPackageCalculatorTest {
         val watched = calc(
             profileApps = mapOf(1 to listOf(relation(IG))),
             limitPackages = setOf(IG),
+        )
+        assertThat(watched.count { it == IG }).isEqualTo(1)
+    }
+
+    // -------- package di sola osservazione (contatore reel) --------
+
+    @Test
+    fun observationPackageWithoutProfileOrLimit_isWatched() {
+        // Il caso della feature "reel scrollati": l'utente non blocca affatto
+        // Instagram, quindi IG non e' ne' in un profilo ne' sotto un cap. Senza
+        // questo, nessun evento di scroll arriva e il contatore resta a zero
+        // per sempre — in silenzio, che e' il modo peggiore di fallire.
+        val watched = calc(observationPackages = setOf(IG))
+        assertThat(watched).contains(IG)
+    }
+
+    @Test
+    fun emptyObservationSet_doesNotWidenTheWatchedSet() {
+        // Contatore spento ⇒ il chiamante passa un set vuoto ⇒ nessun costo in
+        // eventi per chi non usa la feature.
+        assertThat(calc(observationPackages = emptySet()))
+            .isEqualTo(browsers + settings + skip + SELF)
+    }
+
+    @Test
+    fun observationPackageAlsoUnderAProfile_appearsOnce() {
+        val watched = calc(
+            profileApps = mapOf(1 to listOf(relation(IG))),
+            observationPackages = setOf(IG),
         )
         assertThat(watched.count { it == IG }).isEqualTo(1)
     }

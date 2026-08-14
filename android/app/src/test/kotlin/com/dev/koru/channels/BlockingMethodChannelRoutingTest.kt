@@ -7,6 +7,7 @@ import com.dev.koru.channels.blocking.LimitsCallHandler
 import com.dev.koru.channels.blocking.NotificationFilterCallHandler
 import com.dev.koru.channels.blocking.QuickBlockCallHandler
 import com.dev.koru.channels.blocking.RecentsCallHandler
+import com.dev.koru.channels.blocking.ReelsCallHandler
 import com.dev.koru.channels.blocking.ServiceLifecycleCallHandler
 import com.dev.koru.channels.blocking.UsageStatsCallHandler
 import com.dev.koru.channels.blocking.WifiCallHandler
@@ -81,6 +82,11 @@ class BlockingMethodChannelRoutingTest {
         "getOpenAppsCount",
         "resetOpenAppsCount",
         "openSystemRecents",
+        // contatore reel / short
+        "getReelCountsToday",
+        "getReelCountsHistory",
+        "isReelCounterEnabled",
+        "setReelCounterEnabled",
     )
 
     @Test
@@ -90,14 +96,14 @@ class BlockingMethodChannelRoutingTest {
     }
 
     @Test
-    fun routingTable_hasExactly33Methods() {
+    fun routingTable_hasExactly37Methods() {
         // Sentinella sul numero: se un futuro metodo viene aggiunto senza
         // aggiornare questo test, il count diverge e il test fallisce,
         // forzando una rivisitazione consapevole del wire-contract.
-        // 33 = 29 storici + `getAppIcon` (Fase 2: decode lazy delle icone)
+        // 37 = 29 storici + `getAppIcon` (Fase 2: decode lazy delle icone)
         // + i 3 del contatore schede launcher (getOpenAppsCount /
-        // resetOpenAppsCount / openSystemRecents).
-        assertThat(BlockingMethodChannel.routingTable).hasSize(33)
+        // resetOpenAppsCount / openSystemRecents) + i 4 del contatore reel.
+        assertThat(BlockingMethodChannel.routingTable).hasSize(37)
     }
 
     @Test
@@ -156,6 +162,12 @@ class BlockingMethodChannelRoutingTest {
         assertThat(table["getOpenAppsCount"]).isEqualTo(RecentsCallHandler)
         assertThat(table["resetOpenAppsCount"]).isEqualTo(RecentsCallHandler)
         assertThat(table["openSystemRecents"]).isEqualTo(RecentsCallHandler)
+
+        // contatore reel / short
+        assertThat(table["getReelCountsToday"]).isEqualTo(ReelsCallHandler)
+        assertThat(table["getReelCountsHistory"]).isEqualTo(ReelsCallHandler)
+        assertThat(table["isReelCounterEnabled"]).isEqualTo(ReelsCallHandler)
+        assertThat(table["setReelCounterEnabled"]).isEqualTo(ReelsCallHandler)
     }
 
     @Test

@@ -3,5 +3,8 @@
     "reel_watch_fragment_container",
     "reel_recycler",
     "reel_player_page_container"
+  ],
+  "SHORTS_PAGER": [
+    "reel_recycler"
   ]
 }

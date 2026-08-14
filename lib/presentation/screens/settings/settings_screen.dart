@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
 import '../../providers/monochrome_provider.dart';
+import '../../providers/reel_counts_provider.dart';
 import '../../widgets/koru_pull_to_refresh.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -80,6 +81,21 @@ class SettingsScreen extends ConsumerWidget {
                   icon: Icons.notifications_off_outlined,
                   title: 'Notification filter',
                   onTap: () => context.push('/settings/notification-filter'),
+                ),
+                // `valueOrNull ?? true` invece di uno spinner: il default
+                // nativo è "acceso", quindi mostrarlo spento per il tempo di
+                // un round-trip farebbe lampeggiare l'interruttore ogni volta
+                // che si apre questa schermata.
+                _SwitchTile(
+                  icon: Icons.swipe_vertical_outlined,
+                  title: 'Count reels scrolled',
+                  subtitle: 'Counts Instagram Reels and YouTube Shorts you '
+                      'swipe through. Turning it off also stops Koru from '
+                      'watching those two apps.',
+                  value: ref.watch(reelCounterEnabledProvider).valueOrNull ?? true,
+                  onChanged: (v) => ref
+                      .read(reelCounterEnabledProvider.notifier)
+                      .setEnabled(v),
                 ),
               ],
             ),
@@ -203,21 +219,28 @@ class _Tile extends StatelessWidget {
 }
 
 /// Tile con Switch trailing (niente chevron).
+///
+/// [subtitle] è opzionale: serve agli interruttori il cui effetto non si deduce
+/// dal titolo — per esempio uno che, oltre a mostrare o nascondere un dato,
+/// cambia anche cosa il servizio di accessibilità osserva.
 class _SwitchTile extends StatelessWidget {
   const _SwitchTile({
     required this.icon,
     required this.title,
     required this.value,
     required this.onChanged,
+    this.subtitle,
   });
 
   final IconData icon;
   final String title;
+  final String? subtitle;
   final bool value;
   final ValueChanged<bool> onChanged;
 
   @override
   Widget build(BuildContext context) {
+    final sub = subtitle;
     return InkWell(
       onTap: () => onChanged(!value),
       child: Padding(
@@ -227,14 +250,32 @@ class _SwitchTile extends StatelessWidget {
             Icon(icon, size: 20, color: KoruColors.primary),
             const SizedBox(width: 16),
             Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  color: KoruColors.textPrimary,
-                  fontSize: 15,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: KoruColors.textPrimary,
+                      fontSize: 15,
+                    ),
+                  ),
+                  if (sub != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      sub,
+                      style: const TextStyle(
+                        color: KoruColors.textSecondary,
+                        fontSize: 12.5,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
+            const SizedBox(width: 12),
             Switch(value: value, onChanged: onChanged),
           ],
         ),

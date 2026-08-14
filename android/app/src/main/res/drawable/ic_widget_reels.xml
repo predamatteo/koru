@@ -1,0 +1,24 @@
+<!-- Glifo "scroll verticale": due chevron contrapposti, la gestualità del feed
+     infinito. Vettoriale e non emoji per la stessa ragione dell'overlay di
+     blocco (vedi OverlayView): un'emoji viene renderizzata dal font emoji del
+     sistema, quindi cambia forma e peso da un device all'altro e non si può
+     tingere con il colore del tema.
+
+     Dimensione INTRINSECA 14dp (viewport 24 per comodità di disegno): è
+     `drawableStart` di una TextView, quindi rende alla sua misura naturale e
+     un'icona 24dp farebbe crescere la pill oltre l'altezza di quella del tempo
+     totale — cioè un header più alto, cioè una riga di app in meno sul widget
+     4x2 (vedi HEADER_DP in UsageWidgetModel). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="14dp"
+    android:height="14dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="@color/koru_widget_text_secondary">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,3.6 L18.4,10 L17,11.4 L12,6.4 L7,11.4 L5.6,10 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,20.4 L5.6,14 L7,12.6 L12,17.6 L17,12.6 L18.4,14 Z" />
+</vector>

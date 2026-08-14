@@ -13,6 +13,7 @@ import '../../providers/profile_providers.dart';
 import '../../providers/statistics_providers.dart';
 import '../../widgets/koru_pull_to_refresh.dart';
 import 'widgets/accessibility_health_banner.dart';
+import 'widgets/reels_scrolled_card.dart';
 import 'widgets/today_limits_card.dart';
 
 /// Tab Home dell'app: dashboard con greeting, profilo attivo ora, quick stats,
@@ -65,6 +66,12 @@ class HomeScreen extends ConsumerWidget {
             const SizedBox(height: 12),
             _TodayStatsRow(blocksToday: blocksToday, focusMs: focusMs),
             const SizedBox(height: 12),
+            // Si auto-nasconde a zero reel: sopra ai limiti perché è un dato
+            // che l'utente non ha configurato e quindi non si aspetta —
+            // sotterrarlo in fondo alla lista lo renderebbe invisibile. Porta
+            // con sé il proprio margine inferiore, così quando non c'è non
+            // lascia un buco doppio fra le due card vicine.
+            const ReelsScrolledCard(),
             const TodayLimitsCard(),
             const SizedBox(height: 12),
             const _QuickActionsCard(),

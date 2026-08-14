@@ -29,4 +29,27 @@ class InAppContentDetector(context: Context) {
 
     fun supports(packageName: String): Boolean =
         packageName == InstagramDetector.PACKAGE || packageName == YouTubeDetector.PACKAGE
+
+    /**
+     * La sezione "feed verticale infinito" a cui appartiene la view che ha
+     * emesso uno scroll, oppure `null` se quello scroll non viene da un pager
+     * di reel/short.
+     *
+     * A differenza di [detect] questa NON cammina l'albero: riceve il solo
+     * `viewIdResourceName` del `source` dell'evento. È la differenza fra un
+     * costo accettabile sull'hot path dello scroll e una DFS per ogni evento.
+     *
+     * @param shortViewId la parte dopo `:id/` (il chiamante la estrae una volta
+     *   sola dal nodo sorgente).
+     */
+    fun reelPagerSection(packageName: String, shortViewId: String?): DetectedSection? {
+        if (shortViewId.isNullOrEmpty()) return null
+        return when (packageName) {
+            InstagramDetector.PACKAGE ->
+                if (instagram.isReelsPager(shortViewId)) DetectedSection.InstagramReels else null
+            YouTubeDetector.PACKAGE ->
+                if (youtube.isShortsPager(shortViewId)) DetectedSection.YouTubeShorts else null
+            else -> null
+        }
+    }
 }

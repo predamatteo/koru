@@ -10,6 +10,7 @@ import android.util.Log
 import com.dev.koru.channels.PermissionMethodChannel
 import com.dev.koru.service.AppUsageLimitsStore
 import com.dev.koru.service.KoruAccessibilityService
+import com.dev.koru.service.ReelCountStore
 import com.dev.koru.service.UsageCounter
 import java.util.Calendar
 
@@ -69,6 +70,11 @@ internal object UsageWidgetDataSource {
                 labels = labels,
                 excludedPackages = excluded,
             ),
+            // Lettura cache-ata di un file di poche centinaia di byte, che
+            // include già i conteggi non ancora versati su disco: nessun flush
+            // qui: aggiungerebbe una scrittura al percorso di rendering, e il
+            // widget gira nello stesso processo che tiene quel buffer.
+            reelsToday = ReelCountStore.todayTotal(context),
         )
     }
 
