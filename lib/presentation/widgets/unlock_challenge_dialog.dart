@@ -6,19 +6,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/koru_colors.dart';
 import '../../domain/entities/unlock_challenge.dart';
+import '../../platform/strict_mode_channel.dart';
 import '../providers/unlock_challenge_provider.dart';
 import 'unlock_challenge_glyphs.dart';
+import 'unlock_challenge_source.dart';
 
-/// Gate di attrito da mettere davanti a **ogni** azione che indebolisce una
-/// protezione (spegnere un profilo, cancellarlo, togliergli app bloccate).
+/// Gate di attrito per i **profili**: da mettere davanti a ogni azione che
+/// indebolisce una protezione (spegnere un profilo, cancellarlo, togliergli app
+/// o siti).
 ///
 /// Ritorna `true` se si può procedere: o perché la sfida è disattivata
 /// ([UnlockChallengeLevel.off], comportamento storico) o perché l'utente l'ha
 /// superata. Ritorna `false` se ha annullato — e annullare è la direzione
-/// SICURA (la protezione resta attiva), quindi è volutamente facile: back,
-/// tocco fuori… no, il barrier è bloccato, ma il pulsante "Lascia stare" è
-/// sempre lì. Non serve intrappolare nessuno: chi vuole davvero uscire fa il
-/// puzzle, chi stava solo cedendo all'impulso ha già ottenuto la sua pausa.
+/// SICURA (la protezione resta attiva), quindi è volutamente facile. Non serve
+/// intrappolare nessuno: chi vuole davvero uscire fa il puzzle, chi stava solo
+/// cedendo all'impulso ha già ottenuto la sua pausa.
+///
+/// Per lo strict mode serve [requireStrictUnlockChallenge]: là la sfida non è
+/// opzionale e la verifica è nativa.
 ///
 /// [action] completa la frase "Per `<action>` devi prima ricostruire una
 /// sequenza di simboli", es. `'spegnere «Sera senza social»'`.
@@ -30,26 +35,67 @@ Future<bool> requireUnlockChallenge(
   final level = ref.read(unlockChallengeLevelProvider);
   if (!level.isActive) return true;
 
+  return _showChallenge(
+    context,
+    source: LocalUnlockChallengeSource(level),
+    action: action,
+  );
+}
+
+/// Gate dello **strict mode**: sostituisce il backdoor code sul percorso
+/// normale di downgrade della mask.
+///
+/// Ritorna il token monouso da passare a
+/// [StrictModeChannel.setStrictModeOptions], oppure `null` se l'utente ha
+/// rinunciato o il nativo non ha autorizzato. Il token vale ~60 secondi e solo
+/// per [targetMask]: va speso subito.
+///
+/// A differenza di [requireUnlockChallenge] non consulta le impostazioni
+/// dell'utente — qui la sfida è obbligatoria, è l'unica chiave rimasta sul
+/// percorso normale (il codice resta solo per l'emergency unblock).
+Future<String?> requireStrictUnlockChallenge(
+  BuildContext context, {
+  required StrictModeChannel channel,
+  required int targetMask,
+  required String action,
+}) async {
+  final source = StrictModeUnlockChallengeSource(
+    channel: channel,
+    targetMask: targetMask,
+  );
+  final passed = await _showChallenge(
+    context,
+    source: source,
+    action: action,
+  );
+  return passed ? source.unblockToken : null;
+}
+
+Future<bool> _showChallenge(
+  BuildContext context, {
+  required UnlockChallengeSource source,
+  required String action,
+}) async {
   final passed = await showDialog<bool>(
     context: context,
     // Niente dismiss dal barrier: uscire deve essere una scelta esplicita
     // (il pulsante), non un tocco distratto a lato.
     barrierDismissible: false,
-    builder: (_) => UnlockChallengeDialog(level: level, action: action),
+    builder: (_) => UnlockChallengeDialog(source: source, action: action),
   );
   return passed ?? false;
 }
 
-enum _Phase { intro, memorize, recall }
+enum _Phase { intro, loading, memorize, recall, blocked }
 
 class UnlockChallengeDialog extends StatefulWidget {
   const UnlockChallengeDialog({
     super.key,
-    required this.level,
+    required this.source,
     required this.action,
   });
 
-  final UnlockChallengeLevel level;
+  final UnlockChallengeSource source;
   final String action;
 
   @override
@@ -58,7 +104,9 @@ class UnlockChallengeDialog extends StatefulWidget {
 
 class _UnlockChallengeDialogState extends State<UnlockChallengeDialog>
     with TickerProviderStateMixin {
-  late UnlockChallenge _challenge;
+  /// `null` finché la prima sfida non è arrivata dalla sorgente (che può essere
+  /// asincrona: per lo strict mode c'è di mezzo un giro sul channel).
+  UnlockChallenge? _challenge;
   _Phase _phase = _Phase.intro;
 
   /// Quanti glifi della sequenza sono già stati indovinati in questo tentativo.
@@ -72,6 +120,8 @@ class _UnlockChallengeDialogState extends State<UnlockChallengeDialog>
   /// congelata (niente tocchi) mentre l'animazione di errore gira.
   bool _showingError = false;
 
+  String _blockedMessage = '';
+
   // NON `late final` con inizializzatore: con [TickerProviderStateMixin] un
   // controller creato pigramente viene istanziato al primo accesso, e se
   // l'utente chiude il dialog dalla intro (senza mai far partire un'animazione)
@@ -84,10 +134,11 @@ class _UnlockChallengeDialogState extends State<UnlockChallengeDialog>
   @override
   void initState() {
     super.initState();
-    _challenge = generateUnlockChallenge(widget.level);
+    // La durata vera arriva con ogni sfida (le spec native portano la loro):
+    // qui serve solo un valore non nullo per costruire il controller.
     _countdown = AnimationController(
       vsync: this,
-      duration: widget.level.memorizeDuration,
+      duration: const Duration(seconds: 4),
     )..addStatusListener(_onCountdownStatus);
     _shake = AnimationController(
       vsync: this,
@@ -108,22 +159,38 @@ class _UnlockChallengeDialogState extends State<UnlockChallengeDialog>
 
   void _onCountdownStatus(AnimationStatus status) {
     if (status != AnimationStatus.completed || !mounted) return;
+    if (_phase != _Phase.memorize) return;
     setState(() => _phase = _Phase.recall);
   }
 
-  /// (Ri)genera una sfida NUOVA e riparte dalla memorizzazione.
+  /// Chiede una sfida NUOVA alla sorgente e riparte dalla memorizzazione.
   ///
-  /// Rigenerare invece di ripresentare la stessa sequenza è deliberato: se
-  /// dopo un errore rivedessi lo stesso puzzle, al terzo tentativo lo
-  /// risolveresti a memoria muscolare e l'attrito evaporerebbe.
-  void _startMemorizePhase() {
-    setState(() {
-      _challenge = generateUnlockChallenge(widget.level);
-      _progress = 0;
-      _showingError = false;
-      _phase = _Phase.memorize;
-    });
-    _countdown.forward(from: 0);
+  /// Chiedere invece di ripresentare la stessa è deliberato su entrambi i
+  /// fronti: lato UX, se dopo un errore rivedessi lo stesso puzzle al terzo
+  /// tentativo lo risolveresti a memoria muscolare; lato strict mode è pure
+  /// obbligatorio, perché ogni verifica — anche fallita — brucia la sfida sul
+  /// nativo.
+  Future<void> _requestChallenge() async {
+    setState(() => _phase = _Phase.loading);
+    final request = await widget.source.next();
+    if (!mounted) return;
+    switch (request) {
+      case ChallengeReady(:final challenge):
+        setState(() {
+          _challenge = challenge;
+          _progress = 0;
+          _showingError = false;
+          _phase = _Phase.memorize;
+        });
+        _countdown
+          ..duration = challenge.memorizeDuration
+          ..forward(from: 0);
+      case ChallengeBlocked(:final message):
+        setState(() {
+          _blockedMessage = message;
+          _phase = _Phase.blocked;
+        });
+    }
   }
 
   /// Sincrono di proposito. Le vibrazioni sono fire-and-forget
@@ -131,18 +198,19 @@ class _UnlockChallengeDialogState extends State<UnlockChallengeDialog>
   /// sul percorso critico di OGNI tocco, e un device che non risponde
   /// congelerebbe la griglia proprio mentre l'utente la sta usando.
   void _onGlyphTap(String glyphId) {
-    if (_showingError) return;
+    final challenge = _challenge;
+    if (challenge == null || _showingError) return;
 
-    if (_challenge.isCorrectNext(_progress, glyphId)) {
+    if (challenge.isCorrectNext(_progress, glyphId)) {
       HapticFeedback.selectionClick().ignore();
       final next = _progress + 1;
-      if (next < _challenge.length) {
+      if (next < challenge.length) {
         setState(() => _progress = next);
         return;
       }
-      // Sequenza completa: sblocca.
+      // Sequenza completa: la sorgente ha l'ultima parola.
       HapticFeedback.mediumImpact().ignore();
-      Navigator.of(context).pop(true);
+      _confirm(challenge);
       return;
     }
 
@@ -155,6 +223,24 @@ class _UnlockChallengeDialogState extends State<UnlockChallengeDialog>
     _playErrorFeedback();
   }
 
+  Future<void> _confirm(UnlockChallenge challenge) async {
+    setState(() => _phase = _Phase.loading);
+    final granted = await widget.source.confirm(challenge);
+    if (!mounted) return;
+    if (granted) {
+      Navigator.of(context).pop(true);
+      return;
+    }
+    // I tocchi erano giusti (li abbiamo validati noi) ma la sorgente ha detto
+    // no: per lo strict mode significa sfida scaduta lato nativo, o cooldown
+    // scattato nel frattempo. Non è colpa dell'utente, quindi lo diciamo.
+    setState(() {
+      _blockedMessage =
+          'La verifica è scaduta prima che finissi. Puoi ricominciare.';
+      _phase = _Phase.blocked;
+    });
+  }
+
   Future<void> _playErrorFeedback() async {
     await _shake.forward(from: 0);
     if (!mounted) return;
@@ -163,7 +249,7 @@ class _UnlockChallengeDialogState extends State<UnlockChallengeDialog>
     // "no, ricomincia".
     await Future<void>.delayed(const Duration(milliseconds: 260));
     if (!mounted) return;
-    _startMemorizePhase();
+    await _requestChallenge();
   }
 
   @override
@@ -180,29 +266,10 @@ class _UnlockChallengeDialogState extends State<UnlockChallengeDialog>
               const SizedBox(height: 8),
               Expanded(
                 child: Center(
-                  child: SingleChildScrollView(
-                    child: switch (_phase) {
-                      _Phase.intro => _IntroPane(
-                        level: widget.level,
-                        action: widget.action,
-                        onStart: _startMemorizePhase,
-                      ),
-                      _Phase.memorize => _MemorizePane(
-                        challenge: _challenge,
-                        countdown: _countdown,
-                      ),
-                      _Phase.recall => _RecallPane(
-                        challenge: _challenge,
-                        progress: _progress,
-                        showingError: _showingError,
-                        shake: _shake,
-                        onTap: _onGlyphTap,
-                      ),
-                    },
-                  ),
+                  child: SingleChildScrollView(child: _body()),
                 ),
               ),
-              if (_failedAttempts > 0)
+              if (_failedAttempts > 0 && _phase != _Phase.blocked)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
@@ -231,9 +298,43 @@ class _UnlockChallengeDialogState extends State<UnlockChallengeDialog>
     );
   }
 
+  Widget _body() {
+    final challenge = _challenge;
+    return switch (_phase) {
+      _Phase.intro => _IntroPane(
+        action: widget.action,
+        onStart: _requestChallenge,
+      ),
+      _Phase.loading => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 48),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      _Phase.blocked => _BlockedPane(
+        message: _blockedMessage,
+        onRetry: _requestChallenge,
+      ),
+      // challenge non può essere null in queste due fasi (ci si arriva solo da
+      // _requestChallenge, che la imposta prima di cambiare fase); il fallback
+      // allo spinner evita comunque un `!` che crasherebbe dentro al gate.
+      _Phase.memorize when challenge != null => _MemorizePane(
+        challenge: challenge,
+        countdown: _countdown,
+      ),
+      _Phase.recall when challenge != null => _RecallPane(
+        challenge: challenge,
+        progress: _progress,
+        showingError: _showingError,
+        shake: _shake,
+        onTap: _onGlyphTap,
+      ),
+      _ => const Center(child: CircularProgressIndicator()),
+    };
+  }
+
   Widget _header(BuildContext context) {
     final (title, subtitle) = switch (_phase) {
       _Phase.intro => ('Un momento', 'Prima di indebolire la protezione.'),
+      _Phase.loading => ('Un momento', ''),
       _Phase.memorize => (
         'Memorizza',
         'Questi simboli, in questo ordine. Poi spariscono.',
@@ -242,6 +343,7 @@ class _UnlockChallengeDialogState extends State<UnlockChallengeDialog>
         'Ricostruisci',
         'Toccali nell\'ordine di prima. Attenzione ai sosia.',
       ),
+      _Phase.blocked => ('Non adesso', ''),
     };
     return Column(
       children: [
@@ -253,16 +355,18 @@ class _UnlockChallengeDialogState extends State<UnlockChallengeDialog>
             fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(height: 6),
-        Text(
-          subtitle,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: KoruColors.textSecondary,
-            fontSize: 13,
-            height: 1.35,
+        if (subtitle.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: KoruColors.textSecondary,
+              fontSize: 13,
+              height: 1.35,
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -271,13 +375,8 @@ class _UnlockChallengeDialogState extends State<UnlockChallengeDialog>
 // ─── Fase 1: intro ──────────────────────────────────────────────────────────
 
 class _IntroPane extends StatelessWidget {
-  const _IntroPane({
-    required this.level,
-    required this.action,
-    required this.onStart,
-  });
+  const _IntroPane({required this.action, required this.onStart});
 
-  final UnlockChallengeLevel level;
   final String action;
   final VoidCallback onStart;
 
@@ -310,12 +409,11 @@ class _IntroPane extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
-        Text(
-          '${level.sequenceLength} simboli, '
-          '${level.memorizeDuration.inSeconds} secondi per guardarli, '
-          'poi li ritrovi in una griglia piena di simboli quasi identici.',
+        const Text(
+          'Te li mostriamo per qualche secondo, poi li ritrovi in una griglia '
+          'piena di simboli quasi identici.',
           textAlign: TextAlign.center,
-          style: const TextStyle(
+          style: TextStyle(
             color: KoruColors.textSecondary,
             fontSize: 13,
             height: 1.45,
@@ -330,6 +428,57 @@ class _IntroPane extends StatelessWidget {
             foregroundColor: KoruColors.onPrimary,
           ),
           child: const Text('Mostrami la sequenza'),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Fase alternativa: nessuna sfida disponibile ────────────────────────────
+
+class _BlockedPane extends StatelessWidget {
+  const _BlockedPane({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 88,
+          height: 88,
+          decoration: const BoxDecoration(
+            color: KoruColors.dangerContainer,
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            Icons.hourglass_empty,
+            size: 40,
+            color: KoruColors.onDangerContainer,
+          ),
+        ),
+        const SizedBox(height: 28),
+        Text(
+          message,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: KoruColors.textPrimary,
+            fontSize: 16,
+            height: 1.45,
+          ),
+        ),
+        const SizedBox(height: 32),
+        OutlinedButton(
+          onPressed: onRetry,
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(52),
+            foregroundColor: KoruColors.primary,
+            side: const BorderSide(color: KoruColors.outline),
+          ),
+          child: const Text('Riprova'),
         ),
       ],
     );

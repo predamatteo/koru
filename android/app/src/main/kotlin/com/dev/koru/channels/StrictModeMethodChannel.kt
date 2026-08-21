@@ -15,6 +15,7 @@ import com.dev.koru.strictmode.BackdoorCodeGenerator
 import com.dev.koru.strictmode.KoruDeviceAdminReceiver
 import com.dev.koru.strictmode.StrictModeEnforcer
 import com.dev.koru.strictmode.StrictModeStore
+import com.dev.koru.strictmode.StrictUnlockChallengeStore
 import com.dev.koru.strictmode.UnblockTokenStore
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -141,8 +142,13 @@ object StrictModeMethodChannel {
                         val newMask = call.argument<Int>("mask") ?: 0
                         val oldMask = StrictModeStore.readMask(activity)
                         val token = call.argument<String>("unblockToken")
+                        // targetMask: i token emessi dal path del puzzle sono
+                        // vincolati alla mask per cui è stata risolta la sfida,
+                        // così un puzzle "leggero" non autorizza un'uscita
+                        // completa. I token del backdoor code sono generici e
+                        // ignorano il parametro.
                         if (clearsActiveBit(oldMask, newMask) &&
-                            !UnblockTokenStore.consume(token)
+                            !UnblockTokenStore.consume(token, targetMask = newMask)
                         ) {
                             Log.w(TAG, "setStrictModeOptions DENIED: downgrade $oldMask→$newMask without valid token")
                             result.error(
@@ -177,6 +183,71 @@ object StrictModeMethodChannel {
                                 }
                             }
                         }.start()
+                    }
+                    "startStrictUnlockChallenge" -> {
+                        // Sfida a memoria che sostituisce il backdoor code sul
+                        // percorso normale di downgrade. La sequenza la sceglie
+                        // il native (vedi StrictUnlockChallengeStore): il Dart
+                        // riceve solo indici di casella e ci disegna sopra i
+                        // simboli.
+                        //
+                        // Off-main come getStrictModeOptions: readMask decritta
+                        // le prefs e calcola un HMAC col Keystore, sul platform
+                        // thread sono gli stall già misurati nei black-box.
+                        val newMask = call.argument<Int>("mask") ?: 0
+                        Thread {
+                            try {
+                                val oldMask = StrictModeStore.readMask(activity)
+                                val outcome = StrictUnlockChallengeStore.start(oldMask, newMask)
+                                activity.runOnUiThread {
+                                    when (outcome) {
+                                        is StrictUnlockChallengeStore.StartOutcome.Issued -> {
+                                            val spec = outcome.spec
+                                            result.success(
+                                                mapOf(
+                                                    "gridSize" to spec.gridSize,
+                                                    "columns" to spec.columns,
+                                                    "sequenceSlots" to spec.sequenceSlots,
+                                                    "memorizeMs" to spec.memorizeMs,
+                                                ),
+                                            )
+                                        }
+                                        is StrictUnlockChallengeStore.StartOutcome.Cooldown ->
+                                            result.error(
+                                                "LOCKED_OUT",
+                                                "Too many failed attempts. Try again in ${outcome.remainingMs}ms.",
+                                                outcome.remainingMs.toInt(),
+                                            )
+                                        StrictUnlockChallengeStore.StartOutcome.NotADowngrade ->
+                                            result.error(
+                                                "NOT_A_DOWNGRADE",
+                                                "This mask change does not clear any active restriction.",
+                                                null,
+                                            )
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                activity.runOnUiThread {
+                                    result.error("STRICT_READ_ERROR", e.message, null)
+                                }
+                            }
+                        }.start()
+                    }
+                    "verifyStrictUnlockChallenge" -> {
+                        // La risposta è la lista degli indici di casella toccati,
+                        // in ordine. Successo ⇒ token monouso VINCOLATO alla mask
+                        // per cui la sfida era stata emessa.
+                        val submitted = call.argument<List<Int>>("answer") ?: emptyList()
+                        val authorizedMask = StrictUnlockChallengeStore.verify(submitted)
+                        if (authorizedMask == null) {
+                            Log.w(TAG, "strict unlock challenge failed or expired")
+                            result.success(null)
+                        } else {
+                            result.success(UnblockTokenStore.issue(boundMask = authorizedMask))
+                        }
+                    }
+                    "getStrictUnlockCooldownMs" -> {
+                        result.success(StrictUnlockChallengeStore.cooldownRemainingMs().toInt())
                     }
                     "generateBackdoorCode" -> {
                         // SEC-10: può essere null se il Keystore non è disponibile
@@ -251,6 +322,10 @@ object StrictModeMethodChannel {
                                 // logghiamo l'evento, e rimuoviamo device admin.
                                 StrictModeStore.saveMask(activity, 0)
                                 StrictModeEnforcer.invalidateCache()
+                                // Lo strict mode è appena uscito di scena: una
+                                // sfida in sospeso (o un cooldown) non ha più
+                                // niente da autorizzare.
+                                StrictUnlockChallengeStore.reset()
                                 BackdoorCodeGenerator.rotate(activity)
                                 try {
                                     val db = NativeDatabase.open(activity)

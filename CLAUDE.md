@@ -175,21 +175,52 @@ Two things to keep in mind when touching it:
    HandlerThread. Do not add a polling loop — see the battery audit constraints in
    `LockRunnable.checkAndBlock`.
 
-### The unlock challenge (friction, not security)
+### The unlock challenge
 
-Weakening a protection — turning a profile off, deleting it, un-blocking one of
-its apps or websites — can be gated behind a memorise-then-reproduce puzzle
-(`UnlockChallengeLevel`, off by default, set in Settings → *Sfida di sblocco*).
-It is **not** strict mode: no backdoor code, no native enforcement, no token. It
-is a speed bump, and the whole thing is Dart-only.
+Weakening a protection is gated behind a memorise-then-reproduce puzzle: a few
+symbols shown briefly, then found again in a grid seeded with near-identical
+decoys. It covers two very different surfaces, and **the difference is the
+thing to keep straight**:
 
-The invariant that gives it teeth: **only the weakening direction is gated.**
-Turning a profile *on*, adding apps, adding domains — all free. Every call site
-has to work out which direction it is going, and the tricky one is
+| | profiles | strict mode |
+|---|---|---|
+| entry point | `requireUnlockChallenge` | `requireStrictUnlockChallenge` |
+| source | `LocalUnlockChallengeSource` | `StrictModeUnlockChallengeSource` |
+| who picks the sequence | Dart | **Kotlin** (`StrictUnlockChallengeStore`) |
+| optional? | yes — `UnlockChallengeLevel`, off by default | **no** |
+| on success | just proceed | a one-shot `UnblockTokenStore` token |
+
+The strict-mode half exists in Kotlin for one reason: `setStrictModeOptions`
+refuses any mask downgrade without a native token (SEC-01), so a Dart-only gate
+would be — correctly — ignored. It **replaced** the backdoor code on the normal
+path; the code survives only as the emergency unblock.
+
+Two properties there are load-bearing and easy to erase by accident:
+
+- **The token is bound to the target mask.** A cheap puzzle earned to clear one
+  bit must not authorise a full exit. `UnblockTokenStore.consume` takes
+  `targetMask`; the backdoor path passes `null` and stays unbound.
+- **A failed verification burns the challenge.** That, not the cooldown, is what
+  makes guessing pointless — each guess needs a fresh `start` with a fresh
+  answer.
+
+Kotlin deliberately knows **nothing about glyphs**: it deals in grid-slot
+indices and Dart paints symbols onto them (`buildUnlockChallengeForSlots`).
+Keep it that way — a glyph table duplicated across the two runtimes is exactly
+the silent-drift trap the DB schema contract already costs us.
+
+Both halves share `UnlockChallengeDialog`, and in both the per-tap validation is
+local: Dart has to know the sequence anyway, it draws it. `confirm()` is the
+final seal and only the native source can say no.
+
+The invariant that gives it teeth on both halves: **only the weakening
+direction is gated.** Turning a profile *on*, adding apps, adding domains,
+raising the strict mask — all free, no challenge. Every call site has to work
+out which direction it is going, and the tricky one is
 `set_blocked_apps_screen.dart`: in a **blocklist** profile removing apps weakens
 it, in an **allowlist** profile *adding* them does (`_weakensProtection`).
 
-Three things that quietly defuse it:
+Three things that quietly defuse the puzzle itself:
 
 1. **The glyph map.** `kGlyphFamilies` (domain, symbolic ids) and `kGlyphIcons`
    (presentation, `IconData`) are two hand-written tables joined by string id.
@@ -204,9 +235,12 @@ Three things that quietly defuse it:
    replaying the old one — otherwise the third attempt is solved from muscle
    memory and the friction is gone.
 
-New gated action? Call `requireUnlockChallenge(context, ref, action: …)` and
-bail on `false`. For `Dismissible` use it as `confirmDismiss`, never
-`onDismissed` — by then the row is already gone from the list.
+New gated action on a profile? Call `requireUnlockChallenge(context, ref,
+action: …)` and bail on `false`. For `Dismissible` use it as `confirmDismiss`,
+never `onDismissed` — by then the row is already gone from the list. On the
+strict-mode side use `requireStrictUnlockChallenge`, spend the returned token
+immediately (60s TTL) and leave the UI state untouched if
+`setStrictModeOptions` still throws `UNAUTHORIZED`.
 
 ### Launcher vs. shell routing
 

@@ -194,45 +194,50 @@ class UnlockChallenge {
       progress >= 0 &&
       progress < sequence.length &&
       sequence[progress] == glyphId;
+
+  /// La sequenza espressa come **indici di casella**, nell'ordine di tocco.
+  ///
+  /// È la forma che capisce il lato Kotlin: per lo strict mode è il native a
+  /// scegliere quali caselle formano la sequenza, e la risposta gli torna
+  /// indietro così. Funziona perché in [grid] ogni glifo compare una volta
+  /// sola, quindi glifo e casella si corrispondono uno a uno.
+  List<int> get sequenceSlots => [
+    for (final glyphId in sequence) grid.indexOf(glyphId),
+  ];
 }
 
-/// Costruisce una sfida per [level].
+/// I glifi di una sfida, prima che vengano disposti in griglia: i bersagli in
+/// ordine e tutto il resto (sosia + riempitivi) alla rinfusa.
+typedef _GlyphSet = ({List<String> sequence, List<String> others});
+
+/// Sceglie i glifi di una sfida. È il pezzo che rende il puzzle un puzzle:
 ///
-/// Algoritmo:
-///  1. sceglie [UnlockChallengeLevel.sequenceLength] famiglie DIVERSE e ne
-///     estrae un glifo ciascuna → è la sequenza (bersagli distinguibili fra
-///     loro anche a memoria sfocata);
+///  1. sceglie [sequenceLength] famiglie DIVERSE e ne estrae un glifo ciascuna
+///     → i bersagli (distinguibili fra loro anche a memoria sfocata);
 ///  2. per ogni bersaglio aggiunge dei **sosia**: altre varianti della sua
 ///     stessa famiglia. È qui che nasce l'attrito;
-///  3. riempie le caselle avanzate pescando dalle famiglie non usate;
-///  4. mescola la griglia, così la disposizione spaziale non ha alcun rapporto
-///     con l'ordine mostrato.
+///  3. riempie le caselle avanzate pescando dalle famiglie non usate.
 ///
-/// [random] è iniettabile per rendere i test deterministici.
+/// Non decide *dove* finiscono in griglia: quello cambia fra il puzzle locale
+/// (posizioni a caso) e quello dello strict mode (posizioni scelte dal nativo).
 ///
-/// Lancia [StateError] se [level] è [UnlockChallengeLevel.off] (non c'è nulla
-/// da generare) o se [kGlyphFamilies] non contiene abbastanza glifi per
-/// riempire la griglia richiesta.
-UnlockChallenge generateUnlockChallenge(
-  UnlockChallengeLevel level, {
-  Random? random,
+/// Lancia [StateError] se [kGlyphFamilies] non basta per i parametri chiesti.
+_GlyphSet _pickGlyphs({
+  required int sequenceLength,
+  required int gridSize,
+  required Random rng,
 }) {
-  if (!level.isActive) {
-    throw StateError('generateUnlockChallenge chiamata con level=off');
-  }
-
-  final rng = random ?? Random.secure();
   final families = [...kGlyphFamilies]..shuffle(rng);
 
-  if (families.length < level.sequenceLength) {
+  if (families.length < sequenceLength) {
     throw StateError(
-      'Servono almeno ${level.sequenceLength} famiglie di glifi, '
+      'Servono almeno $sequenceLength famiglie di glifi, '
       'kGlyphFamilies ne ha ${families.length}',
     );
   }
 
   // 1. Bersagli: una famiglia ciascuno, variante a caso dentro la famiglia.
-  final targetFamilies = families.take(level.sequenceLength).toList();
+  final targetFamilies = families.take(sequenceLength).toList();
   final sequence = <String>[];
   // Varianti ancora libere per famiglia, da cui pescheremo i sosia al punto 2.
   final siblingPool = <String, List<String>>{};
@@ -246,46 +251,131 @@ UnlockChallenge generateUnlockChallenge(
   //    "tutti quelli della prima famiglia, poi la seconda". Così, quando le
   //    caselle non bastano per un sosia a testa, nessun bersaglio resta
   //    sistematicamente senza gemello — che sarebbe un indizio gratis.
-  final decoys = <String>[];
-  final slotsForDecoys = level.gridSize - level.sequenceLength;
+  final others = <String>[];
+  final slotsForOthers = gridSize - sequenceLength;
   var exhausted = false;
-  while (decoys.length < slotsForDecoys && !exhausted) {
+  while (others.length < slotsForOthers && !exhausted) {
     exhausted = true;
     for (final family in targetFamilies) {
-      if (decoys.length >= slotsForDecoys) break;
+      if (others.length >= slotsForOthers) break;
       final pool = siblingPool[family.id]!;
       if (pool.isEmpty) continue;
-      decoys.add(pool.removeAt(0));
+      others.add(pool.removeAt(0));
       exhausted = false;
     }
   }
 
   // 3. Riempimento: se restano caselle, pesca dalle famiglie NON usate come
   //    bersaglio (una variante ciascuna, poi un secondo giro, ecc.).
-  final fillerFamilies = families.skip(level.sequenceLength).toList();
-  final fillerPool = <String>[];
+  final fillerFamilies = families.skip(sequenceLength).toList();
   var depth = 0;
-  while (decoys.length + fillerPool.length < slotsForDecoys) {
-    final before = fillerPool.length;
+  while (others.length < slotsForOthers) {
+    final before = others.length;
     for (final family in fillerFamilies) {
-      if (decoys.length + fillerPool.length >= slotsForDecoys) break;
-      if (depth < family.variants.length) fillerPool.add(family.variants[depth]);
+      if (others.length >= slotsForOthers) break;
+      if (depth < family.variants.length) others.add(family.variants[depth]);
     }
-    if (fillerPool.length == before) {
+    if (others.length == before) {
       throw StateError(
-        'kGlyphFamilies non basta a riempire una griglia da '
-        '${level.gridSize} caselle per il livello ${level.name}',
+        'kGlyphFamilies non basta a riempire una griglia da $gridSize caselle '
+        'con $sequenceLength bersagli',
       );
     }
     depth++;
   }
 
-  final grid = [...sequence, ...decoys, ...fillerPool]..shuffle(rng);
+  return (sequence: sequence, others: others);
+}
+
+/// Costruisce una sfida per [level], con i bersagli sparsi a caso in griglia.
+///
+/// È la variante **locale**, usata dove il gate è puramente Dart (profili):
+/// generazione e verifica avvengono entrambe qui. Per lo strict mode serve
+/// invece [buildUnlockChallengeForSlots], perché lì la sequenza la decide il
+/// nativo.
+///
+/// [random] è iniettabile per rendere i test deterministici.
+///
+/// Lancia [StateError] se [level] è [UnlockChallengeLevel.off] (non c'è nulla
+/// da generare) o se [kGlyphFamilies] non contiene abbastanza glifi.
+UnlockChallenge generateUnlockChallenge(
+  UnlockChallengeLevel level, {
+  Random? random,
+}) {
+  if (!level.isActive) {
+    throw StateError('generateUnlockChallenge chiamata con level=off');
+  }
+
+  final rng = random ?? Random.secure();
+  final glyphs = _pickGlyphs(
+    sequenceLength: level.sequenceLength,
+    gridSize: level.gridSize,
+    rng: rng,
+  );
+  final grid = [...glyphs.sequence, ...glyphs.others]..shuffle(rng);
 
   return UnlockChallenge(
-    sequence: List.unmodifiable(sequence),
+    sequence: List.unmodifiable(glyphs.sequence),
     grid: List.unmodifiable(grid),
     columns: level.columns,
     memorizeDuration: level.memorizeDuration,
+  );
+}
+
+/// Costruisce una sfida i cui bersagli finiscono nelle caselle [sequenceSlots],
+/// in quell'ordine.
+///
+/// Serve allo strict mode: là la sequenza è scelta da Kotlin
+/// (`StrictUnlockChallengeStore`) e arriva come indici di casella, perché è il
+/// nativo a dover certificare la risposta — un gate scritto solo in Dart
+/// verrebbe rifiutato da `setStrictModeOptions`. Il Dart resta comunque
+/// padrone dell'estetica: quali simboli disegnare e quali sosia mettergli
+/// accanto è deciso qui, e il Kotlin non sa nulla di icone.
+///
+/// Lancia [ArgumentError] se gli slot sono fuori griglia, duplicati o troppi:
+/// una spec malformata deve rompersi subito e rumorosamente, non produrre un
+/// puzzle irrisolvibile davanti all'utente.
+UnlockChallenge buildUnlockChallengeForSlots({
+  required int gridSize,
+  required int columns,
+  required Duration memorizeDuration,
+  required List<int> sequenceSlots,
+  Random? random,
+}) {
+  if (sequenceSlots.isEmpty || sequenceSlots.length > gridSize) {
+    throw ArgumentError(
+      'sequenceSlots (${sequenceSlots.length}) non sta in una griglia da '
+      '$gridSize caselle',
+    );
+  }
+  if (sequenceSlots.toSet().length != sequenceSlots.length) {
+    throw ArgumentError('sequenceSlots contiene caselle ripetute: $sequenceSlots');
+  }
+  if (sequenceSlots.any((slot) => slot < 0 || slot >= gridSize)) {
+    throw ArgumentError('sequenceSlots fuori dalla griglia: $sequenceSlots');
+  }
+
+  final rng = random ?? Random.secure();
+  final glyphs = _pickGlyphs(
+    sequenceLength: sequenceSlots.length,
+    gridSize: gridSize,
+    rng: rng,
+  );
+
+  final grid = List<String?>.filled(gridSize, null);
+  for (var i = 0; i < sequenceSlots.length; i++) {
+    grid[sequenceSlots[i]] = glyphs.sequence[i];
+  }
+  final others = [...glyphs.others]..shuffle(rng);
+  var next = 0;
+  for (var slot = 0; slot < gridSize; slot++) {
+    grid[slot] ??= others[next++];
+  }
+
+  return UnlockChallenge(
+    sequence: List.unmodifiable(glyphs.sequence),
+    grid: List.unmodifiable(grid.cast<String>()),
+    columns: columns,
+    memorizeDuration: memorizeDuration,
   );
 }

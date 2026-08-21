@@ -164,6 +164,21 @@ void main() {
       expect(c.isCorrectNext(c.length, c.sequence[0]), isFalse);
     });
 
+    test('sequenceSlots ritrova le caselle dei bersagli', () {
+      for (var seed = 0; seed < 40; seed++) {
+        final c = generateUnlockChallenge(
+          UnlockChallengeLevel.standard,
+          random: Random(seed),
+        );
+        final slots = c.sequenceSlots;
+        // Nessun -1: ogni bersaglio è in griglia (indexOf lo trova).
+        expect(slots, everyElement(greaterThanOrEqualTo(0)), reason: '$seed');
+        for (var i = 0; i < slots.length; i++) {
+          expect(c.grid[slots[i]], c.sequence[i], reason: 'seed $seed, pos $i');
+        }
+      }
+    });
+
     test('due sfide di fila non sono la stessa (niente memoria muscolare)', () {
       // Con Random.secure() reale: 40 generazioni devono dare almeno una
       // manciata di sequenze distinte. Un generatore degenere (sempre la
@@ -175,6 +190,73 @@ void main() {
         );
       }
       expect(sequences.length, greaterThan(10));
+    });
+  });
+
+  /// Variante usata dallo strict mode: le caselle della sequenza le sceglie
+  /// Kotlin, i simboli li sceglie il Dart. Se questa piazzatura sbagliasse,
+  /// l'utente toccherebbe i simboli giusti e il nativo riceverebbe caselle
+  /// sbagliate — puzzle irrisolvibile, e nessuno capirebbe perché.
+  group('buildUnlockChallengeForSlots', () {
+    const gridSize = 12;
+    const slots = [7, 2, 10, 0];
+
+    UnlockChallenge build({int seed = 0, List<int> sequenceSlots = slots}) =>
+        buildUnlockChallengeForSlots(
+          gridSize: gridSize,
+          columns: 3,
+          memorizeDuration: const Duration(seconds: 4),
+          sequenceSlots: sequenceSlots,
+          random: Random(seed),
+        );
+
+    test('mette i bersagli esattamente nelle caselle richieste', () {
+      for (var seed = 0; seed < 60; seed++) {
+        final c = build(seed: seed);
+        expect(c.sequenceSlots, slots, reason: '$seed');
+        for (var i = 0; i < slots.length; i++) {
+          expect(c.grid[slots[i]], c.sequence[i], reason: 'seed $seed, pos $i');
+        }
+      }
+    });
+
+    test('riempie tutta la griglia senza duplicati', () {
+      for (var seed = 0; seed < 60; seed++) {
+        final c = build(seed: seed);
+        expect(c.grid, hasLength(gridSize), reason: '$seed');
+        expect(c.grid.toSet(), hasLength(gridSize), reason: '$seed');
+      }
+    });
+
+    test('conserva le proprietà che rendono il puzzle difficile', () {
+      for (var seed = 0; seed < 60; seed++) {
+        final c = build(seed: seed);
+        final families = c.sequence.map(familyOf).toList();
+        expect(families.toSet(), hasLength(families.length), reason: '$seed');
+        for (final target in c.sequence) {
+          final siblings = c.grid.where(
+            (g) => g != target && familyOf(g) == familyOf(target),
+          );
+          expect(siblings, isNotEmpty, reason: 'seed $seed: "$target" senza sosia');
+        }
+      }
+    });
+
+    test('rifiuta spec malformate invece di produrre un puzzle rotto', () {
+      // Casella fuori griglia.
+      expect(
+        () => build(sequenceSlots: const [0, 1, gridSize]),
+        throwsArgumentError,
+      );
+      expect(() => build(sequenceSlots: const [-1, 1]), throwsArgumentError);
+      // Casella ripetuta: due bersagli nella stessa posizione.
+      expect(() => build(sequenceSlots: const [3, 3]), throwsArgumentError);
+      // Nessun bersaglio, o più bersagli che caselle.
+      expect(() => build(sequenceSlots: const []), throwsArgumentError);
+      expect(
+        () => build(sequenceSlots: List.generate(gridSize + 1, (i) => i)),
+        throwsArgumentError,
+      );
     });
   });
 }

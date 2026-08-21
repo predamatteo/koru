@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koru/domain/entities/unlock_challenge.dart';
 import 'package:koru/presentation/widgets/unlock_challenge_dialog.dart';
+import 'package:koru/presentation/widgets/unlock_challenge_source.dart';
 
 /// Copre il giro completo del gate: intro → memorizza → ricostruisci, sia
 /// quando l'utente ce la fa sia quando sbaglia o rinuncia.
@@ -37,7 +38,7 @@ void main() {
                     context: context,
                     barrierDismissible: false,
                     builder: (_) => UnlockChallengeDialog(
-                      level: level,
+                      source: LocalUnlockChallengeSource(level),
                       action: 'spegnere «Test»',
                     ),
                   );
@@ -71,6 +72,9 @@ void main() {
     UnlockChallengeLevel level,
   ) async {
     await tester.tap(find.text('Mostrami la sequenza'));
+    // Due pump: la sorgente è asincrona (per lo strict mode c'è un giro sul
+    // channel), quindi si passa da una fase di attesa prima di memorizzare.
+    await tester.pump();
     await tester.pump();
     final sequence = readSequence(tester);
     expect(sequence, hasLength(level.sequenceLength));
@@ -137,6 +141,7 @@ void main() {
     // da 800ms lascerebbe la Future.delayed ancora in volo).
     await tester.pump(const Duration(milliseconds: 500)); // shake finito
     await tester.pump(const Duration(milliseconds: 300)); // pausa finita
+    await tester.pump(); // richiesta della sfida nuova
     await tester.pump(); // rebuild in fase di memorizzazione
 
     // Siamo tornati a memorizzare, con il contatore dei tentativi visibile.

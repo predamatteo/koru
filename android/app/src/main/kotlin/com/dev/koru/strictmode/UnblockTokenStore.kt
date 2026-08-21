@@ -50,24 +50,45 @@ object UnblockTokenStore {
 
     private var currentToken: String? = null
     private var issuedElapsedMs: Long = 0L
+    private var boundMask: Int? = null
 
     /// Emette un nuovo token monouso e ne ritorna il valore. Invalida qualsiasi
     /// token precedente. [nowElapsedMs] iniettabile per i test (default: clock
     /// monotonico reale).
-    fun issue(nowElapsedMs: Long = SystemClock.elapsedRealtime()): String {
+    ///
+    /// [boundMask] — se non null, il token autorizza SOLO il passaggio a quella
+    /// esatta mask: [consume] lo rifiuta se il chiamante ne chiede un'altra.
+    /// Serve da quando il downgrade si può autorizzare risolvendo un puzzle
+    /// ([StrictUnlockChallengeStore]) e non solo col backdoor code: senza
+    /// binding, il puzzle "leggero" concesso per spegnere UN bit produrrebbe un
+    /// token buono anche per azzerare l'intera mask, e la difficoltà calibrata
+    /// sulla gravità dell'azione sarebbe aggirabile con un tap.
+    ///
+    /// Il path del backdoor code passa `null` (token generico): quel codice
+    /// autorizza già l'uscita completa, non ha senso restringerlo.
+    fun issue(
+        nowElapsedMs: Long = SystemClock.elapsedRealtime(),
+        boundMask: Int? = null,
+    ): String {
         synchronized(lock) {
             val token = randomToken()
             currentToken = token
             issuedElapsedMs = nowElapsedMs
+            this.boundMask = boundMask
             return token
         }
     }
 
-    /// Consuma [token] se è quello corrente e non è scaduto. Atomico: in caso di
-    /// match valido cancella il token (single-use) e ritorna true; altrimenti
-    /// (token nullo/vuoto, mismatch, scaduto) ritorna false e — se scaduto —
-    /// pulisce lo slot. [nowElapsedMs] iniettabile per i test.
-    fun consume(token: String?, nowElapsedMs: Long = SystemClock.elapsedRealtime()): Boolean {
+    /// Consuma [token] se è quello corrente, non è scaduto e — se il token era
+    /// vincolato — [targetMask] è la mask per cui era stato emesso. Atomico: in
+    /// caso di match valido cancella il token (single-use) e ritorna true;
+    /// altrimenti (token nullo/vuoto, mismatch, scaduto, mask sbagliata) ritorna
+    /// false e — se scaduto — pulisce lo slot. [nowElapsedMs] iniettabile per i test.
+    fun consume(
+        token: String?,
+        nowElapsedMs: Long = SystemClock.elapsedRealtime(),
+        targetMask: Int? = null,
+    ): Boolean {
         synchronized(lock) {
             val expected = currentToken
             if (expected == null || token.isNullOrEmpty()) return false
@@ -84,6 +105,16 @@ object UnblockTokenStore {
 
             if (!constantTimeEquals(expected, token)) return false
 
+            // Binding sulla mask: un token vincolato vale solo per quella.
+            // Il mismatch BRUCIA comunque il token (clearLocked): un client che
+            // prova a riusarlo per una mask diversa non può poi ripiegare su
+            // quella giusta — deve rifare il puzzle.
+            val bound = boundMask
+            if (bound != null && bound != targetMask) {
+                clearLocked()
+                return false
+            }
+
             // Match valido entro TTL → consuma (single-use).
             clearLocked()
             return true
@@ -99,6 +130,7 @@ object UnblockTokenStore {
     private fun clearLocked() {
         currentToken = null
         issuedElapsedMs = 0L
+        boundMask = null
     }
 
     private fun randomToken(): String {
