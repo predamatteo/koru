@@ -26,6 +26,11 @@ class HiveKeys {
   static const String lastMoodCheckInDay = 'LAST_MOOD_CHECK_IN_DAY';
   static const String firstInstallTimestamp = 'FIRST_INSTALL_TIMESTAMP';
 
+  /// Livello della sfida di sblocco richiesta per DISATTIVARE una protezione
+  /// (`UnlockChallengeLevel.storageValue`: `off`/`gentle`/`standard`/
+  /// `stubborn`). Assente o non riconosciuto ⇒ `off`.
+  static const String unlockChallengeLevel = 'UNLOCK_CHALLENGE_LEVEL';
+
   // ─── onboarding box keys ───────────────────────────────────────────────────
   static const String isOnboardingPassed = 'IS_ONBOARDING_PASSED';
   static const String isPermissionsPassed = 'IS_PERMISSIONS_PASSED';

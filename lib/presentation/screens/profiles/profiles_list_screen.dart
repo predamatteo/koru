@@ -7,6 +7,7 @@ import '../../../core/constants/layout.dart';
 import '../../../data/models/profile_model.dart';
 import '../../providers/profile_providers.dart';
 import '../../widgets/koru_pull_to_refresh.dart';
+import '../../widgets/unlock_challenge_dialog.dart';
 
 class ProfilesListScreen extends ConsumerWidget {
   const ProfilesListScreen({super.key});
@@ -69,6 +70,25 @@ class _ProfileCard extends ConsumerWidget {
   const _ProfileCard({required this.profile});
   final ProfileModel profile;
 
+  /// Accendere un profilo è immediato; **spegnerlo** passa dalla sfida di
+  /// sblocco (se configurata). L'asimmetria è voluta: l'attrito va messo solo
+  /// nella direzione che indebolisce la protezione.
+  Future<void> _onToggle(
+    BuildContext context,
+    WidgetRef ref,
+    bool enabled,
+  ) async {
+    if (!enabled && profile.isEnabled) {
+      final granted = await requireUnlockChallenge(
+        context,
+        ref,
+        action: 'spegnere «${profile.displayTitle}»',
+      );
+      if (!granted) return;
+    }
+    await ref.read(profileRepositoryProvider).toggleProfile(profile.id, enabled);
+  }
+
   String _buildSubtitle() {
     final parts = <String>[profile.dayFlagsLabel];
     if (profile.hasTimeCondition && profile.intervals.isNotEmpty) {
@@ -92,7 +112,6 @@ class _ProfileCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final repo = ref.watch(profileRepositoryProvider);
     final appsCount = profile.apps.length;
     return Container(
       decoration: BoxDecoration(
@@ -116,7 +135,7 @@ class _ProfileCard extends ConsumerWidget {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        profile.title.isEmpty ? 'Untitled' : profile.title,
+                        profile.displayTitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -128,7 +147,7 @@ class _ProfileCard extends ConsumerWidget {
                     ),
                     Switch(
                       value: profile.isEnabled,
-                      onChanged: (v) => repo.toggleProfile(profile.id, v),
+                      onChanged: (v) => _onToggle(context, ref, v),
                     ),
                   ],
                 ),

@@ -46,6 +46,54 @@ class BackdoorLocked extends BackdoorOutcome {
   final int remainingMs;
 }
 
+/// Specifica di una sfida a memoria emessa dal nativo per autorizzare un
+/// downgrade della strict-mode mask.
+///
+/// Contiene solo **indici di casella**: quali simboli disegnarci sopra lo
+/// decide il Dart ([buildUnlockChallengeForSlots]). Il Kotlin non ha, e non
+/// deve avere, una tabella di glifi — così non esiste un contratto di simboli
+/// cross-runtime da tenere allineato a mano.
+class StrictUnlockSpec {
+  const StrictUnlockSpec({
+    required this.gridSize,
+    required this.columns,
+    required this.sequenceSlots,
+    required this.memorizeDuration,
+  });
+
+  final int gridSize;
+  final int columns;
+
+  /// Caselle da toccare, **in ordine**. Distinte e dentro `0 ..< gridSize`.
+  final List<int> sequenceSlots;
+
+  final Duration memorizeDuration;
+}
+
+/// Esito della richiesta di una sfida di sblocco per lo strict mode.
+sealed class StrictUnlockStart {
+  const StrictUnlockStart();
+}
+
+class StrictUnlockIssued extends StrictUnlockStart {
+  const StrictUnlockIssued(this.spec);
+  final StrictUnlockSpec spec;
+}
+
+/// Troppe verifiche fallite di fila: il nativo impone una pausa.
+class StrictUnlockCooldown extends StrictUnlockStart {
+  const StrictUnlockCooldown(this.remainingMs);
+  final int remainingMs;
+}
+
+/// Il nativo non ha emesso nessuna sfida e non è un cooldown: mask che non
+/// spegne nulla, oppure errore di lettura della mask. In entrambi i casi
+/// l'unica risposta corretta è non procedere col downgrade.
+class StrictUnlockUnavailable extends StrictUnlockStart {
+  const StrictUnlockUnavailable(this.reason);
+  final String reason;
+}
+
 /// Strict Mode method channel.
 ///
 /// Contratto Kotlin (`com.koru/strict_mode`):
@@ -64,6 +112,12 @@ class BackdoorLocked extends BackdoorOutcome {
 /// - `getRemainingAttempts` → int (tentativi rimasti prima del prossimo lockout).
 /// - `getLockoutRemainingMs` → int (0 se non in lockout).
 /// - `isStrictModeActive` → bool.
+/// - `startStrictUnlockChallenge {mask: int}` →
+///   `{gridSize, columns, sequenceSlots, memorizeMs}`, oppure
+///   `PlatformException(LOCKED_OUT|NOT_A_DOWNGRADE|STRICT_READ_ERROR)`.
+/// - `verifyStrictUnlockChallenge {answer: List<int>}` → token monouso
+///   vincolato alla mask, oppure `null` se sbagliata/scaduta.
+/// - `getStrictUnlockCooldownMs` → int.
 class StrictModeChannel {
   StrictModeChannel();
 
@@ -164,6 +218,60 @@ class StrictModeChannel {
       }
     }
   }
+
+  /// Chiede al nativo una sfida a memoria che autorizzi il passaggio a [mask].
+  ///
+  /// È il percorso NORMALE per abbassare la mask: il backdoor code resta solo
+  /// come rete di sicurezza in [performEmergencyUnblock]. La sequenza la sceglie
+  /// il Kotlin — se la scegliesse il Dart, il gate sarebbe aggirabile e
+  /// `setStrictModeOptions` lo rifiuterebbe comunque per mancanza di token.
+  Future<StrictUnlockStart> startStrictUnlockChallenge(int mask) async {
+    try {
+      final spec = await _channel.invokeMapMethod<String, Object?>(
+        'startStrictUnlockChallenge',
+        {'mask': mask},
+      );
+      if (spec == null) {
+        return const StrictUnlockUnavailable('nessuna sfida emessa');
+      }
+      return StrictUnlockIssued(
+        StrictUnlockSpec(
+          gridSize: spec['gridSize']! as int,
+          columns: spec['columns']! as int,
+          sequenceSlots: (spec['sequenceSlots']! as List).cast<int>(),
+          memorizeDuration: Duration(milliseconds: spec['memorizeMs']! as int),
+        ),
+      );
+    } on PlatformException catch (e) {
+      if (e.code == 'LOCKED_OUT') {
+        return StrictUnlockCooldown((e.details is int) ? e.details as int : 0);
+      }
+      return StrictUnlockUnavailable(e.code);
+    }
+  }
+
+  /// Sottopone la risposta ([answerSlots]: le caselle toccate, in ordine).
+  ///
+  /// Ritorna il token monouso da passare a [setStrictModeOptions], oppure
+  /// `null` se la risposta è sbagliata o la sfida è scaduta. Il token è
+  /// **vincolato** alla mask per cui la sfida era stata chiesta: una sfida
+  /// facile ottenuta per spegnere un bit non autorizza l'uscita completa.
+  ///
+  /// Ogni verifica, giusta o sbagliata, brucia la sfida lato nativo: dopo un
+  /// `null` bisogna ripartire da [startStrictUnlockChallenge].
+  Future<String?> verifyStrictUnlockChallenge(List<int> answerSlots) async {
+    try {
+      return await _channel.invokeMethod<String>('verifyStrictUnlockChallenge', {
+        'answer': answerSlots,
+      });
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  /// Ms di pausa imposta dal nativo dopo troppe verifiche fallite; 0 se libero.
+  Future<int> getStrictUnlockCooldownMs() async =>
+      (await _channel.invokeMethod<int>('getStrictUnlockCooldownMs')) ?? 0;
 
   /// Tentativi rimasti prima del prossimo step di lockout. UI lo mostra
   /// come "X tentativi rimanenti" sotto al campo input.
