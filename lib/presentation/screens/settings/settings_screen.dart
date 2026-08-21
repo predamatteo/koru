@@ -72,6 +72,11 @@ class SettingsScreen extends ConsumerWidget {
                   onTap: () => context.push('/settings/backdoor'),
                 ),
                 _Tile(
+                  icon: Icons.psychology_outlined,
+                  title: 'Sfida di sblocco',
+                  onTap: () => context.push('/settings/unlock-challenge'),
+                ),
+                _Tile(
                   icon: Icons.hourglass_bottom_outlined,
                   title: 'App daily limits',
                   onTap: () => context.push('/settings/app-limits'),

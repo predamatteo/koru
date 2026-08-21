@@ -175,6 +175,39 @@ Two things to keep in mind when touching it:
    HandlerThread. Do not add a polling loop — see the battery audit constraints in
    `LockRunnable.checkAndBlock`.
 
+### The unlock challenge (friction, not security)
+
+Weakening a protection — turning a profile off, deleting it, un-blocking one of
+its apps or websites — can be gated behind a memorise-then-reproduce puzzle
+(`UnlockChallengeLevel`, off by default, set in Settings → *Sfida di sblocco*).
+It is **not** strict mode: no backdoor code, no native enforcement, no token. It
+is a speed bump, and the whole thing is Dart-only.
+
+The invariant that gives it teeth: **only the weakening direction is gated.**
+Turning a profile *on*, adding apps, adding domains — all free. Every call site
+has to work out which direction it is going, and the tricky one is
+`set_blocked_apps_screen.dart`: in a **blocklist** profile removing apps weakens
+it, in an **allowlist** profile *adding* them does (`_weakensProtection`).
+
+Three things that quietly defuse it:
+
+1. **The glyph map.** `kGlyphFamilies` (domain, symbolic ids) and `kGlyphIcons`
+   (presentation, `IconData`) are two hand-written tables joined by string id.
+   Adding a variant to one and forgetting the other yields a `?` tile on a real
+   device and nothing at compile time — `unlock_challenge_glyphs_test.dart` is
+   the guard.
+2. **Family similarity.** The difficulty comes entirely from decoys being
+   *near-identical* to their target (same silhouette, different rotation/fill).
+   Swap one icon for a visually distinct one and the puzzle silently becomes
+   trivial; no test can catch that, only looking at it can.
+3. **Regeneration on failure.** A wrong tap builds a *new* challenge rather than
+   replaying the old one — otherwise the third attempt is solved from muscle
+   memory and the friction is gone.
+
+New gated action? Call `requireUnlockChallenge(context, ref, action: …)` and
+bail on `false`. For `Dismissible` use it as `confirmDismiss`, never
+`onDismissed` — by then the row is already gone from the list.
+
 ### Launcher vs. shell routing
 
 The launcher UI (clock + favorites + drawer, `/launcher`) lives **outside** the

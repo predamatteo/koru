@@ -3,12 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/koru_colors.dart';
+import '../../../../core/constants/profile_types.dart';
 import '../../../../platform/blocking_channel.dart';
 import '../../../providers/app_list_provider.dart';
 import '../../../providers/profile_providers.dart';
 import '../../../providers/screen_time_provider.dart';
 import '../../../widgets/app_icon.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
+import '../../../widgets/unlock_challenge_dialog.dart';
 
 /// Seleziona le app da bloccare (blocklist) o consentire (allowlist) per un profilo.
 class SetBlockedAppsScreen extends ConsumerStatefulWidget {
@@ -26,6 +28,13 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
   bool _loaded = false;
   final _searchController = TextEditingController();
   String _query = '';
+
+  /// Selezione com'era all'apertura, il profilo era acceso, e in che modalità:
+  /// insieme dicono se il salvataggio sta INDEBOLENDO la protezione e quindi se
+  /// deve passare dalla sfida di sblocco. Vedi [_weakensProtection].
+  Set<String> _initialSelection = const <String>{};
+  bool _profileEnabled = false;
+  int _blockingMode = BlockingMode.blocklist;
 
   /// Le app "più usate della settimana" da mostrare in cima alla lista, in
   /// ordine di utilizzo desc. `null` finché il ranking non è disponibile
@@ -75,10 +84,36 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
               .map((a) => a.packageName)
               .toSet() ??
           <String>{};
+      _initialSelection = {..._selected};
+      _profileEnabled = profile?.isEnabled ?? false;
+      _blockingMode = profile?.blockingMode ?? BlockingMode.blocklist;
     });
   }
 
+  /// True se salvare questa selezione lascia l'utente **meno** protetto di
+  /// com'era entrando.
+  ///
+  /// Il verso dipende dalla modalità del profilo, ed è facile sbagliarlo:
+  /// in *blocklist* le app selezionate sono quelle bloccate, quindi togliere
+  /// app allenta; in *allowlist* sono quelle permesse, quindi è **aggiungerle**
+  /// che allenta. Su un profilo spento non c'è niente da allentare.
+  bool _weakensProtection() {
+    if (!_profileEnabled) return false;
+    return _blockingMode == BlockingMode.allowlist
+        ? _selected.difference(_initialSelection).isNotEmpty
+        : _initialSelection.difference(_selected).isNotEmpty;
+  }
+
   Future<void> _save() async {
+    if (_weakensProtection()) {
+      final granted = await requireUnlockChallenge(
+        context,
+        ref,
+        action: 'togliere protezione a un profilo acceso',
+      );
+      if (!granted) return;
+      if (!mounted) return;
+    }
     await ref
         .read(profileRepositoryProvider)
         .setAppsForProfile(widget.profileId, _selected.toList(growable: false));
