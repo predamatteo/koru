@@ -25,11 +25,24 @@ class ReelsScrolledCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Spenta la feature, sparisce la card: chi non vuole essere contato non
+    // deve trovarsi un promemoria della cosa in cima alla dashboard.
+    // `?? true` come l'interruttore in Impostazioni — il default nativo è
+    // acceso, e far lampeggiare la card ad ogni resume sarebbe peggio.
+    final enabled = ref.watch(reelCounterEnabledProvider).valueOrNull ?? true;
+    if (!enabled) return const SizedBox.shrink();
+
     // `valueOrNull` e non uno spinner: la card compare quando il dato c'è,
     // senza far saltare il layout della dashboard a ogni resume (stessa
     // postura degli altri contatori della home).
+    //
+    // A zero la card RESTA. Nasconderla era la scelta di partenza ("uno 0
+    // fisso non dice niente"), ma rende la feature indistinguibile da una
+    // rotta: il primo giorno non vedi nulla e non hai modo di sapere se stia
+    // contando. E in un'app che misura quanto scrolli, "oggi nessuno" non è
+    // un vuoto — è il risultato migliore possibile.
     final counts = ref.watch(reelCountsTodayProvider).valueOrNull;
-    if (counts == null || counts.isEmpty) return const SizedBox.shrink();
+    if (counts == null) return const SizedBox.shrink();
 
     final average = ref.watch(reelWeeklyAverageProvider);
     final sources = ReelSource.values
@@ -93,7 +106,20 @@ class ReelsScrolledCard extends ConsumerWidget {
               ),
             ],
           ),
-          if (average != null) ...[
+          // A zero il confronto con la media cede il posto a una riga esplicita:
+          // senza, la card mostrerebbe un "0" nudo e sembrerebbe in caricamento.
+          if (counts.total == 0) ...[
+            const SizedBox(height: 6),
+            Text(
+              average != null && average > 0
+                  ? 'None today — your average is $average'
+                  : 'None today',
+              style: const TextStyle(
+                fontSize: 13,
+                color: KoruColors.textSecondary,
+              ),
+            ),
+          ] else if (average != null) ...[
             const SizedBox(height: 6),
             Text(
               _comparisonLabel(counts.total, average),

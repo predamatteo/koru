@@ -80,6 +80,7 @@ object UsageWidgetModel {
         val totalMs: Long,
         val rows: List<Row>,
         val reelsToday: Int = 0,
+        val reelCounterEnabled: Boolean = true,
     )
 
     // ── Altezze (dp) usate per decidere quante righe entrano ────────────────
@@ -261,10 +262,21 @@ object UsageWidgetModel {
         return if (used.toDouble() / limitMinutes > 0.8) BarState.NEAR else BarState.UNDER
     }
 
-    /// La pill dei reel si mostra solo se c'è qualcosa da dire. Uno "0" fisso
-    /// accanto al tempo d'uso non è un dato, è arredamento — e su un utente che
-    /// non apre mai Reels resterebbe lì per sempre.
-    fun showsReelPill(reelsToday: Int): Boolean = reelsToday > 0
+    /// La pill dei reel si mostra quando la feature è accesa, **anche a zero**.
+    ///
+    /// Storia: prima si nascondeva a 0 per non lasciare un numero morto accanto
+    /// al tempo d'uso. Nella prova on-device è emerso il difetto di quella
+    /// scelta — al primo giorno il widget non mostra nulla e la feature sembra
+    /// rotta, senza modo di distinguere "non sto contando" da "non hai
+    /// scrollato". E in un widget che misura quanto stai al telefono, uno zero
+    /// è il numero migliore che ci possa stare.
+    ///
+    /// Resta nascosta se [reelCounterEnabled] è falso: chi ha spento la feature
+    /// non deve trovarsi una pill perennemente a "0" — quello sì sarebbe un
+    /// numero morto. Conteggi negativi (stato corrotto) sono trattati come
+    /// "niente da dire" invece che mostrati.
+    fun showsReelPill(reelsToday: Int, reelCounterEnabled: Boolean): Boolean =
+        reelCounterEnabled && reelsToday >= 0
 
     /// Testo della pill dei reel.
     ///

@@ -126,16 +126,9 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
               'mode dall\'interruttore qui sopra.',
             ),
             actions: [
-              TextButton(
+              FilledButton(
                 onPressed: () => Navigator.of(ctx).pop(),
                 child: const Text('OK'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                  context.push('/settings/backdoor');
-                },
-                child: const Text('Apri backdoor'),
               ),
             ],
           ),
@@ -149,15 +142,12 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
     if (!_loaded) _hydrate();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Strict mode'),
-        actions: [
-          TextButton(
-            onPressed: () => context.push('/settings/backdoor'),
-            child: const Text('Backdoor'),
-          ),
-        ],
-      ),
+      // Niente scorciatoia al backdoor code qui: da quando il downgrade passa
+      // dalla sfida a memoria, un pulsante "Backdoor" in cima alla schermata
+      // si legge come "la via d'uscita normale, ma senza puzzle" — cioè
+      // esattamente il contrario di quello che è. Lo sblocco d'emergenza vive
+      // in fondo alle Impostazioni.
+      appBar: AppBar(title: const Text('Strict mode')),
       body: KoruPullToRefresh(
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),

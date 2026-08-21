@@ -11,6 +11,7 @@ import com.dev.koru.channels.PermissionMethodChannel
 import com.dev.koru.service.AppUsageLimitsStore
 import com.dev.koru.service.KoruAccessibilityService
 import com.dev.koru.service.ReelCountStore
+import com.dev.koru.service.UiSettingsStore
 import com.dev.koru.service.UsageCounter
 import java.util.Calendar
 
@@ -75,6 +76,11 @@ internal object UsageWidgetDataSource {
             // qui: aggiungerebbe una scrittura al percorso di rendering, e il
             // widget gira nello stesso processo che tiene quel buffer.
             reelsToday = ReelCountStore.todayTotal(context),
+            // Serve a distinguere "hai scrollato zero reel" da "non sto
+            // contando": nel primo caso la pill mostra 0, nel secondo sparisce.
+            // Lettura di un file di poche decine di byte, già cache-ata come il
+            // resto — vedi la nota sopra sul non fare flush qui.
+            reelCounterEnabled = UiSettingsStore.isReelCounterEnabled(context),
         )
     }
 

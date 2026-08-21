@@ -69,15 +69,39 @@ void main() {
       }
     });
 
-    test('fromStorage degrada a off su valori ignoti o assenti', () {
-      expect(UnlockChallengeLevel.fromStorage(null), UnlockChallengeLevel.off);
-      expect(UnlockChallengeLevel.fromStorage(''), UnlockChallengeLevel.off);
+    test('fromStorage degrada al fallback su valori ignoti o assenti', () {
+      // Mai configurato ⇒ l'attrito c'è: chi installa Koru lo installa per
+      // avere dei limiti, non per doverli accendere a mano.
+      expect(
+        UnlockChallengeLevel.fromStorage(null),
+        UnlockChallengeLevel.fallback,
+      );
+      expect(
+        UnlockChallengeLevel.fromStorage(''),
+        UnlockChallengeLevel.fallback,
+      );
       expect(
         UnlockChallengeLevel.fromStorage('impossibile'),
-        UnlockChallengeLevel.off,
+        UnlockChallengeLevel.fallback,
       );
       // Un vecchio salvataggio numerico non deve diventare un livello a caso.
-      expect(UnlockChallengeLevel.fromStorage('2'), UnlockChallengeLevel.off);
+      expect(
+        UnlockChallengeLevel.fromStorage('2'),
+        UnlockChallengeLevel.fallback,
+      );
+    });
+
+    test('il fallback è un livello attivo, non off', () {
+      expect(UnlockChallengeLevel.fallback.isActive, isTrue);
+    });
+
+    test('"off" scelto esplicitamente viene rispettato', () {
+      // Il degrado va SOLO verso la direzione protettiva: chi ha spento
+      // l'attrito di proposito non deve ritrovarselo acceso al riavvio.
+      expect(
+        UnlockChallengeLevel.fromStorage(UnlockChallengeLevel.off.storageValue),
+        UnlockChallengeLevel.off,
+      );
     });
   });
 

@@ -78,7 +78,7 @@ internal object UsageWidgetRenderer {
             R.id.widget_header_total,
             UsageWidgetModel.formatDurationMs(snapshot.totalMs),
         )
-        renderReelPill(context, views, snapshot.reelsToday)
+        renderReelPill(context, views, snapshot.reelsToday, snapshot.reelCounterEnabled)
         views.setOnClickPendingIntent(android.R.id.background, openStatsIntent(context))
 
         val maxRows = UsageWidgetModel.rowsFittingHeight(
@@ -119,8 +119,13 @@ internal object UsageWidgetRenderer {
      * mezzanotte — lo stesso motivo per cui `widget_empty` viene sempre
      * impostata dal renderer invece di affidarsi al default del layout.
      */
-    private fun renderReelPill(context: Context, views: RemoteViews, reelsToday: Int) {
-        if (!UsageWidgetModel.showsReelPill(reelsToday)) {
+    private fun renderReelPill(
+        context: Context,
+        views: RemoteViews,
+        reelsToday: Int,
+        reelCounterEnabled: Boolean,
+    ) {
+        if (!UsageWidgetModel.showsReelPill(reelsToday, reelCounterEnabled)) {
             views.setViewVisibility(R.id.widget_header_reels, View.GONE)
             return
         }

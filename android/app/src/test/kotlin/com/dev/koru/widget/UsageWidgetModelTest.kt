@@ -338,15 +338,27 @@ class UsageWidgetModelTest {
     // -------- Pill del contatore reel --------
 
     @Test
-    fun reelPill_isHiddenAtZero() {
-        // Uno "0" perenne accanto al tempo d'uso non è un dato.
-        assertThat(UsageWidgetModel.showsReelPill(0)).isFalse()
-        assertThat(UsageWidgetModel.showsReelPill(1)).isTrue()
+    fun reelPill_isVisibleAtZeroWhenTheCounterIsOn() {
+        // Cambio di rotta dopo la prova on-device: nascondere la pill a zero
+        // rendeva la feature indistinguibile da una rotta il primo giorno.
+        // Uno zero, in un widget che misura quanto stai al telefono, è il
+        // numero migliore che ci possa stare.
+        assertThat(UsageWidgetModel.showsReelPill(0, reelCounterEnabled = true)).isTrue()
+        assertThat(UsageWidgetModel.showsReelPill(1, reelCounterEnabled = true)).isTrue()
+    }
+
+    @Test
+    fun reelPill_isHiddenWhenTheCounterIsOff() {
+        // QUESTO è il caso in cui uno "0" perenne sarebbe arredamento: chi ha
+        // spento la feature non deve portarsi dietro la pill.
+        assertThat(UsageWidgetModel.showsReelPill(0, reelCounterEnabled = false)).isFalse()
+        assertThat(UsageWidgetModel.showsReelPill(42, reelCounterEnabled = false)).isFalse()
     }
 
     @Test
     fun reelPill_isHiddenOnNegativeCounts() {
-        assertThat(UsageWidgetModel.showsReelPill(-5)).isFalse()
+        // Stato corrotto: meglio niente che un numero senza senso.
+        assertThat(UsageWidgetModel.showsReelPill(-5, reelCounterEnabled = true)).isFalse()
     }
 
     @Test
@@ -365,12 +377,15 @@ class UsageWidgetModelTest {
     }
 
     @Test
-    fun snapshotDefaultsToNoReels() {
-        // Il campo è opzionale: uno snapshot costruito senza contatore (o con
-        // la feature spenta) non deve far comparire la pill.
+    fun snapshotDefaultsToZeroReelsWithTheCounterOn() {
+        // I default dello snapshot descrivono il caso NORMALE (contatore acceso,
+        // nessuno scroll ancora): la pill si vede e dice 0.
         val snapshot = UsageWidgetModel.Snapshot(totalMs = min(30), rows = emptyList())
         assertThat(snapshot.reelsToday).isEqualTo(0)
-        assertThat(UsageWidgetModel.showsReelPill(snapshot.reelsToday)).isFalse()
+        assertThat(snapshot.reelCounterEnabled).isTrue()
+        assertThat(
+            UsageWidgetModel.showsReelPill(snapshot.reelsToday, snapshot.reelCounterEnabled),
+        ).isTrue()
     }
 
     @Test

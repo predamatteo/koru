@@ -68,11 +68,6 @@ class SettingsScreen extends ConsumerWidget {
                   onTap: () => context.push('/settings/strict-mode'),
                 ),
                 _Tile(
-                  icon: Icons.vpn_key_outlined,
-                  title: 'Backdoor codes',
-                  onTap: () => context.push('/settings/backdoor'),
-                ),
-                _Tile(
                   icon: Icons.psychology_outlined,
                   title: 'Sfida di sblocco',
                   onTap: () => context.push('/settings/unlock-challenge'),
@@ -123,6 +118,22 @@ class SettingsScreen extends ConsumerWidget {
                   icon: Icons.info_outline,
                   title: 'About Koru',
                   onTap: () => context.push('/settings/about'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            // In fondo e da sola: da quando spegnere lo strict mode passa dalla
+            // sfida a memoria, il codice settimanale non è più "l'altro modo di
+            // uscire" ma la rete di sicurezza per quando la sfida non è
+            // percorribile. Tenerla accanto a Strict mode la rimetterebbe sulla
+            // strada di chi sta solo cercando di allentare qualcosa.
+            _Section(
+              label: 'Emergenza',
+              children: [
+                _Tile(
+                  icon: Icons.medical_services_outlined,
+                  title: 'Sblocco d\'emergenza',
+                  onTap: () => context.push('/settings/backdoor'),
                 ),
               ],
             ),

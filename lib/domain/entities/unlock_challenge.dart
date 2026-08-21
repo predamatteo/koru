@@ -151,18 +151,30 @@ enum UnlockChallengeLevel {
       '5 simboli, 3 secondi, griglia piena di sosia.',
   };
 
+  /// Livello di chi non ha mai toccato l'impostazione.
+  ///
+  /// **Non** è [off]: chi installa Koru la installa per mettersi dei limiti, e
+  /// una protezione che si spegne con un tap non è una protezione. Spegnere
+  /// l'attrito resta a un tap di distanza in Impostazioni → Sfida di sblocco,
+  /// ma dev'essere una scelta esplicita, non il punto di partenza.
+  static const UnlockChallengeLevel fallback = UnlockChallengeLevel.standard;
+
   /// Valore persistito su Hive. Salviamo il **nome** e non l'indice così
   /// riordinare o inserire un livello non ri-etichetta la scelta già salvata.
   String get storageValue => name;
 
-  /// Inverso di [storageValue]. Qualsiasi valore ignoto (dato vecchio,
-  /// scrittura corrotta) degrada a [off]: l'attrito è opt-in, non lo imponiamo
-  /// mai per errore.
+  /// Inverso di [storageValue].
+  ///
+  /// Valore assente (mai configurato) o irriconoscibile (dato vecchio,
+  /// scrittura corrotta) ⇒ [fallback]. Nota che `'off'` è un valore
+  /// PERFETTAMENTE riconoscibile: chi ha scelto di non avere attrito continua
+  /// a non averne. Qui si degrada solo verso la direzione protettiva, come fa
+  /// il resto dell'app quando non sa.
   static UnlockChallengeLevel fromStorage(String? value) {
     for (final level in UnlockChallengeLevel.values) {
       if (level.name == value) return level;
     }
-    return UnlockChallengeLevel.off;
+    return fallback;
   }
 }
 

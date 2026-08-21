@@ -145,7 +145,7 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
     final inLockout = _lockoutRemainingMs > 0;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Backdoor codes')),
+      appBar: AppBar(title: const Text('Sblocco d\'emergenza')),
       body: KoruPullToRefresh(
         onRefresh: _refreshCounters,
         child: ListView(
