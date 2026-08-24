@@ -279,24 +279,47 @@ never enabled at widget mount. Route names are centralized in `KoruRoutes`.
 
 ## Conventions
 
-### Branching (REQUIRED for every new feature)
+### Branching (REQUIRED)
 
-`main` is the release branch, `dev` is the integration branch. Never develop
-directly on either.
+`main` is the release branch, `dev` is the working branch. **Never commit directly
+to `main`** — it only ever receives merges from `dev`.
+
+**Decide where the work goes before writing any code:**
+
+| kind of change | where it lives |
+|---|---|
+| bug fix | **straight on `dev`** — no branch |
+| new feature, or substantial change | **its own branch off `dev`** |
+
+"Substantial" means: a new screen or surface, a schema change or migration, a new
+native enforcement path, or anything spanning more than a handful of files. When
+in doubt, branch — an unnecessary branch costs nothing, a half-finished feature
+sitting in `dev` blocks every release until it is done.
+
+**Feature flow:**
 
 1. **Branch off `dev`** — `git checkout dev && git pull && git checkout -b <feature>`.
    One branch per feature; commits follow the `Feat:`/`Fix:`/`Perf:` prefix convention.
 2. **Develop on the feature branch**, then **merge it into `dev`**.
-3. **On `dev`, run every test available** — the whole `flutter test` suite, the Kotlin
-   suite (`./gradlew :app:testDebugUnitTest -x compileFlutterBuildDebug`),
-   `flutter analyze`, plus on-device validation when the change touches enforcement,
-   the launcher, or the native overlay.
-4. **Only when everything is green, merge `dev` into `main`.** A red suite — including
-   pre-existing failures — blocks the merge; fix it first.
-5. **Keep the feature branch after the merge — never delete it.** It is the bookmark
-   back to that feature: if it turns out broken later, that is where you go to pick
-   the work up again. Branches accumulate on purpose; `git branch -d` on a merged
+3. **Keep the feature branch after the merge — never delete it.** It is the bookmark
+   back to that feature: if it turns out broken later, that is where you go to read
+   how it was built. Branches accumulate on purpose; `git branch -d` on a merged
    feature branch is not cleanup here, it is losing the entry point.
+
+**Before `main`, on `dev`, whichever path the change came from:**
+
+4. **Run every test available** — the whole `flutter test` suite, the Kotlin suite
+   (`./gradlew :app:testDebugUnitTest -x compileFlutterBuildDebug`), `flutter analyze`,
+   plus on-device validation when the change touches enforcement, the launcher, or
+   the native overlay.
+5. **Only when everything is green, merge `dev` into `main`.** A red suite — including
+   pre-existing failures — blocks the merge; fix it first.
+
+**A merged branch is an archive, not a workspace.** To change something in a feature
+that already landed, go by the table above — a bug fix on `dev`, a substantial rework
+on a *new* branch off `dev`. Never check out the old branch to work in it: it is
+frozen at its fork point and missing everything merged since, so you end up re-fixing
+bugs already fixed. Read it for context, write somewhere current.
 
 - The whole `flutter test` suite **and** the Kotlin suite must be green before any
   push to `main` — including pre-existing failures.
