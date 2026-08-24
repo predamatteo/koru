@@ -293,6 +293,10 @@ directly on either.
    the launcher, or the native overlay.
 4. **Only when everything is green, merge `dev` into `main`.** A red suite — including
    pre-existing failures — blocks the merge; fix it first.
+5. **Keep the feature branch after the merge — never delete it.** It is the bookmark
+   back to that feature: if it turns out broken later, that is where you go to pick
+   the work up again. Branches accumulate on purpose; `git branch -d` on a merged
+   feature branch is not cleanup here, it is losing the entry point.
 
 - The whole `flutter test` suite **and** the Kotlin suite must be green before any
   push to `main` — including pre-existing failures.
