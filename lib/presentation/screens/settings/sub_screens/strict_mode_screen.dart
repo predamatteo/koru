@@ -8,6 +8,7 @@ import '../../../../core/di/providers.dart';
 import '../../../../platform/strict_mode_channel.dart';
 import '../../../providers/achievements_provider.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
+import '../../../widgets/unlock_challenge_dialog.dart';
 
 class StrictModeScreen extends ConsumerStatefulWidget {
   const StrictModeScreen({super.key});
@@ -20,17 +21,6 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
   int _mask = 0;
   bool _deviceAdminActive = false;
   bool _loaded = false;
-
-  // Posseduto dallo State (non creato/distrutto per ogni apertura del dialog):
-  // disporlo subito dopo `await showDialog` lo distruggeva mentre il TextField
-  // era ancora montato durante l'animazione di uscita → "used after disposed".
-  final TextEditingController _backdoorController = TextEditingController();
-
-  @override
-  void dispose() {
-    _backdoorController.dispose();
-    super.dispose();
-  }
 
   StrictModeChannel get _channel =>
       ref.read(platformChannelServiceProvider).strictMode;
@@ -49,169 +39,54 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
 
   bool get _isEnabled => _mask != 0;
 
-  /// Richiede backdoor code prima di applicare un cambio che ALLENTA la
-  /// protezione (disable master, disable di un singolo bit). Restituisce il
-  /// token monouso (SEC-01) se l'utente ha autenticato correttamente, oppure
-  /// `null` se ha annullato / fallito / è in lockout.
+  /// Chiede la sfida a memoria che autorizza il passaggio a [targetMask].
   ///
-  /// Strategia: chiediamo conferma di intent + backdoor code in un dialog
-  /// unico. La chiamata al channel performa la validazione atomica (S4):
-  /// rate limit, replay check, match. Se passa, il native emette un token
-  /// monouso che ritorniamo qui e il caller passa a setStrictModeOptions per
-  /// autorizzare il downgrade della mask.
-  Future<String?> _requireBackdoorAuth({required String purpose}) async {
-    final controller = _backdoorController..clear();
-    var attemptsLeft = await _channel.getRemainingAttempts();
-    final lockoutMs = await _channel.getLockoutRemainingMs();
-    if (!mounted) return null;
+  /// Ha SOSTITUITO il backdoor code su questo percorso. Il code resta, ma solo
+  /// come emergency unblock (schermata Backdoor): serve quando il puzzle non
+  /// basta o non si riesce a risolverlo, e per quello ha senso che costi la
+  /// rotazione settimanale.
+  ///
+  /// Il token che torna è monouso, vale ~60s ed è vincolato a [targetMask]:
+  /// una sfida ottenuta per spegnere un bit non autorizza l'uscita completa.
+  Future<String?> _requireChallenge(int targetMask, String action) =>
+      requireStrictUnlockChallenge(
+        context,
+        channel: _channel,
+        targetMask: targetMask,
+        action: action,
+      );
 
-    if (lockoutMs > 0) {
-      // Lockout attivo: nemmeno mostriamo il dialog, comunichiamo il tempo
-      // di attesa.
-      await _showLockoutDialog(lockoutMs);
-      return null;
+  /// Applica [next] e allinea lo stato locale.
+  ///
+  /// Il native può comunque rifiutare (token scaduto fra la soluzione del
+  /// puzzle e la chiamata, o binding sulla mask sbagliato): in quel caso NON
+  /// tocchiamo `_mask`, così la UI continua a mostrare la protezione ancora
+  /// attiva — che è la verità.
+  Future<void> _applyMask(int next, {String? token}) async {
+    try {
+      await _channel.setStrictModeOptions(next, unblockToken: token);
+      if (!mounted) return;
+      setState(() => _mask = next);
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      final message = e.code == 'UNAUTHORIZED'
+          ? "La verifica è scaduta. Riprova."
+          : "Non è stato possibile applicare la modifica.";
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
-
-    final granted = await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        String? errorText;
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            return AlertDialog(
-              // scrollable: il content contiene un TextField; senza questo
-              // l'AlertDialog forza il calcolo dell'altezza intrinseca e va in
-              // overflow su schermi piccoli o quando appare la tastiera.
-              scrollable: true,
-              title: const Text('Conferma con backdoor code'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Per $purpose devi inserire il backdoor code della '
-                    'settimana. Lo trovi in Strict mode → Backdoor.',
-                    style: Theme.of(ctx).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: controller,
-                    autofocus: true,
-                    textCapitalization: TextCapitalization.characters,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
-                      LengthLimitingTextInputFormatter(16),
-                    ],
-                    decoration: InputDecoration(
-                      labelText: 'Backdoor code',
-                      hintText: 'ABCD2345',
-                      errorText: errorText,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '$attemptsLeft tentativi rimanenti prima del lockout.',
-                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                      color: KoruColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  // pop() con null: il dialog è Route<String>, ritornare un
-                  // bool farebbe `false as String?` → TypeError dentro il
-                  // Navigator e ne corromperebbe lo stato (freeze dopo 2-3
-                  // annullamenti). null = annullato, come da contratto sotto.
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('Annulla'),
-                ),
-                FilledButton(
-                  onPressed: () async {
-                    final input = controller.text.trim();
-                    if (input.isEmpty) {
-                      setLocal(() => errorText = 'Codice obbligatorio');
-                      return;
-                    }
-                    final outcome = await _channel.validateBackdoorCode(input);
-                    if (!ctx.mounted) return;
-                    switch (outcome) {
-                      case BackdoorValid(:final unblockToken):
-                        Navigator.of(ctx).pop(unblockToken ?? '');
-                      case BackdoorInvalid():
-                        attemptsLeft = await _channel.getRemainingAttempts();
-                        if (!ctx.mounted) return;
-                        setLocal(() => errorText = 'Codice non valido');
-                      case BackdoorReplay():
-                        setLocal(
-                          () => errorText =
-                              'Codice già usato — aspetta la rotazione settimanale.',
-                        );
-                      case BackdoorLocked(:final remainingMs):
-                        // Stesso motivo dell'Annulla: pop() con null, non false.
-                        Navigator.of(ctx).pop();
-                        await _showLockoutDialog(remainingMs);
-                    }
-                  },
-                  child: const Text('Conferma'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    // Il controller è posseduto dallo State e viene riusato/clearato alla
-    // prossima apertura; lo disponiamo in dispose(), non qui (vedi sopra).
-    // `granted` è: null = annullato/dismissed; '' = validato ma il native non
-    // ha emesso token (fallback); altrimenti il token monouso. Distinguere
-    // null da '' permette ai caller di sapere se procedere col downgrade.
-    return granted;
-  }
-
-  Future<void> _showLockoutDialog(int remainingMs) async {
-    if (!mounted) return;
-    final minutes = (remainingMs / 60000).ceil();
-    final text = minutes < 60
-        ? '$minutes minuti'
-        : minutes < 24 * 60
-        ? '${(minutes / 60).ceil()} ore'
-        : '${(minutes / (60 * 24)).ceil()} giorni';
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Troppi tentativi falliti'),
-        content: Text(
-          'Per motivi di sicurezza il backdoor code è disattivato '
-          'per $text. Riprova tra un po\'.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _toggleOption(int bit, bool enabled) async {
-    String? token;
-    if (!enabled && (_mask & bit) != 0) {
-      // Disabilito un bit attivo (downgrade) → richiedi auth + token (SEC-01).
-      token = await _requireBackdoorAuth(
-        purpose: 'disattivare questa protezione',
-      );
-      if (token == null) return; // annullato / lockout / fallito
-    }
     final next = enabled ? (_mask | bit) : (_mask & ~bit);
-    // ALZARE un bit non richiede token; abbassarlo lo passa (il native lo
-    // esige solo per i downgrade).
-    await _channel.setStrictModeOptions(next, unblockToken: token);
-    if (!mounted) return;
-    setState(() => _mask = next);
+    if (enabled || (_mask & bit) == 0) {
+      // ALZARE la mask non richiede nulla: è la direzione fail-secure.
+      return _applyMask(next);
+    }
+    final token = await _requireChallenge(next, 'togliere questa restrizione');
+    if (token == null) return; // annullato / non autorizzato
+    await _applyMask(next, token: token);
   }
 
   Future<void> _toggleMaster(bool on) async {
@@ -225,18 +100,12 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
       setState(() => _mask = StrictModeOption.allMvp);
       await ref.read(achievementEvaluationProvider.notifier).trigger();
     } else {
-      // Disable master richiede backdoor code (è il path "voglio uscire"
-      // più frequente — passa dalla validazione di sicurezza completa).
-      final token = await _requireBackdoorAuth(
-        purpose: 'disattivare strict mode',
-      );
-      if (token == null) return; // annullato / lockout / fallito
-      // Azzerare la mask è un downgrade: SEC-01 esige il token monouso che
-      // _requireBackdoorAuth ha appena ottenuto dal native dopo la validazione
-      // del code. Il native lo consuma atomicamente.
-      await _channel.setStrictModeOptions(0, unblockToken: token);
-      if (!mounted) return;
-      setState(() => _mask = 0);
+      // L'uscita completa è l'azione più grave: il native lo sa (glielo dice
+      // targetMask=0) e serve una sfida più lunga, con meno tempo per
+      // guardarla.
+      final token = await _requireChallenge(0, 'spegnere lo strict mode');
+      if (token == null) return;
+      await _applyMask(0, token: token);
     }
   }
 
@@ -253,20 +122,13 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
           builder: (ctx) => AlertDialog(
             title: const Text('Strict mode attivo'),
             content: const Text(
-              'Per disabilitare Device Admin devi prima disattivare '
-              'strict mode usando il backdoor code.',
+              'Per disabilitare Device Admin devi prima spegnere lo strict '
+              'mode dall\'interruttore qui sopra.',
             ),
             actions: [
-              TextButton(
+              FilledButton(
                 onPressed: () => Navigator.of(ctx).pop(),
                 child: const Text('OK'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                  context.push('/settings/backdoor');
-                },
-                child: const Text('Apri backdoor'),
               ),
             ],
           ),
@@ -280,15 +142,12 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
     if (!_loaded) _hydrate();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Strict mode'),
-        actions: [
-          TextButton(
-            onPressed: () => context.push('/settings/backdoor'),
-            child: const Text('Backdoor'),
-          ),
-        ],
-      ),
+      // Niente scorciatoia al backdoor code qui: da quando il downgrade passa
+      // dalla sfida a memoria, un pulsante "Backdoor" in cima alla schermata
+      // si legge come "la via d'uscita normale, ma senza puzzle" — cioè
+      // esattamente il contrario di quello che è. Lo sblocco d'emergenza vive
+      // in fondo alle Impostazioni.
+      appBar: AppBar(title: const Text('Strict mode')),
       body: KoruPullToRefresh(
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -324,8 +183,11 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
                     const SizedBox(height: 12),
                     Text(
                       _isEnabled
-                          ? 'Settings, Recent apps and Uninstall are locked. Use the backdoor code if you really need to disable it.'
-                          : 'Enable to lock Settings, Recent apps and Uninstall. Requires Device Admin.',
+                          ? 'Impostazioni, Recenti e Disinstallazione sono bloccate. '
+                                'Per allentare o spegnere serve ricostruire una sequenza di simboli — '
+                                'il backdoor code resta solo per le emergenze.'
+                          : 'Attiva per bloccare Impostazioni, Recenti e Disinstallazione. '
+                                'Richiede Device Admin.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: KoruColors.textSecondary,
                         height: 1.4,

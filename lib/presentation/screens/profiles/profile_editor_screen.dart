@@ -13,6 +13,7 @@ import '../../../domain/entities/blocked_section.dart';
 import '../../providers/achievements_provider.dart';
 import '../../providers/profile_providers.dart';
 import '../../widgets/koru_pull_to_refresh.dart';
+import '../../widgets/unlock_challenge_dialog.dart';
 
 class ProfileEditorScreen extends ConsumerStatefulWidget {
   const ProfileEditorScreen({super.key, this.profileId});
@@ -82,6 +83,10 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
   Set<String> _fullyBlockedPkgs = const {};
   int _appsCount = 0;
 
+  /// Serve solo a decidere se la cancellazione deve passare dalla sfida di
+  /// sblocco: cancellare un profilo ACCESO è a tutti gli effetti spegnerlo.
+  bool _isEnabled = false;
+
   @override
   void dispose() {
     _titleController.dispose();
@@ -116,6 +121,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
 
     setState(() {
       _loaded = true;
+      _isEnabled = profile.isEnabled;
       _titleController.text = profile.title;
       _emoji = profile.emoji == 'NoIcon' ? '🌿' : profile.emoji;
       _dayFlags = profile.dayFlags;
@@ -352,6 +358,23 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
     if (mounted) context.pop();
   }
 
+  /// Cancellare un profilo ACCESO equivale a spegnerlo, quindi passa dalla
+  /// stessa sfida di sblocco dello switch. Su un profilo già spento non c'è
+  /// protezione da indebolire: si cancella e basta.
+  Future<void> _deleteProfile() async {
+    if (_isEnabled) {
+      final name = _titleController.text.trim();
+      final granted = await requireUnlockChallenge(
+        context,
+        ref,
+        action: name.isEmpty ? 'cancellare il profilo' : 'cancellare «$name»',
+      );
+      if (!granted) return;
+    }
+    await ref.read(profileRepositoryProvider).deleteProfile(widget.profileId!);
+    if (mounted) context.pop();
+  }
+
   void _setAllDay(bool value) {
     setState(() {
       if (value) {
@@ -510,12 +533,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
           if (!widget.isNew)
             IconButton(
               icon: const Icon(Icons.delete_outline, color: KoruColors.danger),
-              onPressed: () async {
-                await ref
-                    .read(profileRepositoryProvider)
-                    .deleteProfile(widget.profileId!);
-                if (context.mounted) context.pop();
-              },
+              onPressed: _deleteProfile,
             ),
           TextButton(
             onPressed: _save,

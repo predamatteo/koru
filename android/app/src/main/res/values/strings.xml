@@ -26,4 +26,13 @@
          l'header mostra un tempo > 0 sarebbe una contraddizione visibile. -->
     <string name="koru_widget_empty_rows">Only system and launcher time so far today.</string>
     <string name="koru_widget_no_permission">Grant usage access to Koru to see your screen time.</string>
+    <!-- Contatore reel nell'header. Il numero da solo: accanto all'icona di
+         scroll verticale e alla pill del tempo la lettura è già univoca, e una
+         parola in più costringerebbe il titolo "TODAY" a troncarsi sui widget
+         stretti. Il significato per esteso vive nella content description. -->
+    <string name="koru_widget_reels_placeholder" translatable="false">0</string>
+    <plurals name="koru_widget_reels_description">
+        <item quantity="one">%d reel scrolled today</item>
+        <item quantity="other">%d reels scrolled today</item>
+    </plurals>
 </resources>

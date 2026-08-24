@@ -390,6 +390,114 @@ class BlockingChannel {
   /// (servizio accessibilità spento o strict mode BLOCK_RECENT_APPS attivo).
   Future<bool> openSystemRecents() async =>
       (await _channel.invokeMethod<bool>('openSystemRecents')) ?? false;
+
+  // =========================================================================
+  // Concern: contatore dei reel / short scrollati.
+  // =========================================================================
+
+  /// Reel scrollati oggi, per sorgente. Le chiavi sono i wire-id di
+  /// `DetectedSection` lato nativo ([ReelSource.wireId]).
+  Future<ReelCounts> getReelCountsToday() async {
+    final raw =
+        await _channel.invokeMapMethod<String, dynamic>('getReelCountsToday');
+    return ReelCounts.fromMap(raw ?? const {});
+  }
+
+  /// Gli ultimi [days] giorni, dal più recente al più vecchio, con i giorni
+  /// senza scrolling già inclusi a zero (li riempie il nativo: un grafico non
+  /// deve indovinare i buchi). Il nativo clampa a 30, quanto ne conserva.
+  Future<List<ReelDayCounts>> getReelCountsHistory({int days = 7}) async {
+    final raw = await _channel.invokeListMethod<dynamic>(
+      'getReelCountsHistory',
+      {'days': days},
+    );
+    return (raw ?? const <dynamic>[])
+        .cast<Map<dynamic, dynamic>>()
+        .map(ReelDayCounts.fromMap)
+        .toList(growable: false);
+  }
+
+  Future<bool> isReelCounterEnabled() async =>
+      (await _channel.invokeMethod<bool>('isReelCounterEnabled')) ?? false;
+
+  /// Accende/spegne il contatore. Spegnendolo il nativo smette anche di
+  /// osservare Instagram e YouTube, quindi non è solo un toggle di UI.
+  /// Ritorna il vero esito del salvataggio (CR-09), non un `true` fisso.
+  Future<bool> setReelCounterEnabled(bool enabled) async =>
+      (await _channel.invokeMethod<bool>('setReelCounterEnabled', {
+        'enabled': enabled,
+      })) ??
+      false;
+}
+
+/// Le sorgenti di feed verticale che Koru sa contare.
+///
+/// [wireId] DEVE combaciare con `DetectedSection.wireId` lato Kotlin: è la
+/// chiave con cui i conteggi viaggiano sul canale. Una sorgente sconosciuta
+/// (aggiunta lato nativo e non ancora qui) non rompe nulla — entra comunque nel
+/// totale, semplicemente senza una riga con etichetta propria.
+enum ReelSource {
+  instagramReels('INSTAGRAM_REELS', 'Instagram Reels'),
+  youtubeShorts('YOUTUBE_SHORTS', 'YouTube Shorts');
+
+  const ReelSource(this.wireId, this.label);
+
+  final String wireId;
+  final String label;
+
+  static ReelSource? fromWireId(String id) {
+    for (final source in ReelSource.values) {
+      if (source.wireId == id) return source;
+    }
+    return null;
+  }
+}
+
+/// Conteggi per sorgente di un singolo giorno.
+class ReelCounts {
+  const ReelCounts(this.byWireId);
+
+  /// Chiave = wire-id della sorgente, valore = reel scrollati.
+  final Map<String, int> byWireId;
+
+  static const ReelCounts empty = ReelCounts({});
+
+  /// Somma su TUTTE le sorgenti, incluse quelle che questo lato non conosce
+  /// ancora: il totale non deve calare perché il nativo ha imparato a contare
+  /// una piattaforma in più.
+  int get total => byWireId.values.fold<int>(0, (sum, v) => sum + v);
+
+  int forSource(ReelSource source) => byWireId[source.wireId] ?? 0;
+
+  bool get isEmpty => total == 0;
+
+  factory ReelCounts.fromMap(Map<dynamic, dynamic> map) {
+    final out = <String, int>{};
+    map.forEach((key, value) {
+      if (key is! String) return;
+      final count = (value as num?)?.toInt() ?? 0;
+      if (count > 0) out[key] = count;
+    });
+    return ReelCounts(out);
+  }
+}
+
+/// Conteggi di un giorno, per la vista storica.
+class ReelDayCounts {
+  const ReelDayCounts({required this.dayStartMs, required this.counts});
+
+  /// Mezzanotte locale del giorno, in ms epoch.
+  final int dayStartMs;
+  final ReelCounts counts;
+
+  int get total => counts.total;
+
+  factory ReelDayCounts.fromMap(Map<dynamic, dynamic> map) => ReelDayCounts(
+        dayStartMs: (map['dayStart'] as num?)?.toInt() ?? 0,
+        counts: ReelCounts.fromMap(
+          (map['counts'] as Map<dynamic, dynamic>?) ?? const {},
+        ),
+      );
 }
 
 /// Snapshot del contatore "schede aperte" + sequence number monotono della

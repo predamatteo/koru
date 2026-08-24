@@ -29,6 +29,7 @@ class InstagramDetector(context: Context) {
     private val reelsIds: Set<String>
     private val storiesIds: Set<String>
     private val exploreIds: Set<String>
+    private val reelsPagerIds: Set<String>
 
     init {
         val resId = context.resources.getIdentifier("instagram_view_ids", "raw", context.packageName)
@@ -36,6 +37,7 @@ class InstagramDetector(context: Context) {
             reelsIds = emptySet()
             storiesIds = emptySet()
             exploreIds = emptySet()
+            reelsPagerIds = emptySet()
         } else {
             val json = JSONObject(
                 context.resources.openRawResource(resId).bufferedReader().readText()
@@ -43,8 +45,27 @@ class InstagramDetector(context: Context) {
             reelsIds = json.optJSONArray("REELS")?.toStringSet() ?: emptySet()
             storiesIds = json.optJSONArray("STORIES")?.toStringSet() ?: emptySet()
             exploreIds = json.optJSONArray("EXPLORE")?.toStringSet() ?: emptySet()
+            reelsPagerIds = json.optJSONArray("REELS_PAGER")?.toStringSet() ?: emptySet()
         }
     }
+
+    /**
+     * `true` se [shortViewId] (la parte dopo `:id/`) è il pager verticale dei
+     * Reels, cioè la view che emette `TYPE_VIEW_SCROLLED` quando l'utente passa
+     * al reel successivo.
+     *
+     * È un sottoinsieme STRETTO di `REELS`, non lo stesso set: `tab_reels` e
+     * `reel_viewer_container` bastano a dire "siamo nei Reels" ma non sono
+     * scrollabili, mentre il feed home di Instagram è anch'esso una
+     * RecyclerView che emette scroll — contare su "REELS" o sulla sola classe
+     * della view farebbe passare lo scroll del feed per reel swipati.
+     *
+     * Nota su Stories: il viewer delle storie è a sua volta un pager, ma i suoi
+     * id vivono sotto `STORIES` e restano fuori da qui — swipare fra le storie
+     * non conta come reel.
+     */
+    fun isReelsPager(shortViewId: String?): Boolean =
+        shortViewId != null && shortViewId in reelsPagerIds
 
     fun detect(root: AccessibilityNodeInfo?): DetectedSection? {
         if (root == null) return null

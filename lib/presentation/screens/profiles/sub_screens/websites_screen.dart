@@ -6,6 +6,7 @@ import '../../../../core/constants/layout.dart';
 import '../../../../data/database/app_database.dart';
 import '../../../providers/profile_providers.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
+import '../../../widgets/unlock_challenge_dialog.dart';
 
 /// Editor delle regole website bloccate per un profilo. Le regole vengono
 /// matchate dal nativo AccessibilityService leggendo la URL bar dei browser
@@ -59,6 +60,27 @@ class _WebsitesScreenState extends ConsumerState<WebsitesScreen> {
         .read(profileRepositoryProvider)
         .deleteWebsiteRule(rule.id, widget.profileId);
     ref.invalidate(profileByIdProvider(widget.profileId));
+  }
+
+  /// Togliere un sito da un profilo ACCESO allenta la protezione esattamente
+  /// come toglierne un'app: stessa sfida di sblocco. Aggiungerne resta libero,
+  /// e su un profilo spento non c'è niente da allentare.
+  ///
+  /// È anche il `confirmDismiss` dello swipe: gestire il gate in `onDismissed`
+  /// non funzionerebbe, lì la riga è già sparita dalla lista e annullare la
+  /// sfida la lascerebbe invisibile pur essendo ancora in DB.
+  Future<bool> _confirmRemoval(bool profileEnabled) async {
+    if (!profileEnabled) return true;
+    return requireUnlockChallenge(
+      context,
+      ref,
+      action: 'togliere un sito da un profilo acceso',
+    );
+  }
+
+  Future<void> _deleteWithGate(WebsiteRule rule, bool profileEnabled) async {
+    if (!await _confirmRemoval(profileEnabled)) return;
+    await _delete(rule);
   }
 
   @override
@@ -158,6 +180,8 @@ class _WebsitesScreenState extends ConsumerState<WebsitesScreen> {
                           color: KoruColors.danger,
                         ),
                       ),
+                      confirmDismiss: (_) =>
+                          _confirmRemoval(profile?.isEnabled ?? false),
                       onDismissed: (_) => _delete(rule),
                       child: ListTile(
                         leading: const Icon(
@@ -177,7 +201,8 @@ class _WebsitesScreenState extends ConsumerState<WebsitesScreen> {
                             Icons.delete_outline,
                             color: KoruColors.danger,
                           ),
-                          onPressed: () => _delete(rule),
+                          onPressed: () =>
+                              _deleteWithGate(rule, profile?.isEnabled ?? false),
                         ),
                       ),
                     ),

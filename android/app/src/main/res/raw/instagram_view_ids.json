@@ -5,6 +5,10 @@
     "reel_viewer_container",
     "tab_reels"
   ],
+  "REELS_PAGER": [
+    "clips_viewer_view_pager",
+    "clips_viewer_recyclerview"
+  ],
   "STORIES": [
     "story_viewer_fragment",
     "reel_header_username",

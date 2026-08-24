@@ -9,6 +9,7 @@ import com.dev.koru.channels.blocking.LimitsCallHandler
 import com.dev.koru.channels.blocking.NotificationFilterCallHandler
 import com.dev.koru.channels.blocking.QuickBlockCallHandler
 import com.dev.koru.channels.blocking.RecentsCallHandler
+import com.dev.koru.channels.blocking.ReelsCallHandler
 import com.dev.koru.channels.blocking.ServiceLifecycleCallHandler
 import com.dev.koru.channels.blocking.UsageStatsCallHandler
 import com.dev.koru.channels.blocking.WifiCallHandler
@@ -50,6 +51,7 @@ object BlockingMethodChannel {
         NotificationFilterCallHandler,
         WifiCallHandler,
         RecentsCallHandler,
+        ReelsCallHandler,
     )
 
     /**

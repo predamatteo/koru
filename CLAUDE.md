@@ -155,9 +155,10 @@ channel class rather than scattering `MethodChannel` instances.
 
 `android/.../widget/` is a **fully native** App Widget (RemoteViews, no Glance, no
 Flutter engine): it shows today's screen time plus the per-app *time limits* —
-the `AppUsageLimitsStore` caps only, not profile-driven blocking. It reads
-`UsageCounter` + `AppUsageLimitsStore` directly, so it never touches Drift or the
-platform channels.
+the `AppUsageLimitsStore` caps only, not profile-driven blocking — and a header
+pill with today's reel count (see below). It reads `UsageCounter` +
+`AppUsageLimitsStore` + `ReelCountStore` directly, so it never touches Drift or
+the platform channels.
 
 Two things to keep in mind when touching it:
 
@@ -174,6 +175,98 @@ Two things to keep in mind when touching it:
    single `@Volatile` read when no widget is placed and defers all I/O to its own
    HandlerThread. Do not add a polling loop — see the battery audit constraints in
    `LockRunnable.checkAndBlock`.
+
+### The reel counter (observation, not enforcement)
+
+Instagram Reels / YouTube Shorts swipes are counted from `TYPE_VIEW_SCROLLED`
+events. There is no API for "a reel was swiped": the count is **inferred** from
+the item index reported by the pager, so treat it as an estimate.
+
+Three things that break it silently, in order of likelihood:
+
+1. **View-ids.** The scroll only counts if `event.source`'s `viewIdResourceName`
+   is in `REELS_PAGER` / `SHORTS_PAGER` (`res/raw/*_view_ids.json`). An Instagram
+   or YouTube update that renames those ids takes the counter to zero with no
+   error. The JSONs are hot-updatable for exactly this reason.
+2. **The watched set.** IG/YT reach the service only because
+   `WatchedPackageCalculator` gets them via `observationPackages`, gated on
+   `UiSettingsStore.isReelCounterEnabled`. Drop that and the feature works only
+   for users who already block those apps.
+3. **The index signal.** `ReelSwipeCounter` counts index *transitions*; if a view
+   stops reporting `fromIndex`/`toIndex` it degrades to a time debounce.
+   `Result.viaIndex` says which path fired — it is logged to BlackBox under the
+   `REELS` tag, sampled, and it is the first thing to check on-device.
+
+Counts live in `ReelCountStore` (a `FileBackedStore`, write-behind: a process
+kill can lose a handful). Never move them into Drift — the widget reads them and
+must stay Drift-free.
+
+### The unlock challenge
+
+Weakening a protection is gated behind a memorise-then-reproduce puzzle: a few
+symbols shown briefly, then found again in a grid seeded with near-identical
+decoys. It covers two very different surfaces, and **the difference is the
+thing to keep straight**:
+
+| | profiles | strict mode |
+|---|---|---|
+| entry point | `requireUnlockChallenge` | `requireStrictUnlockChallenge` |
+| source | `LocalUnlockChallengeSource` | `StrictModeUnlockChallengeSource` |
+| who picks the sequence | Dart | **Kotlin** (`StrictUnlockChallengeStore`) |
+| optional? | yes — `UnlockChallengeLevel`, off by default | **no** |
+| on success | just proceed | a one-shot `UnblockTokenStore` token |
+
+The strict-mode half exists in Kotlin for one reason: `setStrictModeOptions`
+refuses any mask downgrade without a native token (SEC-01), so a Dart-only gate
+would be — correctly — ignored. It **replaced** the backdoor code on the normal
+path; the code survives only as the emergency unblock.
+
+Two properties there are load-bearing and easy to erase by accident:
+
+- **The token is bound to the target mask.** A cheap puzzle earned to clear one
+  bit must not authorise a full exit. `UnblockTokenStore.consume` takes
+  `targetMask`; the backdoor path passes `null` and stays unbound.
+- **A failed verification burns the challenge.** That, not the cooldown, is what
+  makes guessing pointless — each guess needs a fresh `start` with a fresh
+  answer.
+
+Kotlin deliberately knows **nothing about glyphs**: it deals in grid-slot
+indices and Dart paints symbols onto them (`buildUnlockChallengeForSlots`).
+Keep it that way — a glyph table duplicated across the two runtimes is exactly
+the silent-drift trap the DB schema contract already costs us.
+
+Both halves share `UnlockChallengeDialog`, and in both the per-tap validation is
+local: Dart has to know the sequence anyway, it draws it. `confirm()` is the
+final seal and only the native source can say no.
+
+The invariant that gives it teeth on both halves: **only the weakening
+direction is gated.** Turning a profile *on*, adding apps, adding domains,
+raising the strict mask — all free, no challenge. Every call site has to work
+out which direction it is going, and the tricky one is
+`set_blocked_apps_screen.dart`: in a **blocklist** profile removing apps weakens
+it, in an **allowlist** profile *adding* them does (`_weakensProtection`).
+
+Three things that quietly defuse the puzzle itself:
+
+1. **The glyph map.** `kGlyphFamilies` (domain, symbolic ids) and `kGlyphIcons`
+   (presentation, `IconData`) are two hand-written tables joined by string id.
+   Adding a variant to one and forgetting the other yields a `?` tile on a real
+   device and nothing at compile time — `unlock_challenge_glyphs_test.dart` is
+   the guard.
+2. **Family similarity.** The difficulty comes entirely from decoys being
+   *near-identical* to their target (same silhouette, different rotation/fill).
+   Swap one icon for a visually distinct one and the puzzle silently becomes
+   trivial; no test can catch that, only looking at it can.
+3. **Regeneration on failure.** A wrong tap builds a *new* challenge rather than
+   replaying the old one — otherwise the third attempt is solved from muscle
+   memory and the friction is gone.
+
+New gated action on a profile? Call `requireUnlockChallenge(context, ref,
+action: …)` and bail on `false`. For `Dismissible` use it as `confirmDismiss`,
+never `onDismissed` — by then the row is already gone from the list. On the
+strict-mode side use `requireStrictUnlockChallenge`, spend the returned token
+immediately (60s TTL) and leave the UI state untouched if
+`setStrictModeOptions` still throws `UNAUTHORIZED`.
 
 ### Launcher vs. shell routing
 

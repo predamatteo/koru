@@ -21,6 +21,11 @@ class ProfileModel {
   // ─── Convenience getters ───────────────────────────────────────────────────
   int get id => data.id;
   String get title => data.title;
+
+  /// Titolo da mostrare all'utente: il titolo vero, o un segnaposto se il
+  /// profilo è stato salvato senza nome.
+  String get displayTitle => title.isEmpty ? 'Untitled' : title;
+
   String get emoji => data.emoji;
   String get colorHex => data.colorHex;
   bool get isEnabled => data.isEnabled;

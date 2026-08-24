@@ -11,6 +11,7 @@ import '../../platform/service_event_channel.dart';
 import 'app_limits_provider.dart';
 import 'app_list_provider.dart';
 import 'mood_provider.dart';
+import 'reel_counts_provider.dart';
 import 'statistics_providers.dart';
 
 void _invalidateStats(Ref ref) {
@@ -20,6 +21,12 @@ void _invalidateStats(Ref ref) {
   ref.invalidate(topIntentionsProvider);
   ref.invalidate(focusTimeMsProvider);
   ref.invalidate(todayMoodProvider);
+  // Contatore reel: cresce mentre Koru è in background (lo incrementa
+  // l'AccessibilityService), quindi il rientro nell'app è esattamente il
+  // momento in cui il numero mostrato è più stantìo. Costa una lettura di file
+  // cache-ata, non una query UsageStats.
+  ref.invalidate(reelCountsTodayProvider);
+  ref.invalidate(reelCountsWeekProvider);
   // PERF: `profilesProvider` RIMOSSO da questo set. I profili sono scritti SOLO
   // dall'UI Dart (ProfileRepository → notifyProfileChanged verso il native, mai
   // il contrario): `Drift.watch` è già reattivo, quindi né un evento di blocking

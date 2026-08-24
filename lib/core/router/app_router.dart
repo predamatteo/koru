@@ -36,6 +36,7 @@ import '../../presentation/screens/settings/sub_screens/font_screen.dart';
 import '../../presentation/screens/settings/sub_screens/launcher_settings_screen.dart';
 import '../../presentation/screens/settings/sub_screens/permissions_screen.dart';
 import '../../presentation/screens/settings/sub_screens/strict_mode_screen.dart';
+import '../../presentation/screens/settings/sub_screens/unlock_challenge_screen.dart';
 import '../../presentation/screens/statistics/achievements_screen.dart';
 import '../../presentation/screens/statistics/statistics_screen.dart';
 
@@ -364,6 +365,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     path: 'backdoor',
                     parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) => const BackdoorCodesScreen(),
+                  ),
+                  GoRoute(
+                    path: 'unlock-challenge',
+                    parentNavigatorKey: rootNavigatorKey,
+                    builder: (context, state) => const UnlockChallengeScreen(),
                   ),
                   GoRoute(
                     path: 'font',

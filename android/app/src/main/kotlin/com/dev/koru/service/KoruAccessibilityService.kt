@@ -23,6 +23,9 @@ import com.dev.koru.browser.TabNeutralizer
 import com.dev.koru.browser.WebsiteMatcher
 import com.dev.koru.contract.BlockingContract
 import com.dev.koru.content.InAppContentDetector
+import com.dev.koru.content.InstagramDetector
+import com.dev.koru.content.ReelSwipeCounter
+import com.dev.koru.content.YouTubeDetector
 import com.dev.koru.diagnostics.BlackBox
 import com.dev.koru.db.NativeAppRelation
 import com.dev.koru.db.NativeDatabase
@@ -95,6 +98,24 @@ class KoruAccessibilityService : AccessibilityService() {
         /// singolo a +1.5s — copertura totale ~2.3s.
         private const val GHOST_RECHECK_DELAY_MS = 800L
         private const val GHOST_RECHECK_RETRY_DELAY_MS = 1_500L
+
+        /// Ogni quanti reel contati si scrive una riga su BlackBox. Basso
+        /// abbastanza da vedere subito se il contatore vive, alto abbastanza da
+        /// non annegare la scatola nera durante una sessione di scrolling.
+        private const val REEL_LOG_EVERY = 10
+
+        /// 21 bit per campo nella firma degli eventi di scroll
+        /// (vedi [scrollSignature]): copre indici e id di finestra fino a ~2M,
+        /// tre campi in un Long con un bit di margine.
+        private const val FIELD_MASK = 0x1FFFFFL
+
+        /// Package osservati per il solo contatore dei reel. Sono gli stessi che
+        /// [com.dev.koru.content.InAppContentDetector] sa analizzare: aggiungerne
+        /// uno qui senza un detector corrispondente farebbe solo pagare eventi.
+        val REEL_COUNTER_PACKAGES: Set<String> = setOf(
+            InstagramDetector.PACKAGE,
+            YouTubeDetector.PACKAGE,
+        )
 
         /// Restriction type log su `restricted_access_events`: valore per gli
         /// eventi BYPASS_EXPIRED (l'utente è stato ri-prompted dopo che il TTL
@@ -443,6 +464,13 @@ class KoruAccessibilityService : AccessibilityService() {
             // Niente recents visibili a schermo spento: chiudi sessione/token
             // del gate e l'eventuale kick pending.
             LauncherRecentsGate.onScreenOff(this)
+            // Fine certa della sessione di scrolling: versiamo i reel ancora in
+            // memoria (il write-behind aspetterebbe altri conteggi che non
+            // arriveranno) e azzeriamo la baseline, così un rientro fra un'ora
+            // non viene confrontato con l'indice di adesso.
+            ReelCountStore.flush(applicationContext)
+            reelSwipeCounter.reset()
+            lastScrollSignature = 0L
         }
     }
 
@@ -611,6 +639,32 @@ class KoruAccessibilityService : AccessibilityService() {
     private var lastBrowserContentCheckMs = 0L
     @Volatile
     private var lastBrowserContentPkg: String? = null
+
+    // ── Contatore dei reel scrollati ──────────────────────────────────────
+
+    /// Macchina a stati che traduce gli scroll in reel. Toccata solo dal thread
+    /// degli eventi di accessibilità, quindi non serve sincronizzarla.
+    private val reelSwipeCounter = ReelSwipeCounter()
+
+    /// Copia dell'impostazione utente, letta al reload dei profili invece che
+    /// a ogni evento: [UiSettingsStore.isReelCounterEnabled] è una lettura
+    /// cache-ata ma comunque una `stat` del file, e questo sta sul percorso
+    /// dello scroll.
+    @Volatile
+    private var reelCounterEnabled = UiSettingsStore.DEFAULT_REEL_COUNTER_ENABLED
+
+    /// Firma `(windowId, fromIndex, toIndex)` dell'ultimo scroll esaminato.
+    /// Serve a NON pagare un `event.source` (che è una IPC verso l'app) quando
+    /// l'evento non porta informazione nuova: durante un fling il framework ne
+    /// consegna una raffica con gli stessi indici, e per il feed di Instagram —
+    /// che è anch'esso una RecyclerView e passa da qui — gli indici cambiano
+    /// molto più lentamente di quanto arrivino gli eventi.
+    private var lastScrollSignature = 0L
+
+    /// Reel contati da quando è partito il processo, solo per la diagnostica:
+    /// il log su BlackBox è campionato ogni [REEL_LOG_EVERY] conteggi, perché
+    /// una riga per reel renderebbe illeggibile la scatola nera.
+    private var reelSessionCount = 0
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -905,6 +959,17 @@ class KoruAccessibilityService : AccessibilityService() {
             // singola scheda non genera altri eventi osservabili — questa è
             // l'unica finestra in cui esiste una ground-truth.
             if (LauncherRecentsGate.maybeSyncOpenApps(this, pkg)) return
+
+            // Contatore dei reel: l'unico punto del codice in cui uno scroll
+            // porta informazione. Sta PRIMA del return sui browser perché
+            // Instagram e YouTube non sono browser e verrebbero scartati qui
+            // sotto. Non è un ramo di enforcement — non blocca, non espelle,
+            // non fa uscire dal metodo: qualunque cosa decida, l'evento
+            // prosegue verso i controlli di blocco come prima.
+            if (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
+                maybeCountReelSwipe(event, pkg)
+            }
+
             if (!BrowserConfigLoader.isBrowser(applicationContext, pkg)) return
             val now = System.currentTimeMillis()
             val samePkg = pkg == lastBrowserContentPkg
@@ -1940,6 +2005,106 @@ class KoruAccessibilityService : AccessibilityService() {
         return true
     }
 
+    /**
+     * Conta i reel di Instagram e gli Shorts di YouTube a partire dagli scroll.
+     *
+     * ## Perché serve leggere il `source` dell'evento
+     * Il package da solo non basta: il feed home di Instagram, la ricerca, i
+     * commenti sono tutte RecyclerView dello stesso package che emettono
+     * `TYPE_VIEW_SCROLLED`. Nemmeno `event.className` discrimina (sono tutte
+     * `androidx.recyclerview.widget.RecyclerView`, e Instagram offusca i nomi
+     * delle proprie classi). L'unica firma affidabile è il `viewIdResourceName`
+     * del nodo che ha scrollato — che è anche il motivo per cui il servizio
+     * dichiara `flagReportViewIds`.
+     *
+     * ## Costo, e come viene tenuto basso
+     * `event.source` è una IPC verso il processo dell'app. Non la paghiamo:
+     *  - fuori da Instagram/YouTube (che sono nel watched-set solo se la
+     *    feature è accesa);
+     *  - a contatore spento;
+     *  - quando l'evento ha la stessa firma `(finestra, indici)` del
+     *    precedente, cioè per l'intera raffica che accompagna un singolo fling.
+     * Quel che resta è dell'ordine di una IPC per swipe reale, contro le
+     * ~2/secondo che il ramo browser già spende leggendo la barra degli
+     * indirizzi mentre si naviga.
+     *
+     * Non decide niente sul blocco e non ha percorsi di uscita anticipata verso
+     * l'enforcement: è osservazione pura.
+     */
+    private fun maybeCountReelSwipe(event: AccessibilityEvent, packageName: String) {
+        if (!reelCounterEnabled) return
+        val detector = inAppDetector ?: return
+        if (!detector.supports(packageName)) return
+
+        // Pre-filtro senza IPC: stessa firma ⇒ nessuna informazione nuova.
+        val signature = scrollSignature(event)
+        if (signature == lastScrollSignature) return
+        lastScrollSignature = signature
+
+        val section = detector.reelPagerSection(packageName, scrollSourceViewId(event)) ?: return
+
+        val result = reelSwipeCounter.onScroll(
+            sectionWireId = section.wireId,
+            windowId = event.windowId,
+            fromIndex = event.fromIndex,
+            toIndex = event.toIndex,
+            // Orologio MONOTONO: con quello di parete uno spostamento dell'ora
+            // manderebbe all'indietro il debounce e produrrebbe conteggi.
+            uptimeMs = SystemClock.uptimeMillis(),
+        )
+        if (!result.isCounted) return
+
+        ReelCountStore.add(applicationContext, section.wireId, result.counted)
+        reelSessionCount += result.counted
+        // Campionato: una riga per reel renderebbe la scatola nera inutilizzabile
+        // proprio nelle sessioni che più interessa ricostruire. `viaIndex` dice
+        // se il conteggio arriva dal segnale buono (cambio d'indice) o dal
+        // debounce di ripiego — è il dato da guardare per primo alla verifica
+        // on-device.
+        if (reelSessionCount % REEL_LOG_EVERY == 0) {
+            BlackBox.log(
+                "REELS",
+                "${section.wireId} +${result.counted} (viaIndex=${result.viaIndex}) " +
+                    "sessione=$reelSessionCount oggi=${ReelCountStore.todayTotal(applicationContext)}",
+            )
+        }
+        // Throttlato a 30s e a costo zero se nessun widget è piazzato.
+        KoruUsageWidgetProvider.requestUpdate(applicationContext, "reels")
+    }
+
+    /// `viewIdResourceName` del nodo che ha scrollato, senza il prefisso
+    /// `pkg:id/`. Recycla il nodo su API < 33 (su 33+ è un no-op sicuro): senza,
+    /// una sessione di scrolling lunga saturerebbe il buffer di
+    /// AccessibilityNodeInfo del binder e il servizio smetterebbe di ricevere
+    /// eventi — lo stesso guasto documentato in [InstagramDetector].
+    private fun scrollSourceViewId(event: AccessibilityEvent): String? {
+        val source = try { event.source } catch (_: Exception) { null } ?: return null
+        return try {
+            source.viewIdResourceName?.substringAfter(":id/")
+        } catch (_: Exception) {
+            null
+        } finally {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                try { source.recycle() } catch (_: Throwable) {}
+            }
+        }
+    }
+
+    /// Impacchetta `(windowId, fromIndex, toIndex)` in un Long.
+    ///
+    /// Impacchettamento ESATTO e non un hash: una collisione qui non sarebbe
+    /// visibile in nessun modo, si manifesterebbe solo come qualche reel non
+    /// contato ogni tanto. I campi sono spostati di +1 così il `-1` di "indice
+    /// non riportato" resta distinguibile dallo 0, e clampati al loro campo di
+    /// bit — un valore fuori scala (impossibile: sono posizioni di una lista)
+    /// degrada al massimo in una firma ripetuta, mai in un conteggio inventato.
+    private fun scrollSignature(event: AccessibilityEvent): Long {
+        fun field(value: Int): Long = (value.toLong() + 1L).coerceIn(0L, FIELD_MASK)
+        return ((event.windowId.toLong() and FIELD_MASK) shl 42) or
+            (field(event.fromIndex) shl 21) or
+            field(event.toIndex)
+    }
+
     private fun checkInAppContentBlocking(
         packageName: String,
         root: AccessibilityNodeInfo,
@@ -2275,6 +2440,9 @@ class KoruAccessibilityService : AccessibilityService() {
             // dal watched-set (no profilo, no limite, no browser/settings) non
             // genererebbe eventi e il focus non la bloccherebbe.
             val focusActive = QuickBlockStore.read(applicationContext).isSessionActiveNow()
+            // Rinfrescato qui e non sul percorso dello scroll: loadProfiles è
+            // già throttlato e fa I/O, mentre lo scroll no.
+            reelCounterEnabled = UiSettingsStore.isReelCounterEnabled(applicationContext)
             // `null` = watch-all (catch-all focus). Altrimenti il set ristretto:
             // i daily limit sono GLOBALI (non profile-scoped), quindi un'app con
             // cap attivo resta osservata anche se non e' in alcun profilo. Letture
@@ -2292,6 +2460,15 @@ class KoruAccessibilityService : AccessibilityService() {
                     settingsPackages = SETTINGS_PACKAGES,
                     skipPackages = SKIP_PACKAGES,
                     selfPackage = packageName,
+                    // Instagram/YouTube osservati per il solo conteggio dei
+                    // reel: senza, la feature funzionerebbe unicamente per chi
+                    // ha già messo quelle app sotto un profilo o un cap. A
+                    // contatore spento il set è vuoto e nulla cambia.
+                    observationPackages = if (reelCounterEnabled) {
+                        REEL_COUNTER_PACKAGES
+                    } else {
+                        emptySet()
+                    },
                 )
             }
             // Skip se il set non e' cambiato: ricreare AccessibilityServiceInfo
@@ -2363,6 +2540,10 @@ class KoruAccessibilityService : AccessibilityService() {
         pendingGhostRechecks.values.forEach { mainHandler.removeCallbacks(it) }
         pendingGhostRechecks.clear()
         LauncherRecentsGate.onServiceDestroyed()
+        // Ultima occasione per non perdere i reel ancora nel buffer: un kill
+        // OEM del servizio è esattamente lo scenario per cui il write-behind
+        // dichiara una finestra di perdita.
+        ReelCountStore.flush(applicationContext)
         lastBypassedActiveForeground = null
         preLaunchOverlayPackage = null
         endOverlayOverApp()

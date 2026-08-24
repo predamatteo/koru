@@ -334,4 +334,72 @@ class UsageWidgetModelTest {
         )
         assertThat(UsageWidgetModel.rowsFittingHeight(4000, candidates)).isEqualTo(2)
     }
+
+    // -------- Pill del contatore reel --------
+
+    @Test
+    fun reelPill_isVisibleAtZeroWhenTheCounterIsOn() {
+        // Cambio di rotta dopo la prova on-device: nascondere la pill a zero
+        // rendeva la feature indistinguibile da una rotta il primo giorno.
+        // Uno zero, in un widget che misura quanto stai al telefono, è il
+        // numero migliore che ci possa stare.
+        assertThat(UsageWidgetModel.showsReelPill(0, reelCounterEnabled = true)).isTrue()
+        assertThat(UsageWidgetModel.showsReelPill(1, reelCounterEnabled = true)).isTrue()
+    }
+
+    @Test
+    fun reelPill_isHiddenWhenTheCounterIsOff() {
+        // QUESTO è il caso in cui uno "0" perenne sarebbe arredamento: chi ha
+        // spento la feature non deve portarsi dietro la pill.
+        assertThat(UsageWidgetModel.showsReelPill(0, reelCounterEnabled = false)).isFalse()
+        assertThat(UsageWidgetModel.showsReelPill(42, reelCounterEnabled = false)).isFalse()
+    }
+
+    @Test
+    fun reelPill_isHiddenOnNegativeCounts() {
+        // Stato corrotto: meglio niente che un numero senza senso.
+        assertThat(UsageWidgetModel.showsReelPill(-5, reelCounterEnabled = true)).isFalse()
+    }
+
+    @Test
+    fun formatReelCount_isThePlainInteger() {
+        // Nessuna abbreviazione: la stessa regola dovrebbe valere anche nella
+        // card in-app, e ogni formattazione in più è una parità in più da
+        // mantenere fra i due lati.
+        assertThat(UsageWidgetModel.formatReelCount(0)).isEqualTo("0")
+        assertThat(UsageWidgetModel.formatReelCount(7)).isEqualTo("7")
+        assertThat(UsageWidgetModel.formatReelCount(1500)).isEqualTo("1500")
+    }
+
+    @Test
+    fun formatReelCount_clampsNegativeInput() {
+        assertThat(UsageWidgetModel.formatReelCount(-3)).isEqualTo("0")
+    }
+
+    @Test
+    fun snapshotDefaultsToZeroReelsWithTheCounterOn() {
+        // I default dello snapshot descrivono il caso NORMALE (contatore acceso,
+        // nessuno scroll ancora): la pill si vede e dice 0.
+        val snapshot = UsageWidgetModel.Snapshot(totalMs = min(30), rows = emptyList())
+        assertThat(snapshot.reelsToday).isEqualTo(0)
+        assertThat(snapshot.reelCounterEnabled).isTrue()
+        assertThat(
+            UsageWidgetModel.showsReelPill(snapshot.reelsToday, snapshot.reelCounterEnabled),
+        ).isTrue()
+    }
+
+    @Test
+    fun reelCount_doesNotAffectRowFitting() {
+        // La pill vive DENTRO l'header, quindi il budget di altezza per le
+        // righe non cambia: è tutto il motivo per cui sta lì invece che su una
+        // riga propria. Se qualcuno la sposta, questo test non se ne accorge da
+        // solo — ma HEADER_DP sì, e lì il commento spiega il vincolo.
+        val candidates = List(3) {
+            UsageWidgetModel.Row("pkg$it", "App $it", min(10), null, false)
+        }
+        val height = UsageWidgetModel.ROOT_VPADDING_DP +
+            UsageWidgetModel.HEADER_DP +
+            3 * UsageWidgetModel.PLAIN_ROW_DP
+        assertThat(UsageWidgetModel.rowsFittingHeight(height, candidates)).isEqualTo(3)
+    }
 }

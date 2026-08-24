@@ -700,4 +700,75 @@ void main() {
       expect(d.apps.first.totalTimeMs, 1000);
     });
   });
+
+  group('BlockingChannel - reel counter', () {
+    test('getReelCountsToday parses the per-source map', () async {
+      setMockHandler((_) async => <Object?, Object?>{
+            'INSTAGRAM_REELS': 84,
+            'YOUTUBE_SHORTS': 48,
+          });
+      final counts = await BlockingChannel().getReelCountsToday();
+      expect(calls.first.method, 'getReelCountsToday');
+      expect(counts.forSource(ReelSource.instagramReels), 84);
+      expect(counts.total, 132);
+    });
+
+    test('getReelCountsToday returns empty when native returns null', () async {
+      setMockHandler((_) async => null);
+      expect((await BlockingChannel().getReelCountsToday()).isEmpty, isTrue);
+    });
+
+    test('getReelCountsHistory passes the day count and parses the list', () async {
+      setMockHandler((_) async => <Object?>[
+            <Object?, Object?>{
+              'dayStart': 200,
+              'counts': <Object?, Object?>{'INSTAGRAM_REELS': 5},
+            },
+            <Object?, Object?>{
+              'dayStart': 100,
+              'counts': <Object?, Object?>{},
+            },
+          ]);
+      final days = await BlockingChannel().getReelCountsHistory(days: 2);
+      expect(calls.first.method, 'getReelCountsHistory');
+      expect((calls.first.arguments as Map)['days'], 2);
+      expect(days, hasLength(2));
+      expect(days.first.dayStartMs, 200);
+      expect(days.first.total, 5);
+      expect(days.last.total, 0);
+    });
+
+    test('getReelCountsHistory defaults to a week', () async {
+      setMockHandler((_) async => <Object?>[]);
+      await BlockingChannel().getReelCountsHistory();
+      expect((calls.first.arguments as Map)['days'], 7);
+    });
+
+    test('getReelCountsHistory returns empty when native returns null', () async {
+      setMockHandler((_) async => null);
+      expect(await BlockingChannel().getReelCountsHistory(), isEmpty);
+    });
+
+    test('isReelCounterEnabled returns bool', () async {
+      setMockHandler((_) async => true);
+      expect(await BlockingChannel().isReelCounterEnabled(), isTrue);
+      expect(calls.first.method, 'isReelCounterEnabled');
+    });
+
+    test('setReelCounterEnabled sends the flag and propagates native false',
+        () async {
+      // CR-09: come setAppDailyLimits, il nativo ritorna il VERO esito della
+      // scrittura. Ingoiarlo lascerebbe l'interruttore in uno stato che non
+      // sopravvive al riavvio.
+      setMockHandler((_) async => false);
+      expect(await BlockingChannel().setReelCounterEnabled(true), isFalse);
+      expect(calls.first.method, 'setReelCounterEnabled');
+      expect((calls.first.arguments as Map)['enabled'], isTrue);
+    });
+
+    test('setReelCounterEnabled returns false when native returns null', () async {
+      setMockHandler((_) async => null);
+      expect(await BlockingChannel().setReelCounterEnabled(false), isFalse);
+    });
+  });
 }

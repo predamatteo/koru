@@ -70,6 +70,33 @@
             android:textSize="16sp"
             android:fontFamily="sans-serif-medium"
             android:maxLines="1" />
+
+        <!-- Pill del contatore reel. `gone` di default: a zero reel (o con la
+             feature spenta) non deve comparire affatto — un "0" perenne accanto
+             al tempo d'uso è rumore, e questo layout è anche il previewLayout
+             del picker dei widget, dove non c'è ancora nessun dato.
+
+             Vive dentro l'header proprio per non costare altezza: le righe delle
+             app sono dimensionate su HEADER_DP in UsageWidgetModel, e una riga
+             dedicata avrebbe tolto un'app dal widget 4x2. -->
+        <TextView
+            android:id="@+id/widget_header_reels"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/widget_reels_pill"
+            android:paddingStart="10dp"
+            android:paddingEnd="11dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:drawableStart="@drawable/ic_widget_reels"
+            android:drawablePadding="4dp"
+            android:text="@string/koru_widget_reels_placeholder"
+            android:textColor="@color/koru_widget_text_secondary"
+            android:textSize="15sp"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:visibility="gone" />
     </LinearLayout>
 
     <!-- Contenitore delle righe dinamiche (vedi UsageWidgetRenderer).

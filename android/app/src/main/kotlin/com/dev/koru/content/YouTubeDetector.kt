@@ -21,23 +21,33 @@ class YouTubeDetector(context: Context) {
     }
 
     private val shortsIds: Set<String>
+    private val shortsPagerIds: Set<String>
 
     init {
         val resId = context.resources.getIdentifier("youtube_view_ids", "raw", context.packageName)
-        shortsIds = if (resId == 0) {
-            emptySet()
+        if (resId == 0) {
+            shortsIds = emptySet()
+            shortsPagerIds = emptySet()
         } else {
             val json = JSONObject(
                 context.resources.openRawResource(resId).bufferedReader().readText()
             )
-            val array = json.optJSONArray("SHORTS")
-            val set = mutableSetOf<String>()
-            if (array != null) {
-                for (i in 0 until array.length()) set.add(array.getString(i))
-            }
-            set
+            shortsIds = json.optJSONArray("SHORTS").toStringSet()
+            shortsPagerIds = json.optJSONArray("SHORTS_PAGER").toStringSet()
         }
     }
+
+    /**
+     * `true` se [shortViewId] è il RecyclerView verticale degli Shorts, la view
+     * che emette `TYPE_VIEW_SCROLLED` quando si passa allo short successivo.
+     *
+     * Sottoinsieme stretto di `SHORTS`: `reel_watch_fragment_container` dice
+     * "siamo negli Shorts" ma non scrolla, e YouTube è pieno di altre
+     * RecyclerView (home, ricerca, commenti) che emettono scroll dallo stesso
+     * package. Vedi [InstagramDetector.isReelsPager] per il razionale completo.
+     */
+    fun isShortsPager(shortViewId: String?): Boolean =
+        shortViewId != null && shortViewId in shortsPagerIds
 
     fun detect(root: AccessibilityNodeInfo?): DetectedSection? {
         if (root == null || shortsIds.isEmpty()) return null
@@ -80,4 +90,13 @@ class YouTubeDetector(context: Context) {
         }
         return found
     }
+}
+
+/// Chiave assente o malformata ⇒ set vuoto: il detector degrada a "non
+/// riconosce nulla" invece di far fallire l'init del servizio.
+private fun org.json.JSONArray?.toStringSet(): Set<String> {
+    if (this == null) return emptySet()
+    val result = mutableSetOf<String>()
+    for (i in 0 until length()) result.add(getString(i))
+    return result
 }
