@@ -12,8 +12,25 @@ import '../../domain/entities/unlock_challenge.dart';
 /// no**. È l'unica cosa che rende i distrattori dei distrattori veri; sostituire
 /// un'icona con una troppo diversa svuota silenziosamente la difficoltà.
 ///
-/// Ogni id di [kGlyphFamilies] deve avere una entry qui: lo verifica
-/// `test/presentation/unlock_challenge_glyphs_test.dart`.
+/// Ci sono però due modi di somigliarsi che sono difetti, non difficoltà, e
+/// nessuno dei due si vede rileggendo il codice — solo guardando il font:
+///
+/// 1. **Somigliarsi troppo.** `Icons.star_border` e `Icons.star_outline` sono
+///    due `IconData` diverse con due codepoint diversi che disegnano lo
+///    **stesso identico glifo**. Con una a bersaglio e l'altra a sosia il
+///    puzzle non è difficile, è impossibile: due caselle indistinguibili e un
+///    tocco sbagliato brucia il tentativo. Vale per ogni coppia di icone
+///    "alias" del set Material — sono parecchie.
+/// 2. **Somigliare al glifo mancante.** Un quadrato vuoto e basta
+///    (`Icons.crop_square`, `Icons.check_box_outline_blank`, `Icons.crop_din`)
+///    è indistinguibile dal `.notdef` che il font disegna quando un codepoint
+///    non c'è. L'utente non vede un simbolo da ricordare, vede l'app rotta.
+///    Da qui la famiglia `square` fatta di quadrati con qualcosa dentro.
+///
+/// La contromisura vera non è un test: è **guardare la griglia**. Le poche
+/// regole meccaniche che *si possono* verificare — un'icona per ogni id,
+/// nessun codepoint usato due volte, nessuno dei quadrati vuoti noti — stanno
+/// in `test/presentation/unlock_challenge_glyphs_test.dart`.
 const Map<String, IconData> kGlyphIcons = {
   // Frecce piene — differiscono solo per rotazione.
   'arrow_up': Icons.arrow_upward,
@@ -28,10 +45,14 @@ const Map<String, IconData> kGlyphIcons = {
   'chevron_right': Icons.keyboard_arrow_right,
 
   // Stelle — pieno / vuoto / mezzo / contorno sottile.
+  // NON usare `Icons.star_outline` per il contorno sottile: disegna lo stesso
+  // glifo di `Icons.star_border`, quindi "vuoto" e "sottile" finirebbero
+  // identici. `star_purple500` è il contorno davvero più fine (il nome viene
+  // dal set Material, nel font è monocromatico come tutte le altre).
   'star_full': Icons.star,
   'star_empty': Icons.star_border,
   'star_half': Icons.star_half,
-  'star_thin': Icons.star_outline,
+  'star_thin': Icons.star_purple500,
 
   // Cuori.
   'heart_full': Icons.favorite,
@@ -44,10 +65,12 @@ const Map<String, IconData> kGlyphIcons = {
   'circle_target': Icons.adjust,
   'circle_dot': Icons.radio_button_checked,
 
-  // Quadrati.
+  // Quadrati — stessa sagoma, cambia solo il segno interno. Il contorno vuoto
+  // e basta è vietato qui: vedi il punto 2 dell'intestazione.
   'square_full': Icons.square,
-  'square_empty': Icons.crop_square,
-  'square_thin': Icons.check_box_outline_blank,
+  'square_check': Icons.check_box,
+  'square_dash': Icons.indeterminate_check_box,
+  'square_cross': Icons.disabled_by_default,
 
   // Triangoli — contorno + le tre rotazioni piene.
   'triangle_empty': Icons.change_history,

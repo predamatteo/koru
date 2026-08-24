@@ -63,7 +63,16 @@ const List<GlyphFamily> kGlyphFamilies = [
     'circle_target',
     'circle_dot',
   ]),
-  GlyphFamily('square', ['square_full', 'square_empty', 'square_thin']),
+  // Le varianti di questa famiglia hanno tutte qualcosa DENTRO il quadrato, e
+  // non è un vezzo estetico: un quadrato vuoto è identico al glifo `.notdef`
+  // che il font disegna quando un'icona manca, e l'utente lo legge come un bug
+  // del puzzle invece che come un simbolo da ricordare. Vedi `kGlyphIcons`.
+  GlyphFamily('square', [
+    'square_full',
+    'square_check',
+    'square_dash',
+    'square_cross',
+  ]),
   GlyphFamily('triangle', [
     'triangle_empty',
     'triangle_right',

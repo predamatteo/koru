@@ -256,7 +256,15 @@ Three things that quietly defuse the puzzle itself:
 2. **Family similarity.** The difficulty comes entirely from decoys being
    *near-identical* to their target (same silhouette, different rotation/fill).
    Swap one icon for a visually distinct one and the puzzle silently becomes
-   trivial; no test can catch that, only looking at it can.
+   trivial; no test can catch that, only looking at it can. Two ways of being
+   *too* similar are defects rather than difficulty, and both already shipped
+   once: an **alias pair** — `Icons.star_border` and `Icons.star_outline` are
+   distinct `IconData` with distinct codepoints that draw the *same glyph*, so
+   target and decoy become one impossible 50/50 — and a **bare hollow square**
+   (`crop_square`, `check_box_outline_blank`, `crop_din`), which is pixel-wise
+   the `.notdef` box the font draws for a *missing* codepoint, so users read it
+   as a broken icon. Compare codepoints, not `IconData`, and keep something
+   inside the squares.
 3. **Regeneration on failure.** A wrong tap builds a *new* challenge rather than
    replaying the old one — otherwise the third attempt is solved from muscle
    memory and the friction is gone.
