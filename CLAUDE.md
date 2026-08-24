@@ -186,6 +186,21 @@ never enabled at widget mount. Route names are centralized in `KoruRoutes`.
 
 ## Conventions
 
+### Branching (REQUIRED for every new feature)
+
+`main` is the release branch, `dev` is the integration branch. Never develop
+directly on either.
+
+1. **Branch off `dev`** — `git checkout dev && git pull && git checkout -b <feature>`.
+   One branch per feature; commits follow the `Feat:`/`Fix:`/`Perf:` prefix convention.
+2. **Develop on the feature branch**, then **merge it into `dev`**.
+3. **On `dev`, run every test available** — the whole `flutter test` suite, the Kotlin
+   suite (`./gradlew :app:testDebugUnitTest -x compileFlutterBuildDebug`),
+   `flutter analyze`, plus on-device validation when the change touches enforcement,
+   the launcher, or the native overlay.
+4. **Only when everything is green, merge `dev` into `main`.** A red suite — including
+   pre-existing failures — blocks the merge; fix it first.
+
 - The whole `flutter test` suite **and** the Kotlin suite must be green before any
   push to `main` — including pre-existing failures.
 - Keep the three enforcement paths (app blocking / website blocking / in-app content)
