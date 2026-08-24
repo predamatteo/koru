@@ -300,20 +300,51 @@ sitting in `dev` blocks every release until it is done.
 
 1. **Branch off `dev`** — `git checkout dev && git pull && git checkout -b <feature>`.
    One branch per feature; commits follow the `Feat:`/`Fix:`/`Perf:` prefix convention.
-2. **Develop on the feature branch**, then **merge it into `dev`**.
-3. **Keep the feature branch after the merge — never delete it.** It is the bookmark
+2. **Write the code and its tests on the branch.** Tests are part of the feature,
+   not a follow-up.
+3. **Only once that suite is green, merge the branch into `dev`.** Never merge a
+   feature into `dev` with a red or missing test.
+4. **Keep the feature branch after the merge — never delete it.** It is the bookmark
    back to that feature: if it turns out broken later, that is where you go to read
    how it was built. Branches accumulate on purpose; `git branch -d` on a merged
    feature branch is not cleanup here, it is losing the entry point.
 
-**Before `main`, on `dev`, whichever path the change came from:**
+**The gate from `dev` to `main`** — applies to everything sitting in `dev`, whichever
+path it came from:
 
-4. **Run every test available** — the whole `flutter test` suite, the Kotlin suite
-   (`./gradlew :app:testDebugUnitTest -x compileFlutterBuildDebug`), `flutter analyze`,
-   plus on-device validation when the change touches enforcement, the launcher, or
-   the native overlay.
-5. **Only when everything is green, merge `dev` into `main`.** A red suite — including
-   pre-existing failures — blocks the merge; fix it first.
+5. **Run every test available** — the whole `flutter test` suite, the Kotlin suite
+   (`./gradlew :app:testDebugUnitTest -x compileFlutterBuildDebug`), and `flutter analyze`.
+   A red suite — including pre-existing failures — blocks the merge; fix it first.
+6. **On-device validation is MANDATORY, and it is the user's call, not Claude's.**
+   Green unit tests are necessary and not sufficient: nothing here is proven until it
+   has run on a real device. Claude never decides that a feature is ready — it reports
+   that the suite is green, says what to check on the device, and **waits**.
+7. **Merge `dev` into `main` only after the user has explicitly given the OK**, which
+   means they tested it on the device themselves. No OK, no merge — not "it looks
+   fine", not "the tests pass", not "it is only a small change".
+
+**The one exemption:** a commit that touches no code at all — `*.md` and nothing else
+— skips 6 and 7. There is nothing to validate on a device. It still goes through 5.
+
+**Consequence to keep in mind:** a `dev → main` merge carries *everything* in `dev`.
+So one feature waiting for the user's OK blocks every other change from reaching
+`main`, bug fixes included. That is intended — but if something genuinely urgent has
+to ship while `dev` holds unvalidated work, the only correct move is a hotfix branch
+off `main`, merged back into both `main` and `dev`. Ask before doing that.
+
+### Standing check: what is in `dev` but not in `main`
+
+Work merged into `dev` and still waiting for on-device validation is invisible unless
+somebody looks. **At the start of a session, before taking on new work, run:**
+
+```sh
+git log --oneline main..dev
+```
+
+If it is not empty, tell the user what is pending and that it still needs their
+on-device OK before it can reach `main` — *then* start the new task. This survives
+across sessions on purpose: it is derived from git, not from anyone's memory, so it
+stays true no matter how much time passed or who did the work.
 
 **A merged branch is an archive, not a workspace.** To change something in a feature
 that already landed, go by the table above — a bug fix on `dev`, a substantial rework
