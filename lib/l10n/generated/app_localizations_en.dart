@@ -29,9 +29,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get tabProfiles => 'Profiles';
 
   @override
-  String get tabFocus => 'Focus';
-
-  @override
   String get tabStats => 'Stats';
 
   @override

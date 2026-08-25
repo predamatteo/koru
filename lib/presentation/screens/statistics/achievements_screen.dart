@@ -77,15 +77,11 @@ class AchievementsScreen extends ConsumerWidget {
 }
 
 String _categoryLabel(AchievementCategory c) => switch (c) {
-  AchievementCategory.focus => 'Focus',
-  AchievementCategory.consistency => 'Consistency',
   AchievementCategory.discipline => 'Discipline',
   AchievementCategory.setup => 'Setup',
 };
 
 Color _tintFor(AchievementCategory c) => switch (c) {
-  AchievementCategory.focus => KoruColors.primary,
-  AchievementCategory.consistency => KoruColors.secondary,
   AchievementCategory.discipline => KoruColors.danger,
   AchievementCategory.setup => KoruColors.textSecondary,
 };

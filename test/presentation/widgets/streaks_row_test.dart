@@ -29,10 +29,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Focus'), findsOneWidget);
       expect(find.text('Mindful'), findsOneWidget);
       expect(find.text('Clean'), findsOneWidget);
-      expect(find.text('🔥'), findsOneWidget);
       expect(find.text('🌿'), findsOneWidget);
       expect(find.text('✨'), findsOneWidget);
     });
@@ -56,8 +54,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 3 chip × testo "0".
-      expect(find.text('0'), findsNWidgets(3));
+      // 2 chip × testo "0".
+      expect(find.text('0'), findsNWidgets(2));
     });
 
     testWidgets('shows the current count when streak is active (today incr.)',
@@ -66,17 +64,13 @@ void main() {
       final today = dayKeyFor(now);
 
       final h = buildTestContainer(extra: [
-        streakSnapshotProvider(StreakId.focus).overrideWith(
+        streakSnapshotProvider(StreakId.mindful).overrideWith(
           (ref) => Stream<StreakSnapshot>.value(StreakSnapshot(
-            id: StreakId.focus,
+            id: StreakId.mindful,
             currentCount: 5,
             longest: 12,
             lastIncrementedDay: today,
           )),
-        ),
-        streakSnapshotProvider(StreakId.mindful).overrideWith(
-          (ref) => Stream<StreakSnapshot>.value(
-              StreakSnapshot.empty(StreakId.mindful)),
         ),
         streakSnapshotProvider(StreakId.clean).overrideWith(
           (ref) => Stream<StreakSnapshot>.value(
@@ -100,7 +94,7 @@ void main() {
       expect(find.text('best 12'), findsOneWidget);
     });
 
-    testWidgets('renders three Expanded chips (layout sanity check)',
+    testWidgets('renders two Expanded chips (layout sanity check)',
         (tester) async {
       final h = buildTestContainer(extra: [
         for (final id in StreakId.values)
@@ -120,8 +114,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 3 chips wrapped in Expanded (più gli Expanded interni di Row se any).
-      expect(find.byType(Expanded), findsAtLeastNWidgets(3));
+      // 2 chips wrapped in Expanded (più gli Expanded interni di Row se any).
+      expect(find.byType(Expanded), findsAtLeastNWidgets(2));
     });
   });
 }

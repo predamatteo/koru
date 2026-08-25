@@ -35,12 +35,12 @@ void main() {
       addTearDown(h.dispose);
 
       final repo = h.container.read(achievementsRepositoryProvider);
-      await repo.unlock('focus_first');
-      await repo.unlock('focus_hour');
+      await repo.unlock('setup_first_profile');
+      await repo.unlock('clean_week');
 
       final ids =
           await h.container.read(unlockedAchievementIdsProvider.stream).first;
-      expect(ids, {'focus_first', 'focus_hour'});
+      expect(ids, {'setup_first_profile', 'clean_week'});
     });
   });
 
@@ -51,11 +51,11 @@ void main() {
 
       final controller = h.container.read(newUnlocksControllerProvider);
       const a = Achievement(
-        id: 'focus_first',
-        title: 'First focus',
+        id: 'setup_first_profile',
+        title: 'First profile',
         description: 'desc',
-        iconKey: 'self_improvement_outlined',
-        category: AchievementCategory.focus,
+        iconKey: 'add_circle_outline',
+        category: AchievementCategory.setup,
         target: 1,
       );
 
@@ -63,7 +63,7 @@ void main() {
       final future = controller.stream.first;
       controller.emit(a);
       final received = await future;
-      expect(received.id, 'focus_first');
+      expect(received.id, 'setup_first_profile');
     });
 
     test('multiple subscribers receive the same emit', () async {
@@ -75,19 +75,19 @@ void main() {
       final f2 = controller.stream.first;
 
       const a = Achievement(
-        id: 'focus_hour',
-        title: 'Focused hour',
+        id: 'clean_week',
+        title: 'Clean week',
         description: 'd',
-        iconKey: 'hourglass_full_outlined',
-        category: AchievementCategory.focus,
-        target: 60,
+        iconKey: 'verified_outlined',
+        category: AchievementCategory.discipline,
+        target: 7,
       );
       controller.emit(a);
 
       final r1 = await f1;
       final r2 = await f2;
-      expect(r1.id, 'focus_hour');
-      expect(r2.id, 'focus_hour');
+      expect(r1.id, 'clean_week');
+      expect(r2.id, 'clean_week');
     });
 
     test('provider returns the same controller across reads', () {
@@ -112,17 +112,17 @@ void main() {
           .first;
 
       const a = Achievement(
-        id: 'streak_focus_7',
-        title: 'Weekling',
+        id: 'intentions_50',
+        title: 'Mindful chooser',
         description: 'd',
-        iconKey: 'local_fire_department_outlined',
-        category: AchievementCategory.consistency,
-        target: 7,
+        iconKey: 'psychology_outlined',
+        category: AchievementCategory.discipline,
+        target: 50,
       );
       h.container.read(newUnlocksControllerProvider).emit(a);
 
       final ev = await future;
-      expect(ev.id, 'streak_focus_7');
+      expect(ev.id, 'intentions_50');
     });
   });
 

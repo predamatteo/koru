@@ -1,10 +1,12 @@
 /// Identificatori stabili delle streak tracciate.
-/// - [focus]: giorni consecutivi con ≥1 sessione focus completata (≥15 min).
 /// - [mindful]: giorni consecutivi con mood check-in registrato.
 /// - [clean]: giorni consecutivi senza superare nessun daily limit
 ///   configurato. Richiede almeno un limite attivo per essere valutata.
+///
+/// La streak `focus` è stata rimossa insieme alla tab Focus: era incrementata
+/// solo a fine sessione quick-block/pomodoro. Le righe storiche con chiave
+/// `'focus'` restano in `streak_state` e [fromKey] le mappa a `null`.
 enum StreakId {
-  focus('focus'),
   mindful('mindful'),
   clean('clean');
 

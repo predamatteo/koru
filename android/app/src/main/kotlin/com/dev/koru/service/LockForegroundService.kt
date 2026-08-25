@@ -40,8 +40,6 @@ class LockForegroundService : Service() {
         var isRunning = false
             private set
 
-        val quickBlockManager = QuickBlockManager()
-
         @Volatile
         private var currentLockRunnable: LockRunnable? = null
 
@@ -105,7 +103,6 @@ class LockForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        quickBlockManager.attachContext(applicationContext)
         overlayManager = OverlayManager(applicationContext)
         mediaSilencer = MediaSilencer(
             focus = AndroidAudioFocusPort(applicationContext),
@@ -220,7 +217,6 @@ class LockForegroundService : Service() {
 
     override fun onDestroy() {
         stopBlocking()
-        quickBlockManager.stop()
         overlayManager?.destroy()
         overlayManager = null
         // Rilascio SINCRONO: stopBlocking() smonta l'overlay con un post sul
@@ -316,27 +312,6 @@ class LockForegroundService : Service() {
                         bypassPolicy = policy,
                     )
                     silenceMediaFor(packageName, BlockReason.USAGE_LIMIT)
-                }
-                performGoHome()
-            },
-            onFocusBlock = { packageName, appLabel ->
-                // CR-01: il backup applica anche il focus (quick-block /
-                // pomodoro work). Prima era ESCLUSIVO dell'AccessibilityService:
-                // se moriva durante una sessione focus, le app non-whitelist
-                // restavano sbloccate. Rendering identico al path primario
-                // (FOCUS_MODE + HOME); il logging DB sta in LockRunnable, come
-                // per onLimitBlock/onBlock.
-                Log.d(TAG, "[BACKUP] Focus block $packageName")
-                mainHandler.post {
-                    overlayManager?.show(
-                        packageName = packageName,
-                        appLabel = appLabel,
-                        profileTitle = "Focus session",
-                        reason = BlockReason.FOCUS_MODE,
-                        config = OverlayConfig.DEFAULT,
-                        profileEmoji = "🎯", // 🎯
-                    )
-                    silenceMediaFor(packageName, BlockReason.FOCUS_MODE)
                 }
                 performGoHome()
             },

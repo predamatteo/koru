@@ -4,13 +4,11 @@ import 'package:koru/domain/entities/streak.dart';
 void main() {
   group('StreakId', () {
     test('keys are the lowercase enum names', () {
-      expect(StreakId.focus.key, 'focus');
       expect(StreakId.mindful.key, 'mindful');
       expect(StreakId.clean.key, 'clean');
     });
 
     test('fromKey returns the matching value', () {
-      expect(StreakId.fromKey('focus'), StreakId.focus);
       expect(StreakId.fromKey('mindful'), StreakId.mindful);
       expect(StreakId.fromKey('clean'), StreakId.clean);
     });
@@ -18,7 +16,10 @@ void main() {
     test('fromKey returns null for unknown keys', () {
       expect(StreakId.fromKey('bogus'), isNull);
       expect(StreakId.fromKey(''), isNull);
-      expect(StreakId.fromKey('FOCUS'), isNull);
+      expect(StreakId.fromKey('MINDFUL'), isNull);
+      // 'focus' era una StreakId, rimossa con la tab Focus: le righe
+      // storiche in streak_state non devono piu' risolvere.
+      expect(StreakId.fromKey('focus'), isNull);
     });
 
     test('keys are unique across all values', () {
@@ -29,9 +30,9 @@ void main() {
 
   group('StreakSnapshot.empty', () {
     test('produces zeroed snapshot with null lastIncrementedDay', () {
-      final snapshot = StreakSnapshot.empty(StreakId.focus);
+      final snapshot = StreakSnapshot.empty(StreakId.mindful);
 
-      expect(snapshot.id, StreakId.focus);
+      expect(snapshot.id, StreakId.mindful);
       expect(snapshot.currentCount, 0);
       expect(snapshot.longest, 0);
       expect(snapshot.lastIncrementedDay, isNull);

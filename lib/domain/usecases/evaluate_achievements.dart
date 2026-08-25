@@ -16,9 +16,6 @@ abstract class AchievementsGateway {
 /// con i target del catalogo.
 class AchievementStats {
   const AchievementStats({
-    required this.totalFocusMinutes,
-    required this.focusMinutesToday,
-    required this.focusStreakCurrent,
     required this.cleanStreakCurrent,
     required this.intentionsCount,
     required this.honestBlocksCount,
@@ -28,9 +25,6 @@ class AchievementStats {
     required this.appsWithCustomOverlayCount,
   });
 
-  final int totalFocusMinutes;
-  final int focusMinutesToday;
-  final int focusStreakCurrent;
   final int cleanStreakCurrent;
   final int intentionsCount;
   final int honestBlocksCount;
@@ -44,22 +38,6 @@ class AchievementStats {
 /// Tenere allineato con [kAchievementCatalog].
 bool _isSatisfied(Achievement a, AchievementStats s) {
   switch (a.id) {
-    case 'focus_first':
-      return s.totalFocusMinutes >= 1;
-    case 'focus_hour':
-      return s.totalFocusMinutes >= 60;
-    case 'focus_day':
-      return s.focusMinutesToday >= 240;
-    case 'focus_dedicated':
-      return s.totalFocusMinutes >= 600;
-    case 'focus_monk':
-      return s.totalFocusMinutes >= 3000;
-    case 'streak_focus_7':
-      return s.focusStreakCurrent >= 7;
-    case 'streak_focus_30':
-      return s.focusStreakCurrent >= 30;
-    case 'streak_focus_100':
-      return s.focusStreakCurrent >= 100;
     case 'clean_week':
       return s.cleanStreakCurrent >= 7;
     case 'intentions_50':
@@ -102,22 +80,6 @@ Future<List<Achievement>> evaluateAchievements({
 /// [stats]. Usato dalla UI "All achievements" per le progress bar.
 int achievementProgress(Achievement a, AchievementStats s) {
   switch (a.id) {
-    case 'focus_first':
-      return s.totalFocusMinutes >= 1 ? 1 : 0;
-    case 'focus_hour':
-      return s.totalFocusMinutes.clamp(0, 60);
-    case 'focus_day':
-      return s.focusMinutesToday.clamp(0, 240);
-    case 'focus_dedicated':
-      return s.totalFocusMinutes.clamp(0, 600);
-    case 'focus_monk':
-      return s.totalFocusMinutes.clamp(0, 3000);
-    case 'streak_focus_7':
-      return s.focusStreakCurrent.clamp(0, 7);
-    case 'streak_focus_30':
-      return s.focusStreakCurrent.clamp(0, 30);
-    case 'streak_focus_100':
-      return s.focusStreakCurrent.clamp(0, 100);
     case 'clean_week':
       return s.cleanStreakCurrent.clamp(0, 7);
     case 'intentions_50':

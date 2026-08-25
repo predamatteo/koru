@@ -50,53 +50,6 @@ void main() {
       expect(b.profileTitle, '');
     });
 
-    test('QUICK_BLOCK_TICK parses all fields', () {
-      final event = KoruServiceEvent.fromJson({
-        'type': 'QUICK_BLOCK_TICK',
-        'remainingMs': 30000,
-        'totalMs': 60000,
-        'isPomodoroBreak': true,
-        'isActive': true,
-        'currentCycle': 2,
-        'totalCycles': 4,
-      });
-      expect(event, isA<QuickBlockTickEvent>());
-      final t = event as QuickBlockTickEvent;
-      expect(t.remainingMs, 30000);
-      expect(t.totalMs, 60000);
-      expect(t.isPomodoroBreak, isTrue);
-      expect(t.isActive, isTrue);
-      expect(t.currentCycle, 2);
-      expect(t.totalCycles, 4);
-    });
-
-    test('QUICK_BLOCK_TICK coerces num to int', () {
-      final event = KoruServiceEvent.fromJson({
-        'type': 'QUICK_BLOCK_TICK',
-        'remainingMs': 30000.5,
-        'totalMs': 60000.7,
-      });
-      final t = event as QuickBlockTickEvent;
-      expect(t.remainingMs, 30000);
-      expect(t.totalMs, 60000);
-    });
-
-    test('QUICK_BLOCK_TICK uses defaults when fields absent', () {
-      final event = KoruServiceEvent.fromJson({'type': 'QUICK_BLOCK_TICK'});
-      final t = event as QuickBlockTickEvent;
-      expect(t.remainingMs, 0);
-      expect(t.totalMs, 0);
-      expect(t.isPomodoroBreak, isFalse);
-      expect(t.isActive, isFalse);
-      expect(t.currentCycle, 0);
-      expect(t.totalCycles, 0);
-    });
-
-    test('QUICK_BLOCK_FINISHED → QuickBlockFinishedEvent', () {
-      final event = KoruServiceEvent.fromJson({'type': 'QUICK_BLOCK_FINISHED'});
-      expect(event, isA<QuickBlockFinishedEvent>());
-    });
-
     test('PACKAGE_CHANGED parses kind + packageName', () {
       final event = KoruServiceEvent.fromJson({
         'type': 'PACKAGE_CHANGED',

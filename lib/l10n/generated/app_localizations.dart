@@ -134,12 +134,6 @@ abstract class AppLocalizations {
   /// **'Profiles'**
   String get tabProfiles;
 
-  /// No description provided for @tabFocus.
-  ///
-  /// In en, this message translates to:
-  /// **'Focus'**
-  String get tabFocus;
-
   /// No description provided for @tabStats.
   ///
   /// In en, this message translates to:

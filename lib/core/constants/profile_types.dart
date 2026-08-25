@@ -6,7 +6,9 @@ abstract class ProfileType {
   static const int bluetooth = 8; // Phase 2
   static const int usageLimit = 16;
   static const int launchCount = 32;
-  static const int quickBlock = 64;
+  // 64 era `quickBlock`, ritirato con la tab Focus. Il bit resta RISERVATO:
+  // `type_combinations` è persistito, quindi riusare 64 per una condizione
+  // nuova la attiverebbe su eventuali profili storici che lo avevano acceso.
   static const int strictMode = 0x80000000;
 
   static bool hasType(int combinations, int type) => combinations & type != 0;

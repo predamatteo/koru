@@ -3,8 +3,8 @@ import 'package:koru/domain/entities/achievement.dart';
 
 void main() {
   group('kAchievementCatalog', () {
-    test('contains exactly 15 entries (MVP catalog)', () {
-      expect(kAchievementCatalog.length, 15);
+    test('contains exactly 7 entries (MVP catalog)', () {
+      expect(kAchievementCatalog.length, 7);
     });
 
     test('all IDs are unique', () {
@@ -48,32 +48,40 @@ void main() {
       }
     });
 
-    test('category counts: focus=5, consistency=3, discipline=3, setup=4', () {
+    test('category counts: discipline=3, setup=4', () {
       int countOf(AchievementCategory c) =>
           kAchievementCatalog.where((a) => a.category == c).length;
 
-      expect(countOf(AchievementCategory.focus), 5);
-      expect(countOf(AchievementCategory.consistency), 3);
       expect(countOf(AchievementCategory.discipline), 3);
       expect(countOf(AchievementCategory.setup), 4);
       // Total must add up to catalog length.
       expect(
-        countOf(AchievementCategory.focus) +
-            countOf(AchievementCategory.consistency) +
-            countOf(AchievementCategory.discipline) +
+        countOf(AchievementCategory.discipline) +
             countOf(AchievementCategory.setup),
-        15,
+        7,
       );
+    });
+
+    test('gli id dei focus achievement rimossi non tornano nel catalogo', () {
+      // Sono persistiti in achievements_unlocked: riusarli farebbe apparire
+      // "gia' sbloccato" un achievement nuovo su chi usava la tab Focus.
+      const retired = {
+        'focus_first', 'focus_hour', 'focus_day', 'focus_dedicated',
+        'focus_monk', 'streak_focus_7', 'streak_focus_30', 'streak_focus_100',
+      };
+      for (final a in kAchievementCatalog) {
+        expect(retired.contains(a.id), isFalse, reason: 'id ritirato: ${a.id}');
+      }
     });
   });
 
   group('achievementById', () {
     test('returns the correct Achievement for a known id', () {
-      final result = achievementById('focus_first');
+      final result = achievementById('setup_first_profile');
       expect(result, isNotNull);
-      expect(result!.id, 'focus_first');
-      expect(result.title, 'First focus');
-      expect(result.category, AchievementCategory.focus);
+      expect(result!.id, 'setup_first_profile');
+      expect(result.title, 'First profile');
+      expect(result.category, AchievementCategory.setup);
       expect(result.target, 1);
     });
 
@@ -85,8 +93,8 @@ void main() {
       expect(achievementById(''), isNull);
     });
 
-    test('is case-sensitive (FOCUS_FIRST does not match focus_first)', () {
-      expect(achievementById('FOCUS_FIRST'), isNull);
+    test('is case-sensitive (CLEAN_WEEK does not match clean_week)', () {
+      expect(achievementById('CLEAN_WEEK'), isNull);
     });
   });
 }

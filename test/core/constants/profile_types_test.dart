@@ -10,7 +10,7 @@ void main() {
       expect(ProfileType.bluetooth, 8);
       expect(ProfileType.usageLimit, 16);
       expect(ProfileType.launchCount, 32);
-      expect(ProfileType.quickBlock, 64);
+      // 64 era quickBlock, ritirato con la tab Focus: resta riservato.
     });
 
     test('strictMode is the high bit (0x80000000)', () {
@@ -25,9 +25,8 @@ void main() {
         ProfileType.bluetooth,
         ProfileType.usageLimit,
         ProfileType.launchCount,
-        ProfileType.quickBlock,
       };
-      expect(bits.length, 7);
+      expect(bits.length, 6);
     });
   });
 
@@ -96,9 +95,9 @@ void main() {
 
     test('removeType is the inverse of addType', () {
       const before = ProfileType.usageLimit;
-      final after = ProfileType.addType(before, ProfileType.quickBlock);
+      final after = ProfileType.addType(before, ProfileType.launchCount);
       expect(
-        ProfileType.removeType(after, ProfileType.quickBlock),
+        ProfileType.removeType(after, ProfileType.launchCount),
         before,
       );
     });

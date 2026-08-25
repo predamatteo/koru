@@ -215,40 +215,6 @@ class BlockingChannel {
       0;
 
   // =========================================================================
-  // Concern: quick-block e Pomodoro (focus a tempo).
-  // =========================================================================
-
-  Future<bool> startQuickBlock(
-    Duration duration, {
-    List<String> whitelist = const [],
-  }) async =>
-      (await _channel.invokeMethod<bool>('startQuickBlock', {
-        'durationMs': duration.inMilliseconds,
-        'whitelist': whitelist,
-      })) ??
-      false;
-
-  Future<bool> stopQuickBlock() async =>
-      (await _channel.invokeMethod<bool>('stopQuickBlock')) ?? false;
-
-  Future<bool> startPomodoro({
-    required Duration workPhase,
-    required Duration breakPhase,
-    required int cycles,
-    List<String> whitelist = const [],
-  }) async =>
-      (await _channel.invokeMethod<bool>('startPomodoro', {
-        'workMs': workPhase.inMilliseconds,
-        'breakMs': breakPhase.inMilliseconds,
-        'cycles': cycles,
-        'whitelist': whitelist,
-      })) ??
-      false;
-
-  Future<bool> stopPomodoro() async =>
-      (await _channel.invokeMethod<bool>('stopPomodoro')) ?? false;
-
-  // =========================================================================
   // Concern: azioni dirette su una singola app (launch / uninstall / app-info).
   // =========================================================================
 

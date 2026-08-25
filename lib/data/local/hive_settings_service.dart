@@ -2,7 +2,7 @@ import 'package:hive_ce_flutter/hive_flutter.dart';
 
 import '../../core/constants/hive_keys.dart';
 
-/// Facade che espone le 6 box di Koru e una API tipizzata per settings/KV.
+/// Facade che espone le 5 box di Koru e una API tipizzata per settings/KV.
 ///
 /// Pattern ereditato da ascent (hive_settings_service.dart) ma adattato a hive_ce
 /// e alle box Koru.
@@ -12,7 +12,6 @@ class HiveSettingsService {
   late final Box _uiStateBox;
   late final Box _cacheBox;
   late final Box _hiddenAppsBox;
-  late final Box _quickTogglesBox;
 
   Future<void> init() async {
     _settingsBox = await Hive.openBox(HiveKeys.settingsBox);
@@ -20,7 +19,6 @@ class HiveSettingsService {
     _uiStateBox = await Hive.openBox(HiveKeys.uiStateBox);
     _cacheBox = await Hive.openBox(HiveKeys.cacheBox);
     _hiddenAppsBox = await Hive.openBox(HiveKeys.hiddenAppsBox);
-    _quickTogglesBox = await Hive.openBox(HiveKeys.quickTogglesBox);
   }
 
   // Generic typed accessors ---------------------------------------------------
@@ -71,8 +69,6 @@ class HiveSettingsService {
         return _cacheBox;
       case HiveKeys.hiddenAppsBox:
         return _hiddenAppsBox;
-      case HiveKeys.quickTogglesBox:
-        return _quickTogglesBox;
       default:
         throw ArgumentError('Unknown Hive box: $name');
     }

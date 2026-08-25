@@ -121,7 +121,7 @@ class KoruAccessibilityService : AccessibilityService() {
         /// eventi BYPASS_EXPIRED (l'utente è stato ri-prompted dopo che il TTL
         /// di un bypass è scaduto mentre era ancora dentro l'app). ARCH-06: i
         /// codici restrictionType (0=APP, 1=SECTION, 2=WEBSITE, 3=USAGE_LIMIT,
-        /// 4=FOCUS_MODE, 5=BYPASS_EXPIRED) vivono ora in [BlockingContract].
+        /// 4=FOCUS_MODE legacy, 5=BYPASS_EXPIRED) vivono ora in [BlockingContract].
         /// Alias mantenuto perché referenziato come costante in questo file.
         const val RESTRICTION_TYPE_BYPASS_EXPIRED = BlockingContract.RESTRICTION_TYPE_BYPASS_EXPIRED
 
@@ -809,7 +809,7 @@ class KoruAccessibilityService : AccessibilityService() {
                 scheduleBypassExpiryCheck(pkg, durationMs, domain)
                 // Discriminator: il rilancio via startActivity serve SOLO quando
                 // abbiamo espulso l'app (HOME) e dunque non è più in foreground —
-                // i blocchi "duri" APP_BLOCKED/USAGE_LIMIT/FOCUS_MODE da icona.
+                // i blocchi "duri" APP_BLOCKED/USAGE_LIMIT da icona.
                 // In DUE casi l'app è invece ANCORA in foreground sotto l'overlay
                 // e basta dismissare:
                 //  - BYPASS_EXPIRED (showExtensionPrompt non fa HOME);
@@ -1524,12 +1524,11 @@ class KoruAccessibilityService : AccessibilityService() {
         // only). Vedi [showPreLaunchBlockIfNeeded] / [preLaunchOverlayPackage].
         preLaunchOverlayPackage = null
 
-        // Decisione DELEGATA a [BlockPolicyEvaluator]: focus → daily limit →
+        // Decisione DELEGATA a [BlockPolicyEvaluator]: daily limit →
         // bypass di profilo → profile loop. L'ordine (e ogni guard) è
         // cross-checkato col vecchio inline; qui restano solo i side-effect.
         //
         // Letture d'ambiente identiche a prima:
-        // - QuickBlock (focus): file store, cross-process (`:accessibility`).
         // - Limit (SEC-03 guarded): cap cumulativo anti clock-backward. Il
         //   flag `strict` è riletto live da AppUsageLimitsStore (cross-process)
         //   quindi una commutazione a strict mid-window è immediata.
@@ -1541,9 +1540,6 @@ class KoruAccessibilityService : AccessibilityService() {
         // filtrato): quella sessione over-app è finita → rilascia il focus audio
         // e azzera il tracking, così non resta "appiccicato" al pkg precedente.
         overlayOverAppPackage?.let { if (it != packageName) endOverlayOverApp() }
-
-        val qbSnapshot = QuickBlockStore.read(applicationContext)
-        val focusShouldBlock = qbSnapshot.shouldBlock(packageName, System.currentTimeMillis())
 
         val limitEntry = AppUsageLimitsStore.entryFor(applicationContext, packageName)
         val limitMinutes = limitEntry?.minutes ?: 0
@@ -1562,52 +1558,11 @@ class KoruAccessibilityService : AccessibilityService() {
                 limitMinutes = limitMinutes,
                 isLimitStrict = isLimitStrict,
                 limitTodayMs = limitTodayMs,
-                focusShouldBlock = focusShouldBlock,
             ),
         )
 
         when (decision) {
             is BlockDecision.Block -> when (decision.reason) {
-                BlockReason.FOCUS_MODE -> {
-                    logFlashDecision(packageName, BlockReason.FOCUS_MODE)
-                    Log.w(TAG, ">>> BLOCKING APP (focus): $packageName")
-                    // Un focus/limite/sezione sopravvenuto è un blocco "duro" che
-                    // espelle: chiude l'eventuale sessione over-app dello stesso
-                    // pkg. Il silenzio NON va rilasciato — lo ri-arma lo
-                    // `silenceMediaFor` qui sotto per il nuovo blocco.
-                    endOverlayOverAppKeepingSilence()
-                    currentlyBlockingPackage = packageName
-                    val appLabel = getAppLabel(packageName)
-                    // Reveal INLINE (siamo già sul main thread) e PRIMA di
-                    // performGoHomeForBlock: l'overlay è attaccato prima che parta
-                    // HOME/BACK e ne maschera la transizione. Il vecchio
-                    // mainHandler.post riaccodava lo show in coda al looper, quindi
-                    // GLOBAL_ACTION_HOME (sincrono) partiva prima del primo pixel.
-                    overlayManager?.show(
-                        packageName = packageName,
-                        appLabel = appLabel,
-                        profileTitle = decision.profileTitle,
-                        reason = BlockReason.FOCUS_MODE,
-                        config = OverlayConfig.DEFAULT,
-                        profileEmoji = decision.profileEmoji,
-                    )
-                    silenceMediaFor(packageName, BlockReason.FOCUS_MODE)
-                    // FOCUS_MODE: forceHome=true. La user-intent del Pomodoro /
-                    // focus session è uscire dall'app, non navigare lo stack
-                    // interno. BACK su un'app con activity nested chiuderebbe
-                    // solo l'inner activity e l'app resterebbe in foreground.
-                    performGoHomeForBlock(forceHome = true, blockedPackage = packageName)
-                    val now = System.currentTimeMillis()
-                    BlockEventLogger.logBlockSessionAndAccess(
-                        applicationContext,
-                        sessionName = packageName,
-                        packageName = packageName,
-                        restrictionType = BlockingContract.RESTRICTION_TYPE_FOCUS_MODE,
-                        timestamp = now,
-                    )
-                    return true
-                }
-
                 BlockReason.USAGE_LIMIT -> {
                     logFlashDecision(packageName, BlockReason.USAGE_LIMIT)
                     Log.w(TAG, ">>> BLOCKING APP (daily limit, strict=${decision.isStrictLimit}): " +
@@ -1633,7 +1588,8 @@ class KoruAccessibilityService : AccessibilityService() {
                         baseConfig = limitBaseConfig,
                         isStrict = decision.isStrictLimit,
                     )
-                    // Reveal INLINE prima di performGoHomeForBlock (vedi FOCUS_MODE).
+                    // Reveal INLINE prima di performGoHomeForBlock: l'overlay e'
+                    // attaccato prima che parta HOME/BACK e ne maschera la transizione.
                     overlayManager?.show(
                         packageName = packageName,
                         appLabel = appLabel,
@@ -1681,9 +1637,9 @@ class KoruAccessibilityService : AccessibilityService() {
 
                     val appLabel = getAppLabel(packageName)
                     val config = OverlayConfig.fromJsonString(decision.relation?.overlayConfigJson)
-                    // Reveal INLINE prima della scelta kick/over-app + go-home
-                    // (vedi FOCUS_MODE): l'overlay maschera subito, poi decidiamo
-                    // se espellere o restare sopra l'app.
+                    // Reveal INLINE prima della scelta kick/over-app + go-home:
+                    // l'overlay maschera subito, poi decidiamo se espellere o
+                    // restare sopra l'app.
                     overlayManager?.show(
                         packageName = packageName,
                         appLabel = appLabel,
@@ -1811,7 +1767,6 @@ class KoruAccessibilityService : AccessibilityService() {
         limitMinutes: Int = 0,
         isLimitStrict: Boolean = true,
         limitTodayMs: Long = 0L,
-        focusShouldBlock: Boolean = false,
         websiteScopeDomain: String? = null,
         sectionWireId: String? = null,
         profilesOverride: List<NativeProfile>? = null,
@@ -1826,7 +1781,6 @@ class KoruAccessibilityService : AccessibilityService() {
             limitMinutes = limitMinutes,
             isLimitStrict = isLimitStrict,
             limitTodayMs = limitTodayMs,
-            focusShouldBlock = focusShouldBlock,
             bypassReasonFor = { scope -> OverlayManager.bypassReason(packageName, scope) },
             nowWallMs = System.currentTimeMillis(),
             nowMinutesOfDay = currentMinutesOfDay(cal),
@@ -1882,11 +1836,8 @@ class KoruAccessibilityService : AccessibilityService() {
         val snapshot = profilesSnapshot.get()
 
         // Stesse letture d'ambiente di [checkAppBlocking] (tenere allineate):
-        // focus (QuickBlockStore) e limite (AppUsageLimitsStore + contatore
-        // guardato anti clock-backward) sono cross-process su file → freschi.
-        val qbSnapshot = QuickBlockStore.read(applicationContext)
-        val focusShouldBlock = qbSnapshot.shouldBlock(packageName, now)
-
+        // il limite (AppUsageLimitsStore + contatore guardato anti
+        // clock-backward) è cross-process su file → sempre fresco.
         val limitEntry = AppUsageLimitsStore.entryFor(applicationContext, packageName)
         val limitMinutes = limitEntry?.minutes ?: 0
         val limitTodayMs = if (limitMinutes > 0) {
@@ -1901,7 +1852,6 @@ class KoruAccessibilityService : AccessibilityService() {
                 limitMinutes = limitMinutes,
                 isLimitStrict = isLimitStrict,
                 limitTodayMs = limitTodayMs,
-                focusShouldBlock = focusShouldBlock,
             ),
         )
 
@@ -1948,28 +1898,6 @@ class KoruAccessibilityService : AccessibilityService() {
                     packageName,
                     eventType = 0,
                     restrictionType = BlockingContract.RESTRICTION_TYPE_USAGE_LIMIT,
-                    timestamp = now,
-                )
-            }
-
-            BlockReason.FOCUS_MODE -> {
-                mainHandler.post {
-                    overlayManager?.show(
-                        packageName = packageName,
-                        appLabel = appLabel,
-                        profileTitle = block.profileTitle,
-                        reason = BlockReason.FOCUS_MODE,
-                        config = OverlayConfig.DEFAULT,
-                        profileEmoji = block.profileEmoji,
-                    )
-                    // PRE-LANCIO: solo layer chirurgico (vedi sopra).
-                    silenceMediaFor(packageName, BlockReason.FOCUS_MODE, isForeground = false)
-                }
-                BlockEventLogger.logBlockSessionAndAccess(
-                    applicationContext,
-                    sessionName = packageName,
-                    packageName = packageName,
-                    restrictionType = BlockingContract.RESTRICTION_TYPE_FOCUS_MODE,
                     timestamp = now,
                 )
             }
@@ -2433,23 +2361,18 @@ class KoruAccessibilityService : AccessibilityService() {
 
     private fun applyDynamicPackageFilter(snapshot: ProfilesSnapshot) {
         try {
-            // Focus / quick-block e' CATCH-ALL ("blocca tutto tranne whitelist"):
-            // durante una sessione attiva OGNI app va valutata, quindi osserviamo
-            // tutto (`packageNames = null`). La whitelist la applica l'evaluator
-            // (BlockReason.FOCUS_MODE), non il filtro. Senza questo, un'app fuori
-            // dal watched-set (no profilo, no limite, no browser/settings) non
-            // genererebbe eventi e il focus non la bloccherebbe.
-            val focusActive = QuickBlockStore.read(applicationContext).isSessionActiveNow()
             // Rinfrescato qui e non sul percorso dello scroll: loadProfiles è
             // già throttlato e fa I/O, mentre lo scroll no.
             reelCounterEnabled = UiSettingsStore.isReelCounterEnabled(applicationContext)
-            // `null` = watch-all (catch-all focus). Altrimenti il set ristretto:
-            // i daily limit sono GLOBALI (non profile-scoped), quindi un'app con
-            // cap attivo resta osservata anche se non e' in alcun profilo. Letture
-            // nel percorso loadProfiles (gia' I/O DB, throttled) — non sul hot path.
-            val watched: Set<String>? = if (focusActive) {
-                null
-            } else {
+            // Il set ristretto delle app da osservare: i daily limit sono
+            // GLOBALI (non profile-scoped), quindi un'app con cap attivo resta
+            // osservata anche se non e' in alcun profilo. Letture nel percorso
+            // loadProfiles (gia' I/O DB, throttled) — non sul hot path.
+            //
+            // Il ramo `null` (watch-all) esisteva per il catch-all del focus /
+            // quick-block, rimosso con la tab Focus: nessuna condizione richiede
+            // più di osservare OGNI app.
+            val watched: Set<String>? = run {
                 val limitPackages = AppUsageLimitsStore.read(applicationContext)
                     .filterValues { it.minutes > 0 }
                     .keys

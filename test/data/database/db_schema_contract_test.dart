@@ -115,12 +115,6 @@ const Map<String, List<String>> kNativeSchemaContract = {
     'package_name',
     'intention_name',
   ],
-  // focus_usage_events — insertFocusUsageEvent
-  'focus_usage_events': [
-    'occurred_at',
-    'day_start_date',
-    'duration_in_ms',
-  ],
 };
 
 void main() {

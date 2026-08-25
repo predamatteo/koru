@@ -281,7 +281,7 @@ immediately (60s TTL) and leave the UI state untouched if
 The launcher UI (clock + favorites + drawer, `/launcher`) lives **outside** the
 bottom-nav shell and is only shown when Koru is invoked via the HOME intent
 (`MainActivity` sets the initial route accordingly). The dashboard tabs
-(`/home`, `/profiles`, `/focus`, `/stats`, `/settings`) live inside the shell.
+(`/home`, `/profiles`, `/stats`, `/settings`) live inside the shell.
 System-gesture overrides for the launcher are scoped to its route via `RouteAware` —
 never enabled at widget mount. Route names are centralized in `KoruRoutes`.
 

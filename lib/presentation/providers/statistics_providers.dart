@@ -39,11 +39,3 @@ final topIntentionsProvider = StreamProvider<List<IntentionUsageResult>>((ref) {
       .watch(intentionUsageEventsDaoProvider)
       .watchIntentionsUsages(range.from, range.to);
 });
-
-/// Somma ms focus nel periodo.
-final focusTimeMsProvider = StreamProvider<int>((ref) {
-  final range = ref.watch(selectedPeriodProvider).currentRange();
-  return ref
-      .watch(focusUsageEventsDaoProvider)
-      .watchFocusTimeUsage(range.from, range.to);
-});

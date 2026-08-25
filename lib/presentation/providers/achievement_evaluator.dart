@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/di/providers.dart';
-import '../../domain/entities/streak.dart';
 import '../../platform/service_event_channel.dart';
 import 'achievements_provider.dart';
 
@@ -12,10 +11,8 @@ import 'achievements_provider.dart';
 ///
 /// Hook implementati:
 /// - Boot catch-up: valutazione una-tantum allo start per coprire dati
-///   esistenti (focus sessions, profili, strict mode) presenti prima
-///   dell'installazione del sistema achievement.
-/// - Fine sessione focus (tick isActive true→false) →
-///   StreaksRepository.markToday(focus) + eval achievements.
+///   esistenti (profili, strict mode) presenti prima dell'installazione
+///   del sistema achievement.
 /// - Blocco triggered (BlockingStateEvent isBlocking=true) →
 ///   eval achievements (Honest Block count cresce).
 /// - Altri trigger (mood check-in, intention chosen, profile created,
@@ -23,7 +20,6 @@ import 'achievements_provider.dart';
 ///   direttamente dai rispettivi flow.
 final achievementEvaluatorProvider = Provider<void>((ref) {
   final events = ref.watch(platformChannelServiceProvider).events.events();
-  final streaksRepo = ref.read(streaksRepositoryProvider);
 
   // Boot catch-up: dopo un micro-delay (per permettere a DI + DB di
   // essere pronti) valuta una volta. Questo copre installazioni su
@@ -37,8 +33,8 @@ final achievementEvaluatorProvider = Provider<void>((ref) {
 
   // Resume catch-up: al rientro in foreground rivaluta (idempotente).
   // PERF (F2.6): con Koru launcher `resumed` scatta di continuo; throttliamo a
-  // max 1 valutazione ogni 45s. Gli achievement cambiano di rado e i trigger
-  // event-driven sotto (focus-end, block) NON sono throttlati.
+  // max 1 valutazione ogni 45s. Gli achievement cambiano di rado e il trigger
+  // event-driven sotto (block) NON è throttlato.
   const minResumeGap = Duration(seconds: 45);
   DateTime? lastResumeEval;
   final observer = _ResumeObserver(() {
@@ -54,13 +50,7 @@ final achievementEvaluatorProvider = Provider<void>((ref) {
   ref.onDispose(() => WidgetsBinding.instance.removeObserver(observer));
 
   final sub = events.listen((event) async {
-    if (event is QuickBlockFinishedEvent) {
-      // sessione focus appena chiusa → focus streak + achievements.
-      // Edge-driven via QUICK_BLOCK_FINISHED (emesso una volta a fine sessione)
-      // invece del parsing del tick 1Hz — vedi service_event_channel.
-      await streaksRepo.markToday(StreakId.focus);
-      await ref.read(achievementEvaluationProvider.notifier).trigger();
-    } else if (event is BlockingStateEvent && event.isBlocking) {
+    if (event is BlockingStateEvent && event.isBlocking) {
       // nuovo blocco triggered → honest block count crescerà al prossimo eval
       await ref.read(achievementEvaluationProvider.notifier).trigger();
     }

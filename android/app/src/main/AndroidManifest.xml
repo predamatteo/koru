@@ -79,8 +79,8 @@
              In main process (non :accessibility) come MP: il binding del
              service mantiene il processo del launcher a priority alto →
              resume più rapido della home e niente flash wallpaper durante
-             la gesture swipe-up. Gli store cross-process (QuickBlockStore,
-             AppUsageLimitsStore, NotificationFilterStore) funzionano
+             la gesture swipe-up. Gli store cross-process
+             (AppUsageLimitsStore, NotificationFilterStore) funzionano
              comunque perché basati su file. -->
         <service
             android:name=".service.KoruAccessibilityService"
@@ -94,7 +94,7 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <!-- Persistent foreground service: polling loop backup + Quick Block + Pomodoro. -->
+        <!-- Persistent foreground service: polling loop backup dell'enforcement. -->
         <service
             android:name=".service.LockForegroundService"
             android:foregroundServiceType="specialUse"

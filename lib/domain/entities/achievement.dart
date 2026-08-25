@@ -1,8 +1,6 @@
 /// Categoria di un [Achievement] — usata per raggruppamento in UI
 /// e colorazione del badge.
 enum AchievementCategory {
-  focus,
-  consistency,
   discipline,
   setup,
 }
@@ -47,76 +45,15 @@ class Achievement {
   final int target;
 }
 
-/// Il catalogo MVP — 15 achievement. IDs stabili, non rinominare.
+/// Il catalogo MVP — 7 achievement. IDs stabili, non rinominare.
+///
+/// Gli 8 achievement `focus_*` / `streak_focus_*` sono stati RIMOSSI insieme
+/// alla tab Focus (quick block + pomodoro): erano gli unici alimentati dalle
+/// sessioni a tempo, quindi senza quella superficie sarebbero rimasti a zero
+/// per sempre. Le righe già sbloccate restano in `achievements_unlocked` ma
+/// non hanno più un [Achievement] corrispondente — [achievementById] ritorna
+/// `null` e la UI le ignora. Non riusare quegli id per achievement nuovi.
 const kAchievementCatalog = <Achievement>[
-  // ── Focus ──────────────────────────────────────────────────────────────
-  Achievement(
-    id: 'focus_first',
-    title: 'First focus',
-    description: 'Complete your first focus session.',
-    iconKey: 'self_improvement_outlined',
-    category: AchievementCategory.focus,
-    target: 1,
-  ),
-  Achievement(
-    id: 'focus_hour',
-    title: 'Focused hour',
-    description: 'Reach 1 hour of total focus time.',
-    iconKey: 'hourglass_full_outlined',
-    category: AchievementCategory.focus,
-    target: 60,
-  ),
-  Achievement(
-    id: 'focus_day',
-    title: 'Focused day',
-    description: 'Log 4 hours of focus in a single day.',
-    iconKey: 'wb_sunny_outlined',
-    category: AchievementCategory.focus,
-    target: 240,
-  ),
-  Achievement(
-    id: 'focus_dedicated',
-    title: 'Dedicated',
-    description: '10 hours of lifetime focus time.',
-    iconKey: 'emoji_events_outlined',
-    category: AchievementCategory.focus,
-    target: 600,
-  ),
-  Achievement(
-    id: 'focus_monk',
-    title: 'Monk mode',
-    description: '50 hours of lifetime focus time.',
-    iconKey: 'auto_awesome_outlined',
-    category: AchievementCategory.focus,
-    target: 3000,
-  ),
-
-  // ── Consistency ────────────────────────────────────────────────────────
-  Achievement(
-    id: 'streak_focus_7',
-    title: 'Weekling',
-    description: 'Seven-day focus streak.',
-    iconKey: 'local_fire_department_outlined',
-    category: AchievementCategory.consistency,
-    target: 7,
-  ),
-  Achievement(
-    id: 'streak_focus_30',
-    title: 'Rooted',
-    description: 'Thirty-day focus streak.',
-    iconKey: 'park_outlined',
-    category: AchievementCategory.consistency,
-    target: 30,
-  ),
-  Achievement(
-    id: 'streak_focus_100',
-    title: 'Centennial',
-    description: 'One hundred days of focus in a row.',
-    iconKey: 'forest_outlined',
-    category: AchievementCategory.consistency,
-    target: 100,
-  ),
-
   // ── Discipline ─────────────────────────────────────────────────────────
   Achievement(
     id: 'clean_week',

@@ -102,7 +102,6 @@ class TriggerProfileReloadTest {
         onBlock = { _, _, _, _ -> },
         onLimitBlock = { _, _, _, _ -> },
         onUnblock = { },
-        onFocusBlock = { _, _ -> },
     )
 
     private fun setCurrentLockRunnable(value: LockRunnable?) {

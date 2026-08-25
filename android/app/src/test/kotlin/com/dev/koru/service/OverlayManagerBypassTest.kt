@@ -119,9 +119,9 @@ class OverlayManagerBypassTest {
     }
 
     @Test
-    fun focusAndSectionReasons_areNotLimitBypass() {
+    fun appAndSectionReasons_areNotLimitBypass() {
         // Gli altri reason non-limite cadono nel ramo else di isLimitBypassActive.
-        OverlayManager.markBypassed(pkg, 5 * 60_000L, reason = BlockReason.FOCUS_MODE)
+        OverlayManager.markBypassed(pkg, 5 * 60_000L, reason = BlockReason.APP_BLOCKED)
         assertThat(OverlayManager.isLimitBypassActive(pkg)).isFalse()
         OverlayManager.markBypassed(pkg, 5 * 60_000L, reason = BlockReason.SECTION_BLOCKED)
         assertThat(OverlayManager.isLimitBypassActive(pkg)).isFalse()
