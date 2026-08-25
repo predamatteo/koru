@@ -1,5 +1,3 @@
-import 'dart:developer' as developer;
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/di/providers.dart';
@@ -42,42 +40,3 @@ final reelWeeklyAverageProvider = Provider<int?>((ref) {
   final sum = past.fold<int>(0, (acc, d) => acc + d.total);
   return (sum / past.length).round();
 });
-
-/// Interruttore del contatore. Vive lato nativo e non in Hive: lo legge anche
-/// l'AccessibilityService, che a Hive non può accedere. Spegnendolo il nativo
-/// smette pure di osservare Instagram e YouTube, quindi non è cosmetico.
-class ReelCounterEnabledNotifier extends AsyncNotifier<bool> {
-  @override
-  Future<bool> build() async {
-    final blocking = ref.watch(platformChannelServiceProvider).blocking;
-    return blocking.isReelCounterEnabled();
-  }
-
-  Future<void> setEnabled(bool enabled) async {
-    // Ottimistico: l'interruttore deve rispondere al tocco, non al round-trip
-    // del canale. In caso di fallimento torniamo indietro — un toggle che resta
-    // dove l'utente l'ha messo ma non ha salvato è peggio di uno che rimbalza.
-    final previous = state.valueOrNull;
-    state = AsyncData(enabled);
-    final saved = await ref
-        .read(platformChannelServiceProvider)
-        .blocking
-        .setReelCounterEnabled(enabled);
-    if (!saved) {
-      developer.log(
-        'setReelCounterEnabled FAILED to persist (enabled=$enabled)',
-        name: 'ReelCounter',
-        level: 1000,
-      );
-      if (previous != null) state = AsyncData(previous);
-      return;
-    }
-    ref.invalidate(reelCountsTodayProvider);
-    ref.invalidate(reelCountsWeekProvider);
-  }
-}
-
-final reelCounterEnabledProvider =
-    AsyncNotifierProvider<ReelCounterEnabledNotifier, bool>(
-  ReelCounterEnabledNotifier.new,
-);

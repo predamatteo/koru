@@ -79,8 +79,6 @@ class BlockingMethodChannelRoutingTest {
         // contatore reel / short
         "getReelCountsToday",
         "getReelCountsHistory",
-        "isReelCounterEnabled",
-        "setReelCounterEnabled",
     )
 
     @Test
@@ -90,15 +88,17 @@ class BlockingMethodChannelRoutingTest {
     }
 
     @Test
-    fun routingTable_hasExactly33Methods() {
+    fun routingTable_hasExactly31Methods() {
         // Sentinella sul numero: se un futuro metodo viene aggiunto senza
         // aggiornare questo test, il count diverge e il test fallisce,
         // forzando una rivisitazione consapevole del wire-contract.
-        // 33 = 29 storici + `getAppIcon` (Fase 2: decode lazy delle icone)
+        // 31 = 29 storici + `getAppIcon` (Fase 2: decode lazy delle icone)
         // + i 3 del contatore schede launcher (getOpenAppsCount /
-        // resetOpenAppsCount / openSystemRecents) + i 4 del contatore reel
-        // - i 4 di quick block / pomodoro, rimossi con la tab Focus.
-        assertThat(BlockingMethodChannel.routingTable).hasSize(33)
+        // resetOpenAppsCount / openSystemRecents) + i 2 di lettura del
+        // contatore reel - i 4 di quick block / pomodoro, rimossi con la tab
+        // Focus. L'interruttore del contatore reel (is/setReelCounterEnabled)
+        // è stato tolto: il conteggio è sempre attivo.
+        assertThat(BlockingMethodChannel.routingTable).hasSize(31)
     }
 
     @Test
@@ -155,8 +155,6 @@ class BlockingMethodChannelRoutingTest {
         // contatore reel / short
         assertThat(table["getReelCountsToday"]).isEqualTo(ReelsCallHandler)
         assertThat(table["getReelCountsHistory"]).isEqualTo(ReelsCallHandler)
-        assertThat(table["isReelCounterEnabled"]).isEqualTo(ReelsCallHandler)
-        assertThat(table["setReelCounterEnabled"]).isEqualTo(ReelsCallHandler)
     }
 
     @Test

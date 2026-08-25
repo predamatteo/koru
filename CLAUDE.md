@@ -189,9 +189,9 @@ Three things that break it silently, in order of likelihood:
    or YouTube update that renames those ids takes the counter to zero with no
    error. The JSONs are hot-updatable for exactly this reason.
 2. **The watched set.** IG/YT reach the service only because
-   `WatchedPackageCalculator` gets them via `observationPackages`, gated on
-   `UiSettingsStore.isReelCounterEnabled`. Drop that and the feature works only
-   for users who already block those apps.
+   `WatchedPackageCalculator` gets them via `observationPackages`. That is
+   now unconditional — the counter has no off switch — so drop it and the
+   feature works only for users who already block those apps.
 3. **The index signal.** `ReelSwipeCounter` counts index *transitions*; if a view
    stops reporting `fromIndex`/`toIndex` it degrades to a time debounce.
    `Result.viaIndex` says which path fired — it is logged to BlackBox under the

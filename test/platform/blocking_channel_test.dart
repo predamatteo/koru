@@ -681,26 +681,5 @@ void main() {
       expect(await BlockingChannel().getReelCountsHistory(), isEmpty);
     });
 
-    test('isReelCounterEnabled returns bool', () async {
-      setMockHandler((_) async => true);
-      expect(await BlockingChannel().isReelCounterEnabled(), isTrue);
-      expect(calls.first.method, 'isReelCounterEnabled');
-    });
-
-    test('setReelCounterEnabled sends the flag and propagates native false',
-        () async {
-      // CR-09: come setAppDailyLimits, il nativo ritorna il VERO esito della
-      // scrittura. Ingoiarlo lascerebbe l'interruttore in uno stato che non
-      // sopravvive al riavvio.
-      setMockHandler((_) async => false);
-      expect(await BlockingChannel().setReelCounterEnabled(true), isFalse);
-      expect(calls.first.method, 'setReelCounterEnabled');
-      expect((calls.first.arguments as Map)['enabled'], isTrue);
-    });
-
-    test('setReelCounterEnabled returns false when native returns null', () async {
-      setMockHandler((_) async => null);
-      expect(await BlockingChannel().setReelCounterEnabled(false), isFalse);
-    });
   });
 }

@@ -338,27 +338,22 @@ class UsageWidgetModelTest {
     // -------- Pill del contatore reel --------
 
     @Test
-    fun reelPill_isVisibleAtZeroWhenTheCounterIsOn() {
+    fun reelPill_isAlwaysVisible() {
         // Cambio di rotta dopo la prova on-device: nascondere la pill a zero
         // rendeva la feature indistinguibile da una rotta il primo giorno.
         // Uno zero, in un widget che misura quanto stai al telefono, è il
-        // numero migliore che ci possa stare.
-        assertThat(UsageWidgetModel.showsReelPill(0, reelCounterEnabled = true)).isTrue()
-        assertThat(UsageWidgetModel.showsReelPill(1, reelCounterEnabled = true)).isTrue()
-    }
-
-    @Test
-    fun reelPill_isHiddenWhenTheCounterIsOff() {
-        // QUESTO è il caso in cui uno "0" perenne sarebbe arredamento: chi ha
-        // spento la feature non deve portarsi dietro la pill.
-        assertThat(UsageWidgetModel.showsReelPill(0, reelCounterEnabled = false)).isFalse()
-        assertThat(UsageWidgetModel.showsReelPill(42, reelCounterEnabled = false)).isFalse()
+        // numero migliore che ci possa stare. Il contatore non ha più un
+        // interruttore, quindi non esiste più un caso "spento" in cui sparire.
+        assertThat(UsageWidgetModel.showsReelPill(0)).isTrue()
+        assertThat(UsageWidgetModel.showsReelPill(1)).isTrue()
+        assertThat(UsageWidgetModel.showsReelPill(42)).isTrue()
     }
 
     @Test
     fun reelPill_isHiddenOnNegativeCounts() {
-        // Stato corrotto: meglio niente che un numero senza senso.
-        assertThat(UsageWidgetModel.showsReelPill(-5, reelCounterEnabled = true)).isFalse()
+        // Stato corrotto: meglio niente che un numero senza senso. È l'unico
+        // caso rimasto in cui la pill non si mostra.
+        assertThat(UsageWidgetModel.showsReelPill(-5)).isFalse()
     }
 
     @Test
@@ -377,15 +372,12 @@ class UsageWidgetModelTest {
     }
 
     @Test
-    fun snapshotDefaultsToZeroReelsWithTheCounterOn() {
-        // I default dello snapshot descrivono il caso NORMALE (contatore acceso,
-        // nessuno scroll ancora): la pill si vede e dice 0.
+    fun snapshotDefaultsToZeroReelsAndShowsThePill() {
+        // I default dello snapshot descrivono il caso NORMALE (nessuno scroll
+        // ancora): la pill si vede e dice 0.
         val snapshot = UsageWidgetModel.Snapshot(totalMs = min(30), rows = emptyList())
         assertThat(snapshot.reelsToday).isEqualTo(0)
-        assertThat(snapshot.reelCounterEnabled).isTrue()
-        assertThat(
-            UsageWidgetModel.showsReelPill(snapshot.reelsToday, snapshot.reelCounterEnabled),
-        ).isTrue()
+        assertThat(UsageWidgetModel.showsReelPill(snapshot.reelsToday)).isTrue()
     }
 
     @Test

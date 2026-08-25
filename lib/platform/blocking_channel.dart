@@ -382,18 +382,6 @@ class BlockingChannel {
         .map(ReelDayCounts.fromMap)
         .toList(growable: false);
   }
-
-  Future<bool> isReelCounterEnabled() async =>
-      (await _channel.invokeMethod<bool>('isReelCounterEnabled')) ?? false;
-
-  /// Accende/spegne il contatore. Spegnendolo il nativo smette anche di
-  /// osservare Instagram e YouTube, quindi non è solo un toggle di UI.
-  /// Ritorna il vero esito del salvataggio (CR-09), non un `true` fisso.
-  Future<bool> setReelCounterEnabled(bool enabled) async =>
-      (await _channel.invokeMethod<bool>('setReelCounterEnabled', {
-        'enabled': enabled,
-      })) ??
-      false;
 }
 
 /// Le sorgenti di feed verticale che Koru sa contare.

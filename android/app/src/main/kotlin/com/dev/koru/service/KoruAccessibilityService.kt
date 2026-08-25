@@ -646,13 +646,6 @@ class KoruAccessibilityService : AccessibilityService() {
     /// degli eventi di accessibilità, quindi non serve sincronizzarla.
     private val reelSwipeCounter = ReelSwipeCounter()
 
-    /// Copia dell'impostazione utente, letta al reload dei profili invece che
-    /// a ogni evento: [UiSettingsStore.isReelCounterEnabled] è una lettura
-    /// cache-ata ma comunque una `stat` del file, e questo sta sul percorso
-    /// dello scroll.
-    @Volatile
-    private var reelCounterEnabled = UiSettingsStore.DEFAULT_REEL_COUNTER_ENABLED
-
     /// Firma `(windowId, fromIndex, toIndex)` dell'ultimo scroll esaminato.
     /// Serve a NON pagare un `event.source` (che è una IPC verso l'app) quando
     /// l'evento non porta informazione nuova: durante un fling il framework ne
@@ -1960,7 +1953,6 @@ class KoruAccessibilityService : AccessibilityService() {
      * l'enforcement: è osservazione pura.
      */
     private fun maybeCountReelSwipe(event: AccessibilityEvent, packageName: String) {
-        if (!reelCounterEnabled) return
         val detector = inAppDetector ?: return
         if (!detector.supports(packageName)) return
 
@@ -2361,9 +2353,6 @@ class KoruAccessibilityService : AccessibilityService() {
 
     private fun applyDynamicPackageFilter(snapshot: ProfilesSnapshot) {
         try {
-            // Rinfrescato qui e non sul percorso dello scroll: loadProfiles è
-            // già throttlato e fa I/O, mentre lo scroll no.
-            reelCounterEnabled = UiSettingsStore.isReelCounterEnabled(applicationContext)
             // Il set ristretto delle app da osservare: i daily limit sono
             // GLOBALI (non profile-scoped), quindi un'app con cap attivo resta
             // osservata anche se non e' in alcun profilo. Letture nel percorso
@@ -2385,13 +2374,11 @@ class KoruAccessibilityService : AccessibilityService() {
                     selfPackage = packageName,
                     // Instagram/YouTube osservati per il solo conteggio dei
                     // reel: senza, la feature funzionerebbe unicamente per chi
-                    // ha già messo quelle app sotto un profilo o un cap. A
-                    // contatore spento il set è vuoto e nulla cambia.
-                    observationPackages = if (reelCounterEnabled) {
-                        REEL_COUNTER_PACKAGES
-                    } else {
-                        emptySet()
-                    },
+                    // ha già messo quelle app sotto un profilo o un cap. Il
+                    // contatore non ha più un interruttore, quindi ci sono
+                    // SEMPRE — è la ragione per cui il conteggio funziona da
+                    // subito e senza configurazione.
+                    observationPackages = REEL_COUNTER_PACKAGES,
                 )
             }
             // Skip se il set non e' cambiato: ricreare AccessibilityServiceInfo

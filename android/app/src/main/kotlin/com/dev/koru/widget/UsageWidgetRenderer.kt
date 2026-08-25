@@ -78,7 +78,7 @@ internal object UsageWidgetRenderer {
             R.id.widget_header_total,
             UsageWidgetModel.formatDurationMs(snapshot.totalMs),
         )
-        renderReelPill(context, views, snapshot.reelsToday, snapshot.reelCounterEnabled)
+        renderReelPill(context, views, snapshot.reelsToday)
         views.setOnClickPendingIntent(android.R.id.background, openStatsIntent(context))
 
         val maxRows = UsageWidgetModel.rowsFittingHeight(
@@ -123,9 +123,8 @@ internal object UsageWidgetRenderer {
         context: Context,
         views: RemoteViews,
         reelsToday: Int,
-        reelCounterEnabled: Boolean,
     ) {
-        if (!UsageWidgetModel.showsReelPill(reelsToday, reelCounterEnabled)) {
+        if (!UsageWidgetModel.showsReelPill(reelsToday)) {
             views.setViewVisibility(R.id.widget_header_reels, View.GONE)
             return
         }

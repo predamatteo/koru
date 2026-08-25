@@ -74,13 +74,11 @@ object UsageWidgetModel {
     /// [reelsToday] è il numero di reel/short scrollati oggi
     /// ([com.dev.koru.service.ReelCountStore]). A differenza di tutto il resto
     /// NON viene da UsageStats: è un contatore che Koru tiene da sé, quindi
-    /// resta valido anche se il conteggio del tempo d'uso è a zero, e vale 0
-    /// quando l'utente ha spento la feature.
+    /// resta valido anche se il conteggio del tempo d'uso è a zero.
     data class Snapshot(
         val totalMs: Long,
         val rows: List<Row>,
         val reelsToday: Int = 0,
-        val reelCounterEnabled: Boolean = true,
     )
 
     // ── Altezze (dp) usate per decidere quante righe entrano ────────────────
@@ -271,12 +269,11 @@ object UsageWidgetModel {
     /// scrollato". E in un widget che misura quanto stai al telefono, uno zero
     /// è il numero migliore che ci possa stare.
     ///
-    /// Resta nascosta se [reelCounterEnabled] è falso: chi ha spento la feature
-    /// non deve trovarsi una pill perennemente a "0" — quello sì sarebbe un
-    /// numero morto. Conteggi negativi (stato corrotto) sono trattati come
-    /// "niente da dire" invece che mostrati.
-    fun showsReelPill(reelsToday: Int, reelCounterEnabled: Boolean): Boolean =
-        reelCounterEnabled && reelsToday >= 0
+    /// Il contatore non ha più un interruttore, quindi la pill non ha più un
+    /// caso "spento" in cui sparire: c'è sempre. Conteggi negativi (stato
+    /// corrotto) sono l'unico caso trattato come "niente da dire" invece che
+    /// mostrato.
+    fun showsReelPill(reelsToday: Int): Boolean = reelsToday >= 0
 
     /// Testo della pill dei reel.
     ///
