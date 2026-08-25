@@ -16,8 +16,8 @@ import 'widgets/accessibility_health_banner.dart';
 import 'widgets/reels_scrolled_card.dart';
 import 'widgets/today_limits_card.dart';
 
-/// Tab Home dell'app: dashboard con greeting, profilo attivo ora, quick stats,
-/// shortcut ai Profiles.
+/// Tab Home dell'app: dashboard con greeting, profilo attivo ora (tap →
+/// Profiles), blocchi di oggi, reel scrollati e limiti giornalieri.
 ///
 /// Questa NON è la home del launcher (clock+favoriti) — quella vive a
 /// `/launcher` ed è visibile solo quando Koru è lanciato come default launcher.
@@ -72,8 +72,6 @@ class HomeScreen extends ConsumerWidget {
             // lascia un buco doppio fra le due card vicine.
             const ReelsScrolledCard(),
             const TodayLimitsCard(),
-            const SizedBox(height: 12),
-            const _QuickActionsCard(),
           ],
         ),
       ),
@@ -292,90 +290,6 @@ class _MiniStat extends StatelessWidget {
             style: const TextStyle(fontSize: 13, color: KoruColors.textSecondary),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _QuickActionsCard extends StatelessWidget {
-  const _QuickActionsCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(4, 2, 4, 9),
-          child: Text(
-            'QUICK ACTIONS',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.4,
-              color: KoruColors.textSecondary,
-            ),
-          ),
-        ),
-        Container(
-          decoration: BoxDecoration(
-            color: KoruColors.surface,
-            borderRadius: BorderRadius.circular(26),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            children: [
-              _QuickActionRow(
-                icon: Icons.shield_outlined,
-                label: 'Manage profiles',
-                onTap: () => GoRouter.of(context).go('/profiles'),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _QuickActionRow extends StatelessWidget {
-  const _QuickActionRow({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-        child: Row(
-          children: [
-            Icon(icon, size: 22, color: KoruColors.primary),
-            const SizedBox(width: 15),
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w600,
-                  color: KoruColors.textPrimary,
-                ),
-              ),
-            ),
-            const Icon(
-              Icons.chevron_right,
-              size: 20,
-              color: KoruColors.textSecondary,
-            ),
-          ],
-        ),
       ),
     );
   }
