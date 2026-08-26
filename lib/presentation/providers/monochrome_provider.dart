@@ -3,6 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/hive_keys.dart';
 import '../../core/di/providers.dart';
 
+/// ORFANO al momento: l'impostazione è stata rimossa dalle Impostazioni e il
+/// filtro in `app.dart` è commentato, quindi nessuna UI referenzia più questo
+/// provider. Resta compilabile (e testato) di proposito, così ripristinare la
+/// feature è solo un de-commento nei due call-site; il valore in Hive
+/// (`MONOCHROME_ENABLED`) non viene cancellato.
+///
 /// Toggle globale del filtro monochrome (grayscale) applicato all'intera
 /// UI di Koru. Abilitarlo riduce l'appeal visivo — soprattutto in
 /// launcher mode rende i colori vibranti delle icone app molto meno
