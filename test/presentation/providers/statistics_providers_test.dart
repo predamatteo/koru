@@ -89,6 +89,66 @@ void main() {
     });
   });
 
+  group('blocksTodayCountProvider', () {
+    test('conta gli eventi di blocco di oggi', () async {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await h.db.restrictedAccessEventsDao.insertEvent(
+        RestrictedAccessEventsCompanion.insert(
+          occurredAt: now,
+          dayStartDate: _todayKey(),
+          packageName: 'com.x',
+          eventType: 0,
+          restrictionType: 0,
+        ),
+      );
+
+      final v = await h.container.read(blocksTodayCountProvider.stream).first;
+      expect(v, 1);
+    });
+
+    test('ignora il periodo selezionato nella schermata Statistiche',
+        () async {
+      // È l'unico posto in cui questa invariante può essere difesa: la
+      // dashboard mostrava i blocchi della SETTIMANA sotto l'etichetta
+      // "Blocks" se l'utente aveva lasciato /stats su "This week", perché
+      // condivideva il provider con lo switcher di periodo.
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      final now = DateTime.now();
+      // Evento di 3 giorni fa: dentro la finestra "settimana", fuori da "oggi".
+      final threeDaysAgo = DateTime(now.year, now.month, now.day - 3);
+      await h.db.restrictedAccessEventsDao.insertEvent(
+        RestrictedAccessEventsCompanion.insert(
+          occurredAt: threeDaysAgo.millisecondsSinceEpoch,
+          dayStartDate: '${threeDaysAgo.year.toString().padLeft(4, '0')}-'
+              '${threeDaysAgo.month.toString().padLeft(2, '0')}-'
+              '${threeDaysAgo.day.toString().padLeft(2, '0')}',
+          packageName: 'com.x',
+          eventType: 0,
+          restrictionType: 0,
+        ),
+      );
+
+      h.container.read(selectedPeriodProvider.notifier).state =
+          StatisticsPeriod.week;
+
+      // Il provider della schermata Statistiche lo vede...
+      expect(
+        await h.container.read(blockTriggeredCountProvider.stream).first,
+        1,
+      );
+      // ...quello della dashboard no: la sua finestra resta oggi.
+      expect(
+        await h.container.read(blocksTodayCountProvider.stream).first,
+        0,
+      );
+    });
+  });
+
   group('blockSkippedCountProvider', () {
     test('counts events with eventType=1', () async {
       final h = buildTestContainer();

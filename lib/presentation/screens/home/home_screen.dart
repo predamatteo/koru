@@ -39,7 +39,10 @@ class HomeScreen extends ConsumerWidget {
     }
     final allProfiles = ref.watch(profilesProvider).valueOrNull ?? [];
     final activeProfiles = ref.watch(activeProfilesProvider).valueOrNull ?? [];
-    final blocksToday = ref.watch(blockTriggeredCountProvider).valueOrNull ?? 0;
+    // `blocksTodayCountProvider` e non `blockTriggeredCountProvider`: il
+    // secondo segue lo switcher Oggi/Settimana della schermata Statistiche, e
+    // la dashboard finiva per mostrare i blocchi della settimana.
+    final blocksToday = ref.watch(blocksTodayCountProvider).valueOrNull ?? 0;
 
     // Pre-warm della lista app così quando l'utente entra in
     // "Select apps" dentro un profilo la risposta native è già cached.
@@ -65,12 +68,6 @@ class HomeScreen extends ConsumerWidget {
             const SizedBox(height: 12),
             _TodayStatsRow(blocksToday: blocksToday),
             const SizedBox(height: 12),
-            // Si auto-nasconde a zero reel: sopra ai limiti perché è un dato
-            // che l'utente non ha configurato e quindi non si aspetta —
-            // sotterrarlo in fondo alla lista lo renderebbe invisibile. Porta
-            // con sé il proprio margine inferiore, così quando non c'è non
-            // lascia un buco doppio fra le due card vicine.
-            const ReelsScrolledCard(),
             const TodayLimitsCard(),
           ],
         ),
@@ -232,6 +229,18 @@ class _ActiveProfileCard extends StatelessWidget {
   }
 }
 
+/// I due contatori "di oggi" affiancati, in proporzione 1:2 — i blocchi sono
+/// un intero solo e non hanno bisogno di più spazio di così, il contatore reel
+/// porta con sé il confronto con la media e le righe per-sorgente.
+///
+/// `IntrinsicHeight` + `CrossAxisAlignment.stretch`: la riga prende l'altezza
+/// della tessera più alta (il contatore reel, che cresce con le sorgenti
+/// attive) e la tessera dei blocchi ci si adatta, così i due fondi restano
+/// allineati. `IntrinsicHeight` non è decorativo: dentro una ListView
+/// l'altezza disponibile è illimitata, e `stretch` da solo passerebbe ai figli
+/// un vincolo `h=Infinity` — cioè un errore di layout, non una riga sbilenca.
+/// Il margine inferiore della card reel va azzerato per lo stesso motivo: di
+/// default lo porta con sé, e qui sfalserebbe i due bordi di 12px.
 class _TodayStatsRow extends StatelessWidget {
   const _TodayStatsRow({required this.blocksToday});
 
@@ -239,11 +248,29 @@ class _TodayStatsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _MiniStat(
-      icon: Icons.shield,
-      iconColor: KoruColors.primary,
-      label: 'Blocks',
-      value: '$blocksToday',
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _MiniStat(
+              icon: Icons.shield,
+              iconColor: KoruColors.primary,
+              label: 'Blocks',
+              value: '$blocksToday',
+              // Il dettaglio di questo numero vive già in Statistiche (donut
+              // Blocked/Skipped + breakdown per-app): senza il tap resterebbe
+              // un vicolo cieco.
+              onTap: () => GoRouter.of(context).go('/stats'),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            flex: 2,
+            child: ReelsScrolledCard(margin: EdgeInsets.zero),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -254,20 +281,18 @@ class _MiniStat extends StatelessWidget {
     required this.iconColor,
     required this.label,
     required this.value,
+    this.onTap,
   });
 
   final IconData icon;
   final Color iconColor;
   final String label;
   final String value;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: KoruColors.surfaceContainer,
-        borderRadius: BorderRadius.circular(26),
-      ),
+    final content = Padding(
       padding: const EdgeInsets.fromLTRB(18, 17, 18, 19),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -291,6 +316,19 @@ class _MiniStat extends StatelessWidget {
           ),
         ],
       ),
+    );
+
+    return Container(
+      decoration: BoxDecoration(
+        color: KoruColors.surfaceContainer,
+        borderRadius: BorderRadius.circular(26),
+      ),
+      // `antiAlias` serve solo quando c'è un InkWell: senza, il ripple
+      // deborderebbe dagli angoli arrotondati.
+      clipBehavior: onTap == null ? Clip.none : Clip.antiAlias,
+      child: onTap == null
+          ? content
+          : InkWell(onTap: onTap, child: content),
     );
   }
 }

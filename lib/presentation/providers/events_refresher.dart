@@ -16,6 +16,11 @@ import 'statistics_providers.dart';
 
 void _invalidateStats(Ref ref) {
   ref.invalidate(blockTriggeredCountProvider);
+  // Il contatore della dashboard è un provider distinto (finestra pinnata a
+  // oggi): senza questa riga il numero in Home si congela in silenzio — il
+  // native scrive gli eventi su SQLite fuori dal change-tracker di Drift,
+  // quindi lo stream non riparte da solo.
+  ref.invalidate(blocksTodayCountProvider);
   ref.invalidate(blockSkippedCountProvider);
   ref.invalidate(perAppBreakdownProvider);
   ref.invalidate(topIntentionsProvider);

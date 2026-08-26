@@ -24,7 +24,16 @@ import '../../../providers/reel_counts_provider.dart';
 /// registro del resto della dashboard, e un conteggio inferito da eventi di
 /// accessibilità non ha la precisione per sostenere un allarme.
 class ReelsScrolledCard extends ConsumerWidget {
-  const ReelsScrolledCard({super.key});
+  const ReelsScrolledCard({
+    super.key,
+    this.margin = const EdgeInsets.only(bottom: 12),
+  });
+
+  /// Margine esterno della card. Il default porta con sé lo spazio verso la
+  /// card successiva (vedi la nota sulla scocca sotto); va azzerato quando la
+  /// card sta dentro una Row affiancata a un'altra tessera, altrimenti i due
+  /// fondi non si allineano.
+  final EdgeInsetsGeometry margin;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -45,7 +54,7 @@ class ReelsScrolledCard extends ConsumerWidget {
       // Il margine inferiore appartiene alla card e non alla lista che la
       // ospita, per non dover riaggiustare gli spaziatori della home ogni
       // volta che l'ordine delle card cambia.
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: margin,
       decoration: BoxDecoration(
         color: KoruColors.surfaceContainer,
         borderRadius: BorderRadius.circular(26),

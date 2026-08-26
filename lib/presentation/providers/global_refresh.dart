@@ -52,6 +52,7 @@ final List<ProviderOrFamily> _koruDataProviders = [
 
   // ── Statistiche di blocco (stream SQLite, scritti anche dal native) ─────
   blockTriggeredCountProvider,
+  blocksTodayCountProvider,
   blockSkippedCountProvider,
   perAppBreakdownProvider,
   topIntentionsProvider,
