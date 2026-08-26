@@ -14,6 +14,15 @@ import '../../providers/statistics_providers.dart';
 import '../../widgets/koru_pull_to_refresh.dart';
 import 'widgets/achievements_grid.dart';
 
+/// Durata delle transizioni di layout (una card che entra o esce, un testo che
+/// cambia). Corta di proposito: deve smussare il salto, non farsi guardare.
+const Duration _kMorph = Duration(milliseconds: 240);
+
+/// Durata del "conteggio" dei tempi verso il nuovo valore. Più lunga della
+/// morph: è l'animazione che porta l'informazione, e su cifre che cambiano di
+/// ore intere sotto i 400ms si legge di nuovo come uno scatto.
+const Duration _kCount = Duration(milliseconds: 420);
+
 class StatisticsScreen extends ConsumerWidget {
   const StatisticsScreen({super.key});
 
@@ -32,15 +41,27 @@ class StatisticsScreen extends ConsumerWidget {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, kBottomNavClearance),
           children: [
             const _PeriodSwitcher(),
+            // Navigazione giorno per giorno: solo nella vista "Today". Nella
+            // settimana lo stesso mestiere lo fa già il grafico per-giorno.
+            _AnimatedSlot(
+              visible: !isWeek,
+              child: const Padding(
+                padding: EdgeInsets.only(top: 10),
+                child: _DayNavigator(),
+              ),
+            ),
             const SizedBox(height: 16),
             const _ScreenTimeCard(),
             const SizedBox(height: 16),
             // Drill-down per-giorno: visibile solo nella vista settimana,
             // dove ha senso confrontare i singoli giorni.
-            if (isWeek) ...const [
-              _WeeklyUsageChart(),
-              SizedBox(height: 16),
-            ],
+            _AnimatedSlot(
+              visible: isWeek,
+              child: const Padding(
+                padding: EdgeInsets.only(bottom: 16),
+                child: _WeeklyUsageChart(),
+              ),
+            ),
             const _TopAppsCard(),
             const SizedBox(height: 16),
             const _InterventionsCard(),
@@ -51,6 +72,142 @@ class StatisticsScreen extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Slot che si apre e si chiude invece di apparire e sparire di colpo.
+///
+/// Dentro una `ListView` togliere un figlio fa saltare in su tutto quello che
+/// sta sotto nello stesso frame: è metà dello "scatto" che si sente passando
+/// da Today a This week. Qui l'altezza viene animata ([AnimatedSize], che
+/// clippa il contenuto mentre si richiude) e il contenuto sfuma
+/// ([AnimatedSwitcher]).
+class _AnimatedSlot extends StatelessWidget {
+  const _AnimatedSlot({required this.visible, required this.child});
+
+  final bool visible;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSize(
+      duration: _kMorph,
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: AnimatedSwitcher(
+        duration: _kMorph,
+        child: visible
+            ? child
+            // `width: double.infinity` e non `SizedBox.shrink()`: a larghezza
+            // zero la ListView non avrebbe più un vincolo orizzontale da dare
+            // al figlio che entra, e la card comparirebbe alla sua larghezza
+            // intrinseca prima di allargarsi.
+            : const SizedBox(width: double.infinity, key: ValueKey('empty')),
+      ),
+    );
+  }
+}
+
+/// Testo di una durata che **conta** verso il nuovo valore invece di saltarci.
+///
+/// È il punto in cui si vedeva di più lo scatto del cambio periodo: da "2h
+/// 10m" a "14h 3m" in un frame. `TweenAnimationBuilder` riparte dal valore
+/// corrente ogni volta che `end` cambia, quindi funziona anche se il dato
+/// arriva in due tempi (valore vecchio → nuovo) come fanno i provider durante
+/// il reload.
+class _AnimatedDurationText extends StatelessWidget {
+  const _AnimatedDurationText(this.ms, {required this.style});
+
+  final int ms;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: ms.toDouble()),
+      duration: _kCount,
+      curve: Curves.easeOutCubic,
+      builder: (_, value, _) => Text(_fmtDurationMs(value.round()), style: style),
+    );
+  }
+}
+
+// ─── Day navigator (vista Today) ────────────────────────────────────────────
+
+/// `‹ Yesterday ›`: sposta l'intera schermata su un giorno passato.
+///
+/// Si ferma a [StatisticsPeriod.maxDaysBack] perché oltre quella soglia
+/// UsageStatsManager non ha più eventi e lo screen-time tornerebbe zero — che
+/// l'utente leggerebbe come "quel giorno non ho usato niente" invece che come
+/// "questo dato non esiste più". Meglio una freccia spenta.
+class _DayNavigator extends ConsumerWidget {
+  const _DayNavigator();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final offset = ref.watch(selectedDayOffsetProvider);
+    void go(int delta) =>
+        ref.read(selectedDayOffsetProvider.notifier).state = offset + delta;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: KoruColors.surface,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: Row(
+        children: [
+          _NavArrow(
+            icon: Icons.chevron_left,
+            tooltip: 'Previous day',
+            onTap: offset < StatisticsPeriod.maxDaysBack
+                ? () => go(1)
+                : null,
+          ),
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: _kMorph,
+              child: Text(
+                _dayLabel(_dayStartMsBack(offset)),
+                key: ValueKey(offset),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: KoruColors.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          _NavArrow(
+            icon: Icons.chevron_right,
+            tooltip: 'Next day',
+            onTap: offset > 0 ? () => go(-1) : null,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NavArrow extends StatelessWidget {
+  const _NavArrow({required this.icon, required this.tooltip, this.onTap});
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onTap,
+      tooltip: tooltip,
+      visualDensity: VisualDensity.compact,
+      icon: Icon(icon, size: 22),
+      color: KoruColors.primary,
+      // Spenta e non nascosta: la freccia che sparisce sposta l'etichetta.
+      disabledColor: KoruColors.textSecondary.withAlpha(70),
     );
   }
 }
@@ -78,9 +235,14 @@ class _PeriodSwitcher extends ConsumerWidget {
                 selected: p == period,
                 onTap: () {
                   ref.read(selectedPeriodProvider.notifier).state = p;
-                  // Cambiare periodo azzera l'eventuale giorno selezionato:
-                  // una selezione "appiccicata" sarebbe confondente.
+                  // Cambiare periodo azzera sia il giorno selezionato dal
+                  // grafico sia la navigazione indietro: una selezione
+                  // "appiccicata" sarebbe confondente, e soprattutto la
+                  // settimana non è navigabile — restare a offset 3 vorrebbe
+                  // dire mostrare una finestra che nessun comando può più
+                  // spostare.
                   ref.read(selectedStatsDayProvider.notifier).state = null;
+                  ref.read(selectedDayOffsetProvider.notifier).state = 0;
                 },
               ),
             ),
@@ -147,13 +309,19 @@ class _ScreenTimeCard extends ConsumerWidget {
       now = selDay.totalMs;
       subtitle = Text(
         _dayLabel(selDay.dayStartMs),
+        key: ValueKey('day-${selDay.dayStartMs}'),
         style: const TextStyle(color: KoruColors.textSecondary, fontSize: 13),
       );
     } else {
       now = ref.watch(periodScreenTimeMsProvider).valueOrNull ?? 0;
       final prev =
           ref.watch(previousPeriodScreenTimeMsProvider).valueOrNull ?? 0;
-      subtitle = _DeltaText(current: now, previous: prev, period: period);
+      subtitle = _DeltaText(
+        current: now,
+        previous: prev,
+        period: period,
+        shifted: ref.watch(selectedDayOffsetProvider) > 0,
+      );
     }
 
     return _Card(
@@ -163,8 +331,8 @@ class _ScreenTimeCard extends ConsumerWidget {
           const SizedBox(height: 12),
           FittedBox(
             fit: BoxFit.scaleDown,
-            child: Text(
-              _formatMs(now),
+            child: _AnimatedDurationText(
+              now,
               style: const TextStyle(
                 color: KoruColors.textPrimary,
                 fontSize: 56,
@@ -175,13 +343,14 @@ class _ScreenTimeCard extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 10),
-          subtitle,
+          // Il sottotitolo cambia natura fra un periodo e l'altro (delta % vs
+          // etichetta del giorno): senza cross-fade il salto si sente anche
+          // se il numero sopra scorre.
+          AnimatedSwitcher(duration: _kMorph, child: subtitle),
         ],
       ),
     );
   }
-
-  static String _formatMs(int ms) => _fmtDurationMs(ms);
 }
 
 class _DeltaText extends StatelessWidget {
@@ -189,21 +358,32 @@ class _DeltaText extends StatelessWidget {
     required this.current,
     required this.previous,
     required this.period,
+    required this.shifted,
   });
   final int current;
   final int previous;
   final StatisticsPeriod period;
 
+  /// True se si sta guardando un giorno passato: il confronto non è più con
+  /// "ieri" ma con il giorno prima di quello mostrato, e dirgli "yesterday"
+  /// sarebbe una bugia piccola ma continua.
+  final bool shifted;
+
   String _periodRef() => switch (period) {
-    StatisticsPeriod.today => 'yesterday',
+    StatisticsPeriod.today => shifted ? 'the day before' : 'yesterday',
     StatisticsPeriod.week => 'last week',
   };
 
   @override
   Widget build(BuildContext context) {
     if (previous == 0) {
+      final label = 'no data from ${_periodRef()}';
       return Text(
-        'no data from ${_periodRef()}',
+        label,
+        // Chiave = testo: sta dentro un AnimatedSwitcher, e con una chiave
+        // fissa il testo cambierebbe di colpo dentro il vecchio widget invece
+        // di sfumare.
+        key: ValueKey(label),
         style: const TextStyle(color: KoruColors.textSecondary, fontSize: 13),
       );
     }
@@ -212,8 +392,10 @@ class _DeltaText extends StatelessWidget {
     final increased = pct > 0;
     final color = increased ? KoruColors.danger : KoruColors.success;
     final sign = increased ? '+' : '';
+    final label = '$sign$pct% from ${_periodRef()}';
     return Text(
-      '$sign$pct% from ${_periodRef()}',
+      label,
+      key: ValueKey(label),
       style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w500),
     );
   }
@@ -405,7 +587,12 @@ class _DayBars extends StatelessWidget {
     } else {
       color = KoruColors.primary.withAlpha(170);
     }
-    return Container(
+    // Animata su altezza E colore: le barre arrivano dopo il primo frame (il
+    // provider settimanale è un Future) e cambiano tinta a ogni selezione —
+    // entrambe le cose, senza animazione, si vedono come uno scatto.
+    return AnimatedContainer(
+      duration: _kMorph,
+      curve: Curves.easeOutCubic,
       width: _barWidth,
       height: height,
       decoration: BoxDecoration(
@@ -460,21 +647,38 @@ class _TopAppsCard extends ConsumerWidget {
             ),
           ],
           const SizedBox(height: 14),
-          if (top.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(
-                selDay != null
-                    ? 'No usage recorded for this day.'
-                    : 'No foreground usage recorded for this period.',
-                style: const TextStyle(
-                  color: KoruColors.textSecondary,
-                  fontSize: 13,
-                ),
-              ),
-            )
-          else
-            _TopAppsList(top: top, labels: labels),
+          // La lista cambia in blocco quando cambia il periodo o il giorno:
+          // cross-fade + altezza animata, altrimenti la card si accorcia di
+          // colpo trascinandosi dietro tutto quello che ha sotto.
+          AnimatedSize(
+            duration: _kMorph,
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: AnimatedSwitcher(
+              duration: _kMorph,
+              child: top.isEmpty
+                  ? Padding(
+                      key: const ValueKey('empty'),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        selDay != null
+                            ? 'No usage recorded for this day.'
+                            : 'No foreground usage recorded for this period.',
+                        style: const TextStyle(
+                          color: KoruColors.textSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    )
+                  : _TopAppsList(
+                      key: ValueKey(
+                        top.map((a) => a.packageName).join('|'),
+                      ),
+                      top: top,
+                      labels: labels,
+                    ),
+            ),
+          ),
         ],
       ),
     );
@@ -482,7 +686,7 @@ class _TopAppsCard extends ConsumerWidget {
 }
 
 class _TopAppsList extends StatelessWidget {
-  const _TopAppsList({required this.top, required this.labels});
+  const _TopAppsList({super.key, required this.top, required this.labels});
   final List<AppUsageInfo> top;
   final Map<String, String> labels;
 
@@ -533,8 +737,8 @@ class _AppUsageRow extends StatelessWidget {
                 ),
               ),
             ),
-            Text(
-              _fmtDurationMs(ms),
+            _AnimatedDurationText(
+              ms,
               style: const TextStyle(
                 color: KoruColors.textSecondary,
                 fontSize: 13,
@@ -545,11 +749,18 @@ class _AppUsageRow extends StatelessWidget {
         const SizedBox(height: 6),
         ClipRRect(
           borderRadius: BorderRadius.circular(3),
-          child: LinearProgressIndicator(
-            value: fraction.clamp(0, 1).toDouble(),
-            minHeight: 5,
-            backgroundColor: KoruColors.surfaceElevated,
-            valueColor: const AlwaysStoppedAnimation<Color>(KoruColors.primary),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(end: fraction.clamp(0, 1).toDouble()),
+            duration: _kCount,
+            curve: Curves.easeOutCubic,
+            builder: (_, value, _) => LinearProgressIndicator(
+              value: value,
+              minHeight: 5,
+              backgroundColor: KoruColors.surfaceElevated,
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                KoruColors.primary,
+              ),
+            ),
           ),
         ),
       ],
@@ -576,8 +787,18 @@ class _InterventionsCard extends ConsumerWidget {
           SizedBox(
             width: 90,
             height: 90,
-            child: CustomPaint(
-              painter: _DonutPainter(total: total, respected: respected),
+            // La fetta si muove invece di riapparire da un'altra parte: è il
+            // contatore che cambia di più fra Oggi e Settimana.
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(end: total == 0 ? 0 : respected / total),
+              duration: _kCount,
+              curve: Curves.easeOutCubic,
+              builder: (_, value, _) => CustomPaint(
+                painter: _DonutPainter(
+                  respectedFraction: value,
+                  hasData: total > 0,
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 20),
@@ -636,9 +857,14 @@ class _LegendRow extends StatelessWidget {
 }
 
 class _DonutPainter extends CustomPainter {
-  _DonutPainter({required this.total, required this.respected});
-  final int total;
-  final int respected;
+  _DonutPainter({required this.respectedFraction, required this.hasData});
+
+  /// Quota di blocchi rispettati, 0..1. È un double e non la coppia di conteggi
+  /// perché il valore viene interpolato da un `TweenAnimationBuilder`.
+  final double respectedFraction;
+
+  /// False = nessun blocco nel periodo: si disegna solo l'anello di fondo.
+  final bool hasData;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -654,9 +880,9 @@ class _DonutPainter extends CustomPainter {
       ..strokeCap = StrokeCap.butt;
     canvas.drawCircle(center, radius, bgPaint);
 
-    if (total == 0) return;
+    if (!hasData) return;
 
-    final respFraction = respected / total;
+    final respFraction = respectedFraction.clamp(0.0, 1.0);
     final skipFraction = 1 - respFraction;
     final gap = 0.06; // small gap between arcs, radians
 
@@ -686,7 +912,7 @@ class _DonutPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _DonutPainter old) =>
-      old.total != total || old.respected != respected;
+      old.respectedFraction != respectedFraction || old.hasData != hasData;
 }
 
 // ─── Journal quick access card ──────────────────────────────────────────────
@@ -810,6 +1036,14 @@ const _monthNames = [
 String _weekdayInitial(int dayStartMs) {
   final wd = DateTime.fromMillisecondsSinceEpoch(dayStartMs).weekday; // 1..7
   return _weekdayInitials[wd - 1];
+}
+
+/// Mezzanotte locale di [daysBack] giorni fa. Costruita per campi di calendario
+/// (`DateTime(y, m, d - n)`) e non sottraendo 24 ore: a cavallo di un cambio di
+/// ora legale la sottrazione finisce sul giorno sbagliato.
+int _dayStartMsBack(int daysBack) {
+  final n = DateTime.now();
+  return DateTime(n.year, n.month, n.day - daysBack).millisecondsSinceEpoch;
 }
 
 bool _isToday(int dayStartMs) {
