@@ -24,16 +24,30 @@ class InstalledAppInfo {
 /// Limite giornaliero per un singolo package. `strict=true` implica hard
 /// cap: l'overlay USAGE_LIMIT non offre "Open anyway". `strict=false`
 /// abilita progressive friction (countdown crescente, durate decrescenti).
+///
+/// `challengeLock=true` mette la sfida di sblocco su entrambe le vie d'uscita:
+/// indebolire il limite dalle Impostazioni e l'"Open anyway" a cap raggiunto.
+/// Il default è `true` — chi imposta un cap sta chiedendo attrito.
 class AppLimitConfig {
-  const AppLimitConfig({required this.minutes, required this.strict});
+  const AppLimitConfig({
+    required this.minutes,
+    required this.strict,
+    this.challengeLock = true,
+  });
 
   final int minutes;
   final bool strict;
+  final bool challengeLock;
 
-  Map<String, dynamic> toMap() => {'minutes': minutes, 'strict': strict};
+  Map<String, dynamic> toMap() => {
+        'minutes': minutes,
+        'strict': strict,
+        'challengeLock': challengeLock,
+      };
 
   /// Tollera valori `int` legacy (formato di scambio precedente): in quel
-  /// caso `strict` è assunto `true`. Ritorna `null` se `minutes <= 0`.
+  /// caso `strict` e `challengeLock` sono assunti `true`. Ritorna `null` se
+  /// `minutes <= 0`.
   static AppLimitConfig? fromAny(dynamic raw) {
     if (raw is num) {
       final m = raw.toInt();
@@ -44,14 +58,19 @@ class AppLimitConfig {
       final m = (raw['minutes'] as num?)?.toInt() ?? 0;
       if (m <= 0) return null;
       final s = raw['strict'] as bool? ?? true;
-      return AppLimitConfig(minutes: m, strict: s);
+      // Campo assente = limite salvato prima che esistesse: default protetto,
+      // stessa scelta conservativa fatta lato Kotlin in `parseEntry`.
+      final c = raw['challengeLock'] as bool? ?? true;
+      return AppLimitConfig(minutes: m, strict: s, challengeLock: c);
     }
     return null;
   }
 
-  AppLimitConfig copyWith({int? minutes, bool? strict}) => AppLimitConfig(
+  AppLimitConfig copyWith({int? minutes, bool? strict, bool? challengeLock}) =>
+      AppLimitConfig(
         minutes: minutes ?? this.minutes,
         strict: strict ?? this.strict,
+        challengeLock: challengeLock ?? this.challengeLock,
       );
 }
 
@@ -290,6 +309,20 @@ class BlockingChannel {
       'packageName': packageName,
     });
   }
+
+  /// Deposita il lasciapassare monouso che autorizza UN "Open anyway" sul cap
+  /// di [packageName]. Da chiamare SOLO dopo che l'utente ha superato la sfida
+  /// di sblocco.
+  ///
+  /// È l'unico canale con cui l'esito di un puzzle disegnato in Dart raggiunge
+  /// l'overlay, che è Compose nativo e non sa nulla di glifi. Ritorna `false`
+  /// se la scrittura nativa è fallita: in quel caso il bypass NON è
+  /// autorizzato e il chiamante non deve lanciare l'app.
+  Future<bool> grantUsageChallengePass(String packageName) async =>
+      (await _channel.invokeMethod<bool>('grantUsageChallengePass', {
+        'packageName': packageName,
+      })) ??
+      false;
 
   // =========================================================================
   // Concern: filtro notifiche (package silenziati) + permesso notif. access.

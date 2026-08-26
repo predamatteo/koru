@@ -48,11 +48,73 @@ class OverlayPoliciesTest {
         // ARCH-03/CR-04: la cache di BypassCountStore vive ora dentro il
         // FileBackedStore interno; il test hook la azzera senza reflection.
         BypassCountStore.invalidateCacheForTest()
+        // `requiresChallenge` legge questi due store: senza pulizia i casi si
+        // trascinano dietro limiti e lasciapassare del test precedente.
+        File(ctx.filesDir, "koru_app_limits.json").delete()
+        AppUsageLimitsStore.invalidateCacheForTest()
+        File(ctx.filesDir, "koru_usage_challenge_pass.json").delete()
+        UsageChallengePassStore.invalidateCacheForTest()
     }
 
     private fun incrementCount(times: Int) {
         val ctx = ApplicationProvider.getApplicationContext<Context>()
         repeat(times) { BypassCountStore.increment(ctx, pkg) }
+    }
+
+    // -------- Challenge lock --------
+
+    private fun saveLimit(minutes: Int, strict: Boolean, challengeLock: Boolean) {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        AppUsageLimitsStore.save(
+            ctx,
+            mapOf(pkg to AppUsageLimitsStore.LimitEntry(minutes, strict, challengeLock)),
+        )
+    }
+
+    @Test
+    fun challengeLock_requiresChallengeWhenNoPassYet() {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        saveLimit(30, strict = false, challengeLock = true)
+        val (_, policy) = OverlayPolicies.buildUsageLimitOverlay(ctx, pkg, isStrict = false)
+        assertThat(policy.requiresChallenge).isTrue()
+    }
+
+    @Test
+    fun challengeLock_offMeansNoChallenge() {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        saveLimit(30, strict = false, challengeLock = false)
+        val (_, policy) = OverlayPolicies.buildUsageLimitOverlay(ctx, pkg, isStrict = false)
+        assertThat(policy.requiresChallenge).isFalse()
+    }
+
+    @Test
+    fun challengeLock_aValidPassTurnsTheGateOff() {
+        // Al ritorno dalla sfida l'overlay si ricostruisce: senza questo,
+        // l'utente rifarebbe il puzzle all'infinito senza mai aprire l'app.
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        saveLimit(30, strict = false, challengeLock = true)
+        UsageChallengePassStore.grant(ctx, pkg)
+        val (_, policy) = OverlayPolicies.buildUsageLimitOverlay(ctx, pkg, isStrict = false)
+        assertThat(policy.requiresChallenge).isFalse()
+    }
+
+    @Test
+    fun challengeLock_passForAnotherPackageDoesNotCount() {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        saveLimit(30, strict = false, challengeLock = true)
+        UsageChallengePassStore.grant(ctx, "com.other.app")
+        val (_, policy) = OverlayPolicies.buildUsageLimitOverlay(ctx, pkg, isStrict = false)
+        assertThat(policy.requiresChallenge).isTrue()
+    }
+
+    @Test
+    fun strict_neverRequiresChallenge() {
+        // Sullo strict non c'è nessun "Open anyway" da gateare: chiedere un
+        // puzzle per poi non aprire comunque niente sarebbe solo crudele.
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        saveLimit(30, strict = true, challengeLock = true)
+        val (_, policy) = OverlayPolicies.buildUsageLimitOverlay(ctx, pkg, isStrict = true)
+        assertThat(policy.requiresChallenge).isFalse()
     }
 
     // -------- Strict path --------

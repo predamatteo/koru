@@ -92,6 +92,7 @@ internal fun BlockedScreen(
     onIntentionChosen: (String) -> Unit,
     onGoHome: (forceHome: Boolean) -> Unit,
     onBypass: (durationMs: Long) -> Unit,
+    onChallengeRequired: () -> Unit = {},
 ) {
     // Overlay completamente opaco (niente bleed-through dall'app bloccata
      // sottostante) + gradiente sottile dal colore palette al base dark.
@@ -304,10 +305,39 @@ internal fun BlockedScreen(
                 // mindful (APP_BLOCKED entry) dove la pausa fa parte dell'UX.
                 CountdownButton(
                     durationMs = effectiveCountdownSec * 1000,
-                    finishedText = "Open $appLabel",
+                    // Il testo dice dove porta il tap. Con il challenge lock
+                    // attivo NON apre l'app: porta a un puzzle. Prometterlo
+                    // come "Open $appLabel" farebbe sembrare un guasto il
+                    // salto in Koru che segue.
+                    finishedText = if (bypassPolicy.requiresChallenge) {
+                        "Solve to open"
+                    } else {
+                        "Open $appLabel"
+                    },
                     pauseAllowed = bypassPolicy.pauseAllowed,
-                    onTapAfterFinish = { showDurationPicker = true },
+                    onTapAfterFinish = {
+                        // La sfida si può disegnare solo in Dart (il Kotlin non
+                        // conosce i glifi): qui usciamo dall'overlay e lasciamo
+                        // che sia Koru a fare il puzzle. Al ritorno il
+                        // lasciapassare spegne `requiresChallenge` e questo
+                        // stesso tap apre il picker delle durate.
+                        if (bypassPolicy.requiresChallenge) {
+                            onChallengeRequired()
+                        } else {
+                            showDurationPicker = true
+                        }
+                    },
                 )
+
+                if (bypassPolicy.requiresChallenge) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Protected by an unlock challenge",
+                        color = KoruTextPrimary.copy(alpha = 0.60f),
+                        fontSize = 12.sp,
+                        letterSpacing = 0.3.sp,
+                    )
+                }
 
                 if (bypassPolicy.countToday > 0) {
                     Spacer(Modifier.height(8.dp))

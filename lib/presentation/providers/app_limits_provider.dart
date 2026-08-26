@@ -17,13 +17,14 @@ class AppLimitsNotifier extends AsyncNotifier<Map<String, AppLimitConfig>> {
     return blocking.getAppDailyLimits();
   }
 
-  /// Imposta minuti + strict flag per [packageName]. Se `minutes <= 0` rimuove
-  /// il limite. Se `strict` è omesso, conserva il valore corrente (o `true`
-  /// per nuovi limiti).
+  /// Imposta minuti + strict + challengeLock per [packageName]. Se
+  /// `minutes <= 0` rimuove il limite. I flag omessi conservano il valore
+  /// corrente (o `true` per nuovi limiti).
   Future<void> setLimit(
     String packageName,
     int minutes, {
     bool? strict,
+    bool? challengeLock,
   }) async {
     final current = state.valueOrNull ?? {};
     final next = {...current};
@@ -34,6 +35,7 @@ class AppLimitsNotifier extends AsyncNotifier<Map<String, AppLimitConfig>> {
       next[packageName] = AppLimitConfig(
         minutes: minutes,
         strict: strict ?? existing?.strict ?? true,
+        challengeLock: challengeLock ?? existing?.challengeLock ?? true,
       );
     }
     state = AsyncData(next);
@@ -144,6 +146,36 @@ final usageTodayMinutesProvider =
       .blocking
       .getUsageTodayMs(packageName);
   return (ms / 60000).round();
+});
+
+/// Utilizzo di OGGI per package, in millisecondi, in **una sola** chiamata
+/// nativa.
+///
+/// Esiste perché ordinare una lista di ~150 app per tempo d'uso con
+/// [usageTodayMinutesProvider] sarebbe un freeze, non una lentezza: quello è
+/// una `family`, e ogni istanza chiama `getUsageTodayMs`, che lato Kotlin
+/// rifà l'intera passata di `queryEvents` sulla giornata per poi indicizzare
+/// una sola chiave e buttare via il resto. `getUsageStats` fa la stessa
+/// passata UNA volta e ritorna tutti i package.
+///
+/// Deliberatamente NON riusa `periodUsageProvider`: quello è agganciato a
+/// `selectedPeriodProvider`, cioè allo switcher Oggi/Settimana della
+/// schermata Statistiche — l'ordinamento dei limiti cambierebbe da sotto in
+/// base a cosa l'utente ha lasciato selezionato in un'altra schermata.
+///
+/// La mezzanotte è ancorata con `DateTime(y, m, d)` e non con
+/// `subtract(Duration(days:))`, così il confine resta corretto anche a
+/// cavallo dei cambi di ora legale (stessa convenzione di
+/// `weeklyTopAppsProvider`).
+final todayUsageMsByPackageProvider =
+    FutureProvider<Map<String, int>>((ref) async {
+  final now = DateTime.now();
+  final midnight = DateTime(now.year, now.month, now.day);
+  final list = await ref.read(platformChannelServiceProvider).blocking.getUsageStats(
+        startMs: midnight.millisecondsSinceEpoch,
+        endMs: now.millisecondsSinceEpoch,
+      );
+  return {for (final a in list) a.packageName: a.totalTimeMs};
 });
 
 /// Numero di bypass usati oggi per [packageName]. Usato dalla UI per

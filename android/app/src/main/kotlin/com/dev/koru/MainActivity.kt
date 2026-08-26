@@ -67,6 +67,10 @@ class MainActivity : FlutterActivity() {
         // suo channel fosse ancora null la richiesta resta pendente e il listener
         // Dart la fa PULL appena registra l'handler (meccanismo invariato).
         maybeRequireBackdoorCode(intent)
+        // Stesso meccanismo per la sfida di un cap giornaliero: qui il cold
+        // start è il caso NORMALE, non l'eccezione — l'utente arriva da
+        // un'altra app e Koru può benissimo essere stata scaricata.
+        maybeRequireUsageChallenge(intent)
         // Re-attach a un engine GIÀ caldo: la route iniziale non si applica più
         // (main() è già girato; Dart è sulla pagina dell'ultima sessione).
         // Navighiamo in base all'intent di lancio rispettando la finestra di
@@ -362,6 +366,10 @@ class MainActivity : FlutterActivity() {
         // disabilitare il device admin con strict mode attivo) apriamo il prompt
         // e fermiamoci qui — ha priorità sulla navigazione launcher/home.
         if (maybeRequireBackdoorCode(intent)) return
+        // Sfida per sforare un cap: come sopra, ha priorità sulla navigazione
+        // launcher/home — altrimenti l'utente atterra sulla home di Koru senza
+        // capire perché ci è finito.
+        if (maybeRequireUsageChallenge(intent)) return
         // Tap sul widget home mentre Koru è già viva (singleTask → onNewIntent).
         if (maybeRouteFromWidget(intent)) return
         val now = System.currentTimeMillis()
@@ -413,6 +421,44 @@ class MainActivity : FlutterActivity() {
         intent.removeExtra(KoruDeviceAdminReceiver.EXTRA_REQUIRE_BACKDOOR_CODE)
         setIntent(intent)
         NavigationMethodChannel.goToBackdoorPrompt()
+        return true
+    }
+
+    /**
+     * Se [intent] porta
+     * [KoruAccessibilityService.EXTRA_REQUIRE_USAGE_CHALLENGE], inoltra a
+     * Flutter la richiesta di aprire la sfida di sblocco per il package
+     * indicato e ritorna true.
+     *
+     * Consuma ENTRAMBI gli extra: senza, ogni successivo onNewIntent/onResume
+     * che riusa lo stesso intent rilancerebbe la sfida — un utente che apre
+     * Koru dalle recenti si ritroverebbe il puzzle davanti senza averlo
+     * chiesto.
+     */
+    private fun maybeRequireUsageChallenge(intent: Intent?): Boolean {
+        if (intent == null) return false
+        if (!intent.getBooleanExtra(
+                KoruAccessibilityService.EXTRA_REQUIRE_USAGE_CHALLENGE,
+                false,
+            )
+        ) {
+            return false
+        }
+        val pkg = intent.getStringExtra(
+            KoruAccessibilityService.EXTRA_USAGE_CHALLENGE_PACKAGE,
+        )
+        intent.removeExtra(KoruAccessibilityService.EXTRA_REQUIRE_USAGE_CHALLENGE)
+        intent.removeExtra(KoruAccessibilityService.EXTRA_USAGE_CHALLENGE_PACKAGE)
+        setIntent(intent)
+        // Senza package non c'è nulla da sbloccare: il lasciapassare è legato a
+        // uno specifico pkg, quindi una richiesta senza destinatario si scarta
+        // invece di aprire una sfida che non potrebbe autorizzare niente.
+        if (pkg.isNullOrEmpty()) {
+            Log.w("MainActivity", "sfida di sblocco richiesta senza package: ignorata")
+            return false
+        }
+        Log.i("MainActivity", "usage-limit unlock challenge requested for $pkg")
+        NavigationMethodChannel.goToUsageChallenge(pkg)
         return true
     }
 
