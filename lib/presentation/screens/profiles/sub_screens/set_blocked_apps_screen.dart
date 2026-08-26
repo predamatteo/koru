@@ -195,6 +195,9 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
   @override
   Widget build(BuildContext context) {
     final appsAsync = ref.watch(installedAppsProvider);
+    // La LISTA arriva da [pickerAppsProvider] (niente altri launcher, niente
+    // Koru); `appsAsync` resta solo per gli stati loading/error.
+    final apps = ref.watch(pickerAppsProvider);
     final weekly = ref.watch(weeklyTopAppsProvider).valueOrNull;
 
     return Scaffold(
@@ -242,7 +245,7 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
         child: appsAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => Center(child: Text('$e')),
-          data: (apps) {
+          data: (_) {
             if (!_loaded) {
               return const Center(child: CircularProgressIndicator());
             }

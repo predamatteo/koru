@@ -1,13 +1,14 @@
 package com.dev.koru.widget
 
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.util.Log
 import com.dev.koru.channels.PermissionMethodChannel
+import com.dev.koru.inventory.PackageInventory
+import com.dev.koru.inventory.PackageVisibility
 import com.dev.koru.service.AppUsageLimitsStore
 import com.dev.koru.service.KoruAccessibilityService
 import com.dev.koru.service.ReelCountStore
@@ -52,11 +53,30 @@ internal object UsageWidgetDataSource {
      */
     fun snapshot(context: Context): UsageWidgetModel.Snapshot? {
         if (!PermissionMethodChannel.hasUsageStats(context)) return null
-        val usage = todayUsageMs(context) ?: return null
+        val rawUsage = todayUsageMs(context) ?: return null
         val limits = AppUsageLimitsStore.read(context)
             .mapValues { (_, e) -> UsageWidgetModel.LimitSpec(e.minutes, e.strict) }
 
-        val excluded = KoruAccessibilityService.SKIP_PACKAGES + context.packageName
+        // Il filtro si applica alla MAPPA, non solo alle righe: così il totale
+        // è la somma di quello che il widget mostra, e coincide per costruzione
+        // con lo screen time della schermata Statistiche — che passa dallo
+        // stesso predicato in `UsageStatsCallHandler`. Prima il totale era
+        // grezzo apposta, per allinearsi a un provider Dart che non filtrava:
+        // ora filtrano entrambi, quindi la divergenza non serve più.
+        val usage = PackageVisibility.filterUserFacing(
+            usage = rawUsage,
+            selfPackage = context.packageName,
+            launchablePackages = PackageInventory.launchablePackages(context),
+            homePackages = PackageInventory.homePackages(context),
+            skipPackages = KoruAccessibilityService.SKIP_PACKAGES,
+        )
+
+        // Le righe partono già da `usage` filtrata; `excludedPackages` copre i
+        // soli package che entrano da `limits` (un cap impostato su un'app poi
+        // diventata launcher predefinito, per dire) e non passano dalla mappa.
+        val excluded = KoruAccessibilityService.SKIP_PACKAGES +
+            context.packageName +
+            PackageInventory.homePackages(context)
         val labels = resolveLabels(
             context = context,
             packages = candidatePackages(usage, limits.keys, excluded),
@@ -114,10 +134,11 @@ internal object UsageWidgetDataSource {
 
     /**
      * Label dei [packages] installati E apribili dal drawer. Il criterio
-     * "launchable" (activity MAIN + CATEGORY_LAUNCHER) è lo stesso che
-     * `AppInventoryCallHandler` usa per il drawer: senza, il widget mostrerebbe
-     * componenti Play, IME e servizi che accumulano foreground ma non sono app
-     * che l'utente riconosce.
+     * "launchable" (activity MAIN + CATEGORY_LAUNCHER) arriva da
+     * [PackageInventory], la stessa sorgente che alimenta il filtro delle
+     * statistiche e del drawer: senza, il widget mostrerebbe componenti Play,
+     * IME e servizi che accumulano foreground ma non sono app che l'utente
+     * riconosce.
      *
      * FAIL-OPEN: se la query launchable non restituisce nulla (fallimento del
      * PackageManager, non "zero app launchable" che è impossibile su un device
@@ -127,7 +148,7 @@ internal object UsageWidgetDataSource {
      */
     private fun resolveLabels(context: Context, packages: Set<String>): Map<String, String> {
         val pm = context.packageManager
-        val launchable = launchableCached(pm)
+        val launchable = PackageInventory.launchablePackages(context)
         val out = HashMap<String, String>(packages.size)
         for (pkg in packages) {
             if (launchable.isNotEmpty() && pkg !in launchable) continue
@@ -136,35 +157,14 @@ internal object UsageWidgetDataSource {
         return out
     }
 
-    // ── Cache dell'inventario PackageManager ───────────────────────────────
-    // Senza cache, OGNI render pagava: una `queryIntentActivities` che
-    // ritorna un ResolveInfo per ciascuna delle ~150 activity launchable del
-    // device, più fino a LABEL_RESOLUTION_BUDGET `getApplicationLabel` — e
-    // ognuna costringe il framework ad aprire le risorse dell'APK bersaglio.
-    // È esattamente il lavoro che `AppInventoryCallHandler` documenta come
-    // dominante nel cold start. Il widget si ridisegna anche ogni 30s, mentre
-    // il set di app installate cambia forse una volta a settimana: tenerlo
-    // per [INVENTORY_TTL_MS] elimina due ordini di grandezza di lavoro
-    // sprecato. Il TTL (invece di un invalidamento sui package event) è
-    // deliberato: `PackageEventsReceiver` vive solo mentre l'Activity è
-    // visibile, quindi non è una sorgente affidabile per un widget. Prezzo:
-    // un'app appena installata può comparire con qualche minuto di ritardo.
-    private const val INVENTORY_TTL_MS = 5 * 60 * 1000L
-
-    private var inventoryLoadedAtMs = 0L
-    private var launchableCache: Set<String> = emptySet()
+    // ── Cache delle label ──────────────────────────────────────────────────
+    // `getApplicationLabel` costringe il framework ad aprire le risorse
+    // dell'APK bersaglio, e il widget si ridisegna anche ogni 30s mentre il
+    // set di app installate cambia forse una volta a settimana. La cache dei
+    // due SET di package (launchable/home) è salita in [PackageInventory],
+    // condivisa con le statistiche e col drawer; qui resta solo la mappa
+    // package → label, che è specifica del widget.
     private val labelCache = HashMap<String, String>()
-
-    private fun launchableCached(pm: PackageManager): Set<String> {
-        val now = System.currentTimeMillis()
-        // `now < inventoryLoadedAtMs` copre l'orologio spostato all'indietro:
-        // senza, la cache resterebbe valida fino al recupero del delta.
-        if (now - inventoryLoadedAtMs in 0 until INVENTORY_TTL_MS) return launchableCache
-        launchableCache = launchablePackages(pm)
-        labelCache.clear()
-        inventoryLoadedAtMs = now
-        return launchableCache
-    }
 
     /// `null` = package non installato (o label non leggibile): il chiamante lo
     /// scarta, che è anche il filtro dei limiti orfani.
@@ -182,18 +182,6 @@ internal object UsageWidgetDataSource {
         return label
     }
 
-    private fun launchablePackages(pm: PackageManager): Set<String> {
-        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        return try {
-            pm.queryIntentActivities(intent, 0)
-                .mapNotNull { it.activityInfo?.packageName }
-                .toSet()
-        } catch (e: Exception) {
-            Log.w(TAG, "queryIntentActivities fallita: filtro launchable disattivato", e)
-            emptySet()
-        }
-    }
-
     /// Cache LRU delle icone già rasterizzate. Due motivi, entrambi misurabili:
     /// (1) `getApplicationIcon` + rasterizzazione di un AdaptiveIconDrawable
     /// costa quanto la query UsageStats, e il widget si ridisegna spesso;
@@ -208,15 +196,14 @@ internal object UsageWidgetDataSource {
             size > ICON_CACHE_MAX
     }
 
-    /// Svuota tutte le cache (icone + inventario PackageManager). Chiamata
-    /// quando l'ultimo widget viene rimosso: senza, i bitmap resterebbero
-    /// appesi al processo main per sempre.
+    /// Svuota tutte le cache (icone + label + inventario PackageManager).
+    /// Chiamata quando l'ultimo widget viene rimosso: senza, i bitmap
+    /// resterebbero appesi al processo main per sempre.
     @Synchronized
     fun clearCaches() {
         iconCache.clear()
         labelCache.clear()
-        launchableCache = emptySet()
-        inventoryLoadedAtMs = 0L
+        PackageInventory.clearCaches()
     }
 
     /**

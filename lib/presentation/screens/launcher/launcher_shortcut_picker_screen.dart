@@ -58,6 +58,9 @@ class _LauncherShortcutPickerScreenState
     // blink del drawer (vedi AllAppsScreen) si vedeva anche qui. NON usare
     // `unwrapPrevious()`: rimetterebbe lo spinner ad ogni reload.
     final appsAsync = ref.watch(installedAppsProvider);
+    // La LISTA arriva da [pickerAppsProvider] (niente altri launcher, niente
+    // Koru); `appsAsync` resta solo per gli stati loading/error.
+    final apps = ref.watch(pickerAppsProvider);
     final currentPkg = ref.watch(effectiveShortcutPackageProvider(widget.slot));
     final notifier = ref.read(launcherShortcutsProvider.notifier);
 
@@ -106,7 +109,7 @@ class _LauncherShortcutPickerScreenState
         skipLoadingOnReload: true,
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('$e')),
-        data: (apps) {
+        data: (_) {
           final q = _query.trim().toLowerCase();
           final filtered = q.isEmpty
               ? apps

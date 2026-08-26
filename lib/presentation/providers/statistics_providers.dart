@@ -16,6 +16,21 @@ final blockTriggeredCountProvider = StreamProvider<int>((ref) {
       .watchCountEventsByTypeInRange(0, range.from, range.to);
 });
 
+/// Count di eventi BLOCK_TRIGGERED **di oggi**, indipendente dal periodo
+/// selezionato nella schermata Statistiche.
+///
+/// Esiste separato da [blockTriggeredCountProvider] perché quello segue
+/// `selectedPeriodProvider`, che è stato UI globale mutato dallo switcher
+/// Oggi/Settimana di `/stats`: la dashboard mostrava i blocchi della settimana
+/// se l'utente aveva lasciato le Statistiche su "This week". Qui la finestra è
+/// costruita localmente, quindi la Home dice sempre e solo "oggi".
+final blocksTodayCountProvider = StreamProvider<int>((ref) {
+  final range = StatisticsPeriod.today.currentRange();
+  return ref
+      .watch(restrictedAccessEventsDaoProvider)
+      .watchCountEventsByTypeInRange(0, range.from, range.to);
+});
+
 /// Count di eventi BLOCK_SKIPPED (eventType=1) nel periodo.
 final blockSkippedCountProvider = StreamProvider<int>((ref) {
   final range = ref.watch(selectedPeriodProvider).currentRange();

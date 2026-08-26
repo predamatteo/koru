@@ -43,6 +43,12 @@ data class BypassPolicy(
     val durations: List<Pair<String, Long>> = defaultBypassDurations,
     val countdownSecondsOverride: Int? = null,
     val pauseAllowed: Boolean = true,
+    /// `true` quando il cap ha `challengeLock` attivo e non c'è ancora un
+    /// lasciapassare valido ([UsageChallengePassStore]). In quel caso il tap
+    /// dopo il countdown NON apre il picker delle durate: manda l'utente in
+    /// Koru a fare la sfida di sblocco, perché il puzzle si può disegnare solo
+    /// in Dart.
+    val requiresChallenge: Boolean = false,
 )
 
 /// Le opzioni standard, allineate ai pattern minimalist_phone / Opal /
@@ -255,6 +261,13 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
     /// `domain` non-null solo per i blocchi website (scope per-dominio del bypass).
     var onBypassOpen: ((pkg: String, durationMs: Long, domain: String?) -> Unit)? = null
 
+    /// Callback quando il cap ha `challengeLock` attivo e l'utente ha toccato
+    /// il countdown: il bypass non si concede qui, serve prima la sfida di
+    /// sblocco — che vive in Dart perché il Kotlin non sa disegnare i glifi.
+    /// Il caller porta l'utente in Koru; al ritorno il lasciapassare di
+    /// [UsageChallengePassStore] spegne il gate.
+    var onUnlockChallengeRequired: ((pkg: String) -> Unit)? = null
+
     init {
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
@@ -431,6 +444,9 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
                         },
                         onGoHome = { forceHome -> onReturnHome?.invoke(forceHome) },
                         onBypass = { durationMs -> handleBypassChosen(durationMs) },
+                        onChallengeRequired = {
+                            onUnlockChallengeRequired?.invoke(_currentPackageName.value)
+                        },
                     )
                     }
                 }
@@ -457,6 +473,12 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
             _blockedDomain.value,
             _reason.value,
         )
+        // Il lasciapassare della sfida è MONOUSO: bruciarlo qui è ciò che
+        // rende il gate ripetibile. Senza, la prima sfida della giornata
+        // pagherebbe per tutti i bypass successivi entro il suo TTL.
+        appContext?.let {
+            UsageChallengePassStore.consume(it, _currentPackageName.value)
+        }
         onBypassOpen?.invoke(_currentPackageName.value, durationMs, _blockedDomain.value)
     }
 

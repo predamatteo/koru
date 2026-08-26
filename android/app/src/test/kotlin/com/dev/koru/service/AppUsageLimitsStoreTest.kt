@@ -135,6 +135,55 @@ class AppUsageLimitsStoreTest {
         )
     }
 
+    // -------- challengeLock --------
+
+    @Test
+    fun read_extendedFormat_missingChallengeLock_defaultsToTrue() {
+        // Entry salvata PRIMA che il campo esistesse: chi aveva messo un cap
+        // voleva attrito, quindi il default conservativo è "protetto".
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        File(ctx.filesDir, fileName).writeText(
+            """{"com.x": {"minutes":30,"strict":false}}""",
+        )
+        assertThat(AppUsageLimitsStore.read(ctx)["com.x"]!!.challengeLock).isTrue()
+    }
+
+    @Test
+    fun read_extendedFormat_explicitChallengeLockFalse() {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        File(ctx.filesDir, fileName).writeText(
+            """{"com.x": {"minutes":30,"strict":false,"challengeLock":false}}""",
+        )
+        assertThat(AppUsageLimitsStore.read(ctx)["com.x"]!!.challengeLock).isFalse()
+    }
+
+    @Test
+    fun read_legacyIntFormat_challengeLockTrue() {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        File(ctx.filesDir, fileName).writeText("""{"com.x": 30}""")
+        assertThat(AppUsageLimitsStore.read(ctx)["com.x"]!!.challengeLock).isTrue()
+    }
+
+    @Test
+    fun challengeLockSurvivesSaveReadRoundtrip() {
+        // Il campo deve arrivare fino al DISCO. Se il codec non lo scrivesse,
+        // il flag tornerebbe `true` al primo riavvio del processo: l'utente lo
+        // spegne e se lo ritrova acceso, senza nessun errore da nessuna parte.
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        AppUsageLimitsStore.save(
+            ctx,
+            mapOf("com.x" to AppUsageLimitsStore.LimitEntry(30, false, challengeLock = false)),
+        )
+        AppUsageLimitsStore.invalidateCacheForTest()
+        assertThat(AppUsageLimitsStore.read(ctx)["com.x"]!!.challengeLock).isFalse()
+    }
+
+    @Test
+    fun isChallengeLockedFor_defaultsToTrueForUnknownPackage() {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        assertThat(AppUsageLimitsStore.isChallengeLockedFor(ctx, "com.unknown")).isTrue()
+    }
+
     @Test
     fun read_extendedFormat_zeroMinutes_filteredOut() {
         val ctx = ApplicationProvider.getApplicationContext<Context>()

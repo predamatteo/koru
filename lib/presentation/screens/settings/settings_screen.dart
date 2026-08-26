@@ -4,7 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
-import '../../providers/monochrome_provider.dart';
+// Monochrome rimosso dalle Impostazioni: vedi la tile commentata nella sezione
+// Appearance, la classe `_SwitchTile` in fondo al file e il filtro in `app.dart`.
+// import '../../providers/monochrome_provider.dart';
 import '../../widgets/koru_pull_to_refresh.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -12,7 +14,7 @@ class SettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final monochrome = ref.watch(monochromeProvider);
+    // final monochrome = ref.watch(monochromeProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settings'),
@@ -32,13 +34,17 @@ class SettingsScreen extends ConsumerWidget {
                   title: 'Font',
                   onTap: () => context.push('/settings/font'),
                 ),
-                _SwitchTile(
-                  icon: Icons.invert_colors_outlined,
-                  title: 'Monochrome',
-                  value: monochrome,
-                  onChanged: (v) =>
-                      ref.read(monochromeProvider.notifier).setEnabled(v),
-                ),
+                // Impostazione Monochrome rimossa. Per ripristinarla servono
+                // tutti e quattro i pezzi commentati insieme: questa tile, la
+                // locale + l'import in cima al file, `_SwitchTile` in fondo e
+                // il `ColorFiltered` nel builder di `app.dart`.
+                // _SwitchTile(
+                //   icon: Icons.invert_colors_outlined,
+                //   title: 'Monochrome',
+                //   value: monochrome,
+                //   onChanged: (v) =>
+                //       ref.read(monochromeProvider.notifier).setEnabled(v),
+                // ),
               ],
             ),
             const SizedBox(height: 24),
@@ -218,50 +224,53 @@ class _Tile extends StatelessWidget {
   }
 }
 
-/// Tile con Switch trailing (niente chevron).
-class _SwitchTile extends StatelessWidget {
-  const _SwitchTile({
-    required this.icon,
-    required this.title,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final IconData icon;
-  final String title;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () => onChanged(!value),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: KoruColors.primary),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: KoruColors.textPrimary,
-                      fontSize: 15,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Switch(value: value, onChanged: onChanged),
-          ],
-        ),
-      ),
-    );
-  }
-}
+// Tile con Switch trailing (niente chevron). Commentata insieme alla sua unica
+// call-site (la tile Monochrome): senza call-site l'analyzer la segnalerebbe
+// come `unused_element` e `flutter analyze` uscirebbe non-zero.
+// /// Tile con Switch trailing (niente chevron).
+// class _SwitchTile extends StatelessWidget {
+//   const _SwitchTile({
+//     required this.icon,
+//     required this.title,
+//     required this.value,
+//     required this.onChanged,
+//   });
+//
+//   final IconData icon;
+//   final String title;
+//   final bool value;
+//   final ValueChanged<bool> onChanged;
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return InkWell(
+//       onTap: () => onChanged(!value),
+//       child: Padding(
+//         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+//         child: Row(
+//           children: [
+//             Icon(icon, size: 20, color: KoruColors.primary),
+//             const SizedBox(width: 16),
+//             Expanded(
+//               child: Column(
+//                 crossAxisAlignment: CrossAxisAlignment.start,
+//                 mainAxisSize: MainAxisSize.min,
+//                 children: [
+//                   Text(
+//                     title,
+//                     style: const TextStyle(
+//                       color: KoruColors.textPrimary,
+//                       fontSize: 15,
+//                     ),
+//                   ),
+//                 ],
+//               ),
+//             ),
+//             const SizedBox(width: 12),
+//             Switch(value: value, onChanged: onChanged),
+//           ],
+//         ),
+//       ),
+//     );
+//   }
+// }

@@ -356,8 +356,12 @@ void main() {
       expect(ok, isTrue);
       expect(calls.first.method, 'setAppDailyLimits');
       final args = calls.first.arguments as Map;
+      // Uguaglianza ESATTA di proposito: è il contratto di wire col Kotlin, e
+      // `LimitsCallHandler.parseLimitEntry` scarta in silenzio le key che non
+      // conosce. Se questa mappa cresce senza che cresca anche quel parser, il
+      // campo nuovo evapora al primo salvataggio e nient'altro se ne accorge.
       expect(args['limits'], {
-        'com.x': {'minutes': 60, 'strict': true},
+        'com.x': {'minutes': 60, 'strict': true, 'challengeLock': true},
       });
     });
 
@@ -409,6 +413,25 @@ void main() {
       await BlockingChannel().resetBypassCount('com.x');
       expect(calls.first.method, 'resetBypassCount');
       expect(calls.first.arguments, {'packageName': 'com.x'});
+    });
+
+    test('grantUsageChallengePass forwards the package', () async {
+      setMockHandler((_) async => true);
+      final ok = await BlockingChannel().grantUsageChallengePass('com.x');
+      expect(ok, isTrue);
+      expect(calls.first.method, 'grantUsageChallengePass');
+      expect(calls.first.arguments, {'packageName': 'com.x'});
+    });
+
+    test('grantUsageChallengePass returns false when native fails', () async {
+      // Fail-secure: senza lasciapassare il chiamante NON deve lanciare
+      // l'app. Un `true` di comodo qui trasformerebbe un errore di scrittura
+      // in un bypass regalato.
+      setMockHandler((_) async => null);
+      expect(
+        await BlockingChannel().grantUsageChallengePass('com.x'),
+        isFalse,
+      );
     });
   });
 
@@ -548,11 +571,38 @@ void main() {
     test('toMap roundtrip via fromAny', () {
       const cfg = AppLimitConfig(minutes: 12, strict: false);
       final map = cfg.toMap();
-      expect(map, {'minutes': 12, 'strict': false});
+      expect(map, {'minutes': 12, 'strict': false, 'challengeLock': true});
       final round = AppLimitConfig.fromAny(map);
       expect(round, isNotNull);
       expect(round!.minutes, 12);
       expect(round.strict, isFalse);
+      expect(round.challengeLock, isTrue);
+    });
+
+    test('fromAny senza challengeLock → true (default protetto)', () {
+      // Un limite salvato prima che il campo esistesse era stato messo da
+      // qualcuno che voleva attrito: il default conservativo è "protetto".
+      final cfg = AppLimitConfig.fromAny({'minutes': 30, 'strict': false});
+      expect(cfg!.challengeLock, isTrue);
+    });
+
+    test('fromAny rispetta challengeLock: false', () {
+      final cfg = AppLimitConfig.fromAny(
+        {'minutes': 30, 'strict': false, 'challengeLock': false},
+      );
+      expect(cfg!.challengeLock, isFalse);
+    });
+
+    test('fromAny(int legacy) → challengeLock true', () {
+      expect(AppLimitConfig.fromAny(45)!.challengeLock, isTrue);
+    });
+
+    test('copyWith overrides challengeLock', () {
+      const cfg = AppLimitConfig(minutes: 30, strict: true);
+      final updated = cfg.copyWith(challengeLock: false);
+      expect(updated.challengeLock, isFalse);
+      expect(updated.minutes, 30);
+      expect(updated.strict, isTrue);
     });
 
     test('copyWith overrides minutes', () {

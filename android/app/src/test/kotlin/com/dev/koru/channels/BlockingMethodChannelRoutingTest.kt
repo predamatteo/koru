@@ -65,6 +65,7 @@ class BlockingMethodChannelRoutingTest {
         "setAppDailyLimits",
         "getBypassCountToday",
         "resetBypassCount",
+        "grantUsageChallengePass",
         // notification filter
         "getSilencedPackages",
         "setSilencedPackages",
@@ -88,7 +89,7 @@ class BlockingMethodChannelRoutingTest {
     }
 
     @Test
-    fun routingTable_hasExactly31Methods() {
+    fun routingTable_hasExactly32Methods() {
         // Sentinella sul numero: se un futuro metodo viene aggiunto senza
         // aggiornare questo test, il count diverge e il test fallisce,
         // forzando una rivisitazione consapevole del wire-contract.
@@ -97,8 +98,10 @@ class BlockingMethodChannelRoutingTest {
         // resetOpenAppsCount / openSystemRecents) + i 2 di lettura del
         // contatore reel - i 4 di quick block / pomodoro, rimossi con la tab
         // Focus. L'interruttore del contatore reel (is/setReelCounterEnabled)
-        // è stato tolto: il conteggio è sempre attivo.
-        assertThat(BlockingMethodChannel.routingTable).hasSize(31)
+        // è stato tolto: il conteggio è sempre attivo. +1
+        // `grantUsageChallengePass`: l'unico modo in cui l'esito di una sfida
+        // disegnata in Dart raggiunge l'overlay Compose.
+        assertThat(BlockingMethodChannel.routingTable).hasSize(32)
     }
 
     @Test

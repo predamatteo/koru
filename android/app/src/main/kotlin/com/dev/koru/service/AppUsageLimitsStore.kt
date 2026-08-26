@@ -14,11 +14,22 @@ import org.json.JSONObject
  *   `strict` viene assunto `true` (interpretazione conservativa: l'utente
  *   aveva impostato un limite, lo trattiamo come hard cap finché non lo
  *   modifica esplicitamente).
- * - **Esteso** (`{"com.pkg": {"minutes": 30, "strict": true}}`): formato
- *   canonico, scritto da `save()`.
+ * - **Esteso** (`{"com.pkg": {"minutes": 30, "strict": true,
+ *   "challengeLock": true}}`): formato canonico, scritto da `save()`.
  *
  * `strict=true` ⇒ il blocco USAGE_LIMIT non permette "Open anyway".
  * `strict=false` ⇒ progressive friction (vedi [BypassCountStore]).
+ *
+ * `challengeLock=true` ⇒ due gate, entrambi sulla sola direzione che INDEBOLISCE:
+ * indebolire il limite dalle Impostazioni (alzare i minuti, toglierlo,
+ * spegnere lo strict) richiede la sfida di sblocco, e a cap raggiunto anche
+ * l'"Open anyway" la richiede. Il default è `true` — chi imposta un cap sta
+ * chiedendo attrito, non un pulsante.
+ *
+ * NOTA sul contratto di canale: un campo aggiunto qui NON basta. Anche
+ * `LimitsCallHandler.parseLimitEntry` deve leggerlo, altrimenti scarta le key
+ * sconosciute e il flag evapora a ogni salvataggio, senza errori e senza test
+ * rossi.
  *
  * ARCH-03/SEC-09: migrato su [FileBackedStore]. Prima la `save` usava un plain
  * `writeText` (SEC-09): un crash a metà scrittura lasciava un file torn → tutti
@@ -38,7 +49,15 @@ object AppUsageLimitsStore {
 
     /// Limit config per un singolo package. `minutes <= 0` significa nessun
     /// limite attivo (lo store filtra questi entries via [save]).
-    data class LimitEntry(val minutes: Int, val strict: Boolean)
+    ///
+    /// [challengeLock] ha un DEFAULT non per pigrizia ma per compatibilità: è
+    /// costruito posizionalmente in una ventina di punti nei test, e senza
+    /// default nessuno di quelli compilerebbe più.
+    data class LimitEntry(
+        val minutes: Int,
+        val strict: Boolean,
+        val challengeLock: Boolean = true,
+    )
 
     private val store = FileBackedStore(
         fileName = FILE_NAME,
@@ -52,6 +71,7 @@ object AppUsageLimitsStore {
                         JSONObject().apply {
                             put("minutes", v.minutes)
                             put("strict", v.strict)
+                            put("challengeLock", v.challengeLock)
                         },
                     )
                 }
@@ -80,14 +100,18 @@ object AppUsageLimitsStore {
     /// Parsa un singolo entry tollerando il formato legacy. Ritorna null se
     /// il valore è inutilizzabile.
     private fun parseEntry(raw: Any?): LimitEntry? = when (raw) {
-        is Number -> LimitEntry(minutes = raw.toInt(), strict = true)
+        is Number -> LimitEntry(minutes = raw.toInt(), strict = true, challengeLock = true)
         is JSONObject -> {
             val m = raw.optInt("minutes", 0)
             // `strict` default true: per limiti già esistenti senza il
             // campo, hard cap è il comportamento più sicuro. L'utente
             // può sempre modificarlo dal picker.
             val s = raw.optBoolean("strict", true)
-            LimitEntry(minutes = m, strict = s)
+            // Stessa logica per `challengeLock`: un limite salvato prima che il
+            // campo esistesse era stato messo da qualcuno che voleva attrito,
+            // quindi il default conservativo è "protetto".
+            val c = raw.optBoolean("challengeLock", true)
+            LimitEntry(minutes = m, strict = s, challengeLock = c)
         }
         else -> null
     }
@@ -104,6 +128,12 @@ object AppUsageLimitsStore {
 
     fun isStrictFor(context: Context, packageName: String): Boolean =
         read(context)[packageName]?.strict ?: true
+
+    /// `true` se il bypass a cap raggiunto per [packageName] richiede la sfida
+    /// di sblocco. Default `true` anche per un package senza limite: il
+    /// chiamante interroga questo solo dopo aver stabilito che un cap c'è.
+    fun isChallengeLockedFor(context: Context, packageName: String): Boolean =
+        read(context)[packageName]?.challengeLock ?: true
 
     fun entryFor(context: Context, packageName: String): LimitEntry? =
         read(context)[packageName]
