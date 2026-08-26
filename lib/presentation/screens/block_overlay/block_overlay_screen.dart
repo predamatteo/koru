@@ -3,20 +3,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/koru_colors.dart';
 import '../../../domain/entities/overlay_config.dart';
-import '../../providers/intention_provider.dart';
 import 'overlay_config_style.dart';
 import 'widgets/countdown_button_widget.dart';
-import 'widgets/mindful_intention_prompt.dart';
 
 /// Full-screen Flutter blocking overlay.
 ///
 /// Usato in due casi:
 /// 1) Preview/demo dentro l'app (Settings → Overlay Designer, onboarding).
-/// 2) Lanciato dal native via deep-link `/block-overlay/:pkg` quando si
-///    vuole un'esperienza più ricca (intention prompt) dell'overlay Compose
-///    di OverlayManager.
+/// 2) Lanciato dal native via deep-link `/block-overlay/:pkg`.
 ///
-/// L'overlay Compose di `service/OverlayManager.kt` è la default istantanea.
+/// L'overlay Compose di `service/OverlayManager.kt` è la default istantanea, e
+/// questa schermata ne è il gemello: quando qualcosa sparisce di là (es. il
+/// prompt "Why are you opening it?") va tolto anche di qua, altrimenti
+/// l'anteprima dell'Overlay Designer promette una schermata che non esiste.
 class BlockOverlayScreen extends ConsumerStatefulWidget {
   const BlockOverlayScreen({
     super.key,
@@ -27,12 +26,6 @@ class BlockOverlayScreen extends ConsumerStatefulWidget {
     this.sectionName,
     this.blockedDomain,
     this.profileTitle,
-    this.intentionSuggestions = const [
-      'Reply to a message',
-      'Check one thing',
-      'Just scroll',
-      'Not sure',
-    ],
     this.onGoHome,
     this.onContinue,
   });
@@ -44,7 +37,6 @@ class BlockOverlayScreen extends ConsumerStatefulWidget {
   final String? sectionName;
   final String? blockedDomain;
   final String? profileTitle;
-  final List<String> intentionSuggestions;
   final VoidCallback? onGoHome;
   final VoidCallback? onContinue;
 
@@ -57,7 +49,6 @@ enum BlockReason { appBlocked, focusMode, sectionBlocked, websiteBlocked }
 
 class _BlockOverlayScreenState extends ConsumerState<BlockOverlayScreen> {
   bool _countdownFinished = false;
-  String? _chosenIntention;
 
   String get _title => switch (widget.reason) {
         BlockReason.focusMode => 'Focus mode is active',
@@ -82,16 +73,6 @@ class _BlockOverlayScreenState extends ConsumerState<BlockOverlayScreen> {
         BlockReason.websiteBlocked => Icons.language,
         BlockReason.appBlocked => Icons.spa_outlined,
       };
-
-  void _recordIntentionAndContinue() {
-    if (_chosenIntention != null) {
-      ref.read(intentionRecorderProvider).record(
-            packageName: widget.packageName,
-            intention: _chosenIntention!,
-          );
-    }
-    widget.onContinue?.call();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -141,14 +122,6 @@ class _BlockOverlayScreenState extends ConsumerState<BlockOverlayScreen> {
                       ),
                   textAlign: TextAlign.center,
                 ),
-                if (widget.reason == BlockReason.appBlocked) ...[
-                  const SizedBox(height: 32),
-                  MindfulIntentionPrompt(
-                    suggestions: widget.intentionSuggestions,
-                    onIntentionChosen: (intention) =>
-                        setState(() => _chosenIntention = intention),
-                  ),
-                ],
                 const Spacer(flex: 2),
                 // Recommended action first: stay away (bright sage primary).
                 SizedBox(
@@ -172,7 +145,7 @@ class _BlockOverlayScreenState extends ConsumerState<BlockOverlayScreen> {
                   onFinished: () =>
                       setState(() => _countdownFinished = true),
                   onTap: _countdownFinished && widget.config.allowBypassAfterCountdown
-                      ? _recordIntentionAndContinue
+                      ? () => widget.onContinue?.call()
                       : null,
                 ),
                 const SizedBox(height: 12),

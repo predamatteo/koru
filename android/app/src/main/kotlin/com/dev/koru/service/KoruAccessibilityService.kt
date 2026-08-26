@@ -786,18 +786,6 @@ class KoruAccessibilityService : AccessibilityService() {
                 // (rilascia il focus audio, l'app verrà comunque chiusa da HOME).
                 endOverlayOverApp()
             }
-            onIntentionChosen = { pkg, intention ->
-                try {
-                    NativeDatabase.insertIntentionEvent(
-                        applicationContext,
-                        pkg,
-                        intention,
-                        System.currentTimeMillis(),
-                    )
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to log intention: ${e.message}")
-                }
-            }
             onUnlockChallengeRequired = { pkg ->
                 // Il cap ha `challengeLock` e non c'è ancora un lasciapassare.
                 // Il puzzle si può disegnare solo in Dart (il Kotlin ragiona su

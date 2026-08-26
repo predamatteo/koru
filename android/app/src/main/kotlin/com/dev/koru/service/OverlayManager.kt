@@ -105,7 +105,6 @@ data class BypassEntry(
  * Window overlay con il BlockOverlay Koru, identico per feature all'overlay
  * Flutter `BlockOverlayScreen`:
  *  - header icon + title (varia per [BlockReason])
- *  - mindful intention prompt con ChoiceChip
  *  - countdown button con state machine animating ↔ paused → finished
  *  - "Don't open" primary button (sempre visibile)
  *  - "Open anyway" dopo countdown (solo se config.allowBypassAfterCountdown)
@@ -252,9 +251,6 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
     /// `forceHome=true` può saltare logiche di "se sei già su home, no-op"
     /// e forzare anche `moveTaskToBack` o equivalenti.
     var onReturnHome: ((forceHome: Boolean) -> Unit)? = null
-
-    /// Callback invocato quando l'utente sceglie una intention (per logging).
-    var onIntentionChosen: ((pkg: String, intention: String) -> Unit)? = null
 
     /// Callback quando l'utente sceglie una durata dal duration picker
     /// (dopo aver toccato "Open anyway" sul countdown) → bypass timed + app launch.
@@ -431,7 +427,6 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
                     // composable (vedi BlockedScreen): qui passiamo i
                     // .value per rendere esplicita la sottoscrizione.
                     BlockedScreen(
-                        packageName = _currentPackageName.value,
                         appLabel = _appLabel.value,
                         profileTitle = _profileTitle.value,
                         reason = _reason.value,
@@ -439,9 +434,6 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
                         profileEmoji = _profileEmoji.value,
                         bypassPolicy = _bypassPolicy.value,
                         launching = _launching.value,
-                        onIntentionChosen = { intention ->
-                            onIntentionChosen?.invoke(_currentPackageName.value, intention)
-                        },
                         onGoHome = { forceHome -> onReturnHome?.invoke(forceHome) },
                         onBypass = { durationMs -> handleBypassChosen(durationMs) },
                         onChallengeRequired = {
