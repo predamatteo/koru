@@ -1,17 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/koru_colors.dart';
 import '../../../l10n/generated/app_localizations.dart';
+import '../../providers/statistics_providers.dart';
+
+/// Indice del tab Statistiche, nell'ordine dei `destinations` qui sotto (e
+/// delle `StatefulShellBranch` in `app_router.dart`: home, profiles, stats,
+/// settings). Le due liste vanno lette insieme — se una cambia ordine, cambia
+/// anche questo.
+const int _statsTabIndex = 2;
 
 /// Shell principale con NavigationBar floating arrotondata.
 /// Usa StatefulNavigationShell per preservare lo stato di navigazione di ogni tab.
-class LauncherShell extends StatelessWidget {
+class LauncherShell extends ConsumerWidget {
   const LauncherShell({required this.navigationShell, super.key});
 
   final StatefulNavigationShell navigationShell;
 
-  void _onTap(int index) {
+  void _onTap(WidgetRef ref, int index) {
+    // Entrare nelle Statistiche le riporta sempre su oggi. Il branch resta
+    // montato nell'IndexedStack, quindi la schermata non ha un `initState` da
+    // cui accorgersi di essere tornata in primo piano: il punto di ingresso è
+    // questo tap. Vedi [resetStatsView].
+    if (index == _statsTabIndex) resetStatsView(ref.read);
     navigationShell.goBranch(
       index,
       initialLocation: index == navigationShell.currentIndex,
@@ -19,7 +32,7 @@ class LauncherShell extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
       extendBody: true,
@@ -54,7 +67,7 @@ class LauncherShell extends StatelessWidget {
                 ),
                 child: NavigationBar(
                   selectedIndex: navigationShell.currentIndex,
-                  onDestinationSelected: _onTap,
+                  onDestinationSelected: (index) => _onTap(ref, index),
                   destinations: [
                     NavigationDestination(
                       icon: const Icon(Icons.home_outlined),

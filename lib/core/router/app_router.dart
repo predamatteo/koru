@@ -10,7 +10,6 @@ import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/launcher/launcher_home_screen.dart';
 import '../../presentation/screens/launcher/launcher_shortcut_picker_screen.dart';
 import '../../presentation/screens/launcher/launcher_swipe_picker_screen.dart';
-import '../../presentation/screens/mood/journal_screen.dart';
 import '../../presentation/providers/launcher_shortcuts_provider.dart';
 import '../../presentation/providers/launcher_swipe_actions_provider.dart';
 import '../../presentation/screens/launcher_shell/launcher_shell.dart';
@@ -295,11 +294,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     path: 'achievements',
                     parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) => const AchievementsScreen(),
-                  ),
-                  GoRoute(
-                    path: 'journal',
-                    parentNavigatorKey: rootNavigatorKey,
-                    builder: (context, state) => const JournalScreen(),
                   ),
                 ],
               ),

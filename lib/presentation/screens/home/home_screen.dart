@@ -241,13 +241,13 @@ class _ActiveProfileCard extends StatelessWidget {
 /// un vincolo `h=Infinity` — cioè un errore di layout, non una riga sbilenca.
 /// Il margine inferiore della card reel va azzerato per lo stesso motivo: di
 /// default lo porta con sé, e qui sfalserebbe i due bordi di 12px.
-class _TodayStatsRow extends StatelessWidget {
+class _TodayStatsRow extends ConsumerWidget {
   const _TodayStatsRow({required this.blocksToday});
 
   final int blocksToday;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -261,7 +261,14 @@ class _TodayStatsRow extends StatelessWidget {
               // Il dettaglio di questo numero vive già in Statistiche (donut
               // Blocked/Skipped + breakdown per-app): senza il tap resterebbe
               // un vicolo cieco.
-              onTap: () => GoRouter.of(context).go('/stats'),
+              //
+              // Il numero qui è di OGGI: le Statistiche vanno riportate a oggi
+              // prima di aprirle, o si atterra su un totale diverso da quello
+              // appena toccato (stesso motivo del tap sul widget home).
+              onTap: () {
+                resetStatsView(ref.read);
+                GoRouter.of(context).go('/stats');
+              },
             ),
           ),
           const SizedBox(width: 12),

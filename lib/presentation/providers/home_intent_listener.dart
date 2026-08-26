@@ -5,11 +5,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/di/providers.dart';
 import '../../core/router/app_router.dart';
-import '../../domain/entities/statistics_period.dart';
 import '../widgets/unlock_challenge_dialog.dart';
 import 'app_list_provider.dart';
 import 'global_refresh.dart';
-import 'screen_time_provider.dart';
 import 'statistics_providers.dart';
 
 /// Ascolta il canale `com.koru/navigation` popolato da MainActivity per:
@@ -97,14 +95,12 @@ final homeIntentListenerProvider = Provider<void>((ref) {
           break;
         }
         // Il widget è etichettato "OGGI" e mostra sempre [mezzanotte, ora].
-        // `selectedPeriodProvider` e `selectedStatsDayProvider` sono stato UI
-        // che sopravvive alla navigazione: senza reset, un utente che aveva
-        // lasciato le statistiche su "This week" (o su un giorno del grafico)
+        // Lo stato UI delle Statistiche (periodo, giorno del grafico, giorni
+        // di navigazione indietro) sopravvive alla navigazione: senza reset,
+        // un utente che le aveva lasciate su "This week" — o su martedì —
         // toccherebbe un widget che dice 3h 12m e atterrerebbe su una
-        // schermata che ne mostra 19h — stesso dato, due numeri.
-        ref.read(selectedPeriodProvider.notifier).state =
-            StatisticsPeriod.today;
-        ref.read(selectedStatsDayProvider.notifier).state = null;
+        // schermata che ne mostra 19h: stesso dato, due numeri.
+        resetStatsView(ref.read);
         // Stesso motivo, ma sull'asse del TEMPO: i provider Dart possono avere
         // in cache uno screen time vecchio di ore. Aggiorniamo PRIMA di aprire
         // la schermata (con timeout interno), così la pagina appare già con i

@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
@@ -67,8 +66,6 @@ class StatisticsScreen extends ConsumerWidget {
             const _InterventionsCard(),
             const SizedBox(height: 16),
             const AchievementsGrid(),
-            const SizedBox(height: 16),
-            const _JournalCard(),
           ],
         ),
       ),
@@ -185,7 +182,56 @@ class _DayNavigator extends ConsumerWidget {
             tooltip: 'Next day',
             onTap: offset > 0 ? () => go(-1) : null,
           ),
+          // Via di ritorno diretta: da sei giorni indietro servirebbero sei
+          // tap sulla freccia. Compare solo quando c'è qualcosa da annullare,
+          // e allargando la riga invece di apparirci dentro di colpo.
+          AnimatedSize(
+            duration: _kMorph,
+            curve: Curves.easeOutCubic,
+            child: offset > 0
+                ? _TodayButton(
+                    onTap: () => ref
+                        .read(selectedDayOffsetProvider.notifier)
+                        .state = 0,
+                  )
+                : const SizedBox.shrink(),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _TodayButton extends StatelessWidget {
+  const _TodayButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 2, right: 6),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.today_outlined, size: 15, color: KoruColors.primary),
+              SizedBox(width: 5),
+              Text(
+                'Today',
+                style: TextStyle(
+                  color: KoruColors.primary,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -913,64 +959,6 @@ class _DonutPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _DonutPainter old) =>
       old.respectedFraction != respectedFraction || old.hasData != hasData;
-}
-
-// ─── Journal quick access card ──────────────────────────────────────────────
-
-/// Accesso al journal. Era la metà destra di una card che iniziava con il
-/// mood check-in ("How do you feel?"): quello è stato tolto, questo è rimasto
-/// perché `/stats/journal` non ha altri ingressi — sparita la card, la
-/// schermata diventava irraggiungibile senza che niente lo segnalasse.
-class _JournalCard extends StatelessWidget {
-  const _JournalCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return _Card(
-      child: InkWell(
-        onTap: () => context.push('/stats/journal'),
-        child: Row(
-          children: [
-            const Icon(
-              Icons.edit_note_outlined,
-              size: 26,
-              color: KoruColors.primary,
-            ),
-            const SizedBox(width: 16),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Journal',
-                    style: TextStyle(
-                      color: KoruColors.textPrimary,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    'One entry a day, whenever you feel like it.',
-                    style: TextStyle(
-                      color: KoruColors.textSecondary,
-                      fontSize: 12,
-                      height: 1.3,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              Icons.chevron_right,
-              size: 18,
-              color: KoruColors.textSecondary.withAlpha(140),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 // ─── Shared primitives ──────────────────────────────────────────────────────

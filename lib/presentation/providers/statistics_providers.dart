@@ -21,6 +21,38 @@ final selectedPeriodProvider =
 /// Viene invece azzerato quando si cambia periodo (vedi `_PeriodSwitcher`).
 final selectedDayOffsetProvider = StateProvider<int>((_) => 0);
 
+/// Giorno selezionato nella vista settimana, come mezzanotte locale in ms,
+/// oppure `null` = aggregato dell'intera settimana.
+///
+/// Terzo pezzo dello stato UI delle Statistiche (con [selectedPeriodProvider] e
+/// [selectedDayOffsetProvider]): stanno insieme perché si azzerano insieme,
+/// vedi [resetStatsView]. Escluso di proposito dal pull-to-refresh, che
+/// altrimenti cancellerebbe la scelta.
+final selectedStatsDayProvider = StateProvider<int?>((_) => null);
+
+/// Firma di `ref.read`, condivisa da `Ref` (provider, listener) e `WidgetRef`
+/// (widget). Serve solo a [resetStatsView], che va chiamata da entrambi i lati
+/// e non ha un tipo comune da cui prenderli.
+typedef StatsRefReader = T Function<T>(ProviderListenable<T> provider);
+
+/// Riporta le Statistiche alla vista di partenza: **oggi**, nessun giorno del
+/// grafico selezionato, nessuna navigazione indietro.
+///
+/// I tre provider sono stato UI globale e sopravvivono alla navigazione: senza
+/// un reset esplicito, chi era andato a martedì o su "This week" ritrova quella
+/// vista giorni dopo, e la schermata smette di rispondere alla domanda che ci
+/// si aspetta apra ("com'è andata oggi?").
+///
+/// Va chiamata dai punti di INGRESSO in `/stats` e non dal `initState` della
+/// schermata: i tab vivono in uno `StatefulShellRoute.indexedStack`, quindi
+/// `StatisticsScreen` resta montata quando si cambia tab e `initState` non
+/// verrebbe mai rieseguito.
+void resetStatsView(StatsRefReader read) {
+  read(selectedPeriodProvider.notifier).state = StatisticsPeriod.today;
+  read(selectedStatsDayProvider.notifier).state = null;
+  read(selectedDayOffsetProvider.notifier).state = 0;
+}
+
 /// La finestra corrente in date `YYYY-MM-DD`: periodo selezionato + eventuale
 /// spostamento indietro. Unico punto da cui passano le query su Drift, così
 /// non c'è modo di aggiungere una card che ignora la navigazione.

@@ -104,14 +104,6 @@ List<String> mostUsedAppSuggestions({
   return suggestions;
 }
 
-/// Giorno selezionato nella vista settimana, come mezzanotte locale in ms,
-/// oppure `null` = aggregato dell'intera settimana.
-///
-/// È stato UI puro: viene resettato a `null` quando si cambia periodo
-/// (vedi `_PeriodSwitcher`) e — come `selectedPeriodProvider` — è escluso di
-/// proposito dal pull-to-refresh, che altrimenti cancellerebbe la scelta.
-final selectedStatsDayProvider = StateProvider<int?>((_) => null);
-
 /// Breakdown per-giorno dell'utilizzo negli ultimi 7 giorni (oggi incluso):
 /// esattamente 7 [DailyUsage] in ordine crescente, con i giorni senza
 /// utilizzo riempiti a zero. Una sola passata nativa di `queryEvents`

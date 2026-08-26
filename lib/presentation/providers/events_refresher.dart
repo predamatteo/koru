@@ -10,7 +10,6 @@ import '../../core/diagnostics/black_box.dart';
 import '../../platform/service_event_channel.dart';
 import 'app_limits_provider.dart';
 import 'app_list_provider.dart';
-import 'mood_provider.dart';
 import 'reel_counts_provider.dart';
 import 'statistics_providers.dart';
 
@@ -24,7 +23,6 @@ void _invalidateStats(Ref ref) {
   ref.invalidate(blockSkippedCountProvider);
   ref.invalidate(perAppBreakdownProvider);
   ref.invalidate(topIntentionsProvider);
-  ref.invalidate(todayMoodProvider);
   // Contatore reel: cresce mentre Koru è in background (lo incrementa
   // l'AccessibilityService), quindi il rientro nell'app è esattamente il
   // momento in cui il numero mostrato è più stantìo. Costa una lettura di file

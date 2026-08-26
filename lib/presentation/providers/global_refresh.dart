@@ -6,8 +6,6 @@ import 'active_profile_provider.dart';
 import 'app_limits_provider.dart';
 import 'app_list_provider.dart';
 import 'favorites_provider.dart';
-import 'journal_provider.dart';
-import 'mood_provider.dart';
 import 'notification_filter_provider.dart';
 import 'preset_provider.dart';
 import 'profile_providers.dart';
@@ -77,11 +75,6 @@ final List<ProviderOrFamily> _koruDataProviders = [
   notificationFilterProvider,
   notificationAccessGrantedProvider,
 
-  // ── Mood & journal (SQLite) ────────────────────────────────────────────
-  todayMoodProvider,
-  todayJournalProvider,
-  allJournalsProvider,
-
   // ── Achievement & streak (SQLite) ──────────────────────────────────────
   streakSnapshotProvider,
   unlockedAchievementIdsProvider,
@@ -132,8 +125,7 @@ final List<ProviderOrFamily> _statsScreenProviders = [
   blockTriggeredCountProvider,
   blockSkippedCountProvider,
 
-  // ── Mood, streak, achievement (SQLite) ─────────────────────────────────
-  todayMoodProvider,
+  // ── Streak & achievement (SQLite) ──────────────────────────────────────
   streakSnapshotProvider,
   unlockedAchievementIdsProvider,
   achievementStatsProvider,
