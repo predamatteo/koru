@@ -96,10 +96,11 @@ const List<GlyphFamily> kGlyphFamilies = [
 /// I parametri crescono su tre assi contemporaneamente (lunghezza della
 /// sequenza, densità di distrattori, tempo di memorizzazione che si accorcia):
 /// è quello che fa la differenza fra "seccatura" e "dosso vero".
+/// **Non esiste un livello "nessuno".** La sfida si può alleggerire, non
+/// spegnere: un attrito che si toglie con un tap è esattamente il tap che
+/// l'utente farebbe nel momento dell'impulso, e la feature esisteva per
+/// interromperlo. Chi vuole il minimo prende [gentle].
 enum UnlockChallengeLevel {
-  /// Nessun attrito: la disattivazione è immediata (comportamento storico).
-  off,
-
   /// 3 glifi, griglia 3×3, 5 secondi per memorizzare.
   gentle,
 
@@ -111,7 +112,6 @@ enum UnlockChallengeLevel {
 
   /// Quanti glifi compongono la sequenza da ricostruire.
   int get sequenceLength => switch (this) {
-    UnlockChallengeLevel.off => 0,
     UnlockChallengeLevel.gentle => 3,
     UnlockChallengeLevel.standard => 4,
     UnlockChallengeLevel.stubborn => 5,
@@ -119,7 +119,6 @@ enum UnlockChallengeLevel {
 
   /// Quante caselle ha la griglia della fase di ricostruzione.
   int get gridSize => switch (this) {
-    UnlockChallengeLevel.off => 0,
     UnlockChallengeLevel.gentle => 9,
     UnlockChallengeLevel.standard => 12,
     UnlockChallengeLevel.stubborn => 16,
@@ -127,7 +126,6 @@ enum UnlockChallengeLevel {
 
   /// Colonne della griglia. `gridSize` è sempre divisibile per questo valore.
   int get columns => switch (this) {
-    UnlockChallengeLevel.off => 0,
     UnlockChallengeLevel.gentle => 3,
     UnlockChallengeLevel.standard => 3,
     UnlockChallengeLevel.stubborn => 4,
@@ -135,37 +133,28 @@ enum UnlockChallengeLevel {
 
   /// Per quanto resta visibile la sequenza prima di sparire.
   Duration get memorizeDuration => switch (this) {
-    UnlockChallengeLevel.off => Duration.zero,
     UnlockChallengeLevel.gentle => const Duration(seconds: 5),
     UnlockChallengeLevel.standard => const Duration(seconds: 4),
     UnlockChallengeLevel.stubborn => const Duration(seconds: 3),
   };
 
-  bool get isActive => this != UnlockChallengeLevel.off;
-
   /// Etichetta breve per la UI delle impostazioni.
   String get label => switch (this) {
-    UnlockChallengeLevel.off => 'Nessuna',
     UnlockChallengeLevel.gentle => 'Leggera',
     UnlockChallengeLevel.standard => 'Media',
     UnlockChallengeLevel.stubborn => 'Testarda',
   };
 
   String get description => switch (this) {
-    UnlockChallengeLevel.off =>
-      'Disattivare un profilo è immediato, come adesso.',
     UnlockChallengeLevel.gentle => '3 simboli, 5 secondi per memorizzarli.',
     UnlockChallengeLevel.standard => '4 simboli, 4 secondi, più distrattori.',
     UnlockChallengeLevel.stubborn =>
       '5 simboli, 3 secondi, griglia piena di sosia.',
   };
 
-  /// Livello di chi non ha mai toccato l'impostazione.
-  ///
-  /// **Non** è [off]: chi installa Koru la installa per mettersi dei limiti, e
-  /// una protezione che si spegne con un tap non è una protezione. Spegnere
-  /// l'attrito resta a un tap di distanza in Impostazioni → Sfida di sblocco,
-  /// ma dev'essere una scelta esplicita, non il punto di partenza.
+  /// Livello di chi non ha mai toccato l'impostazione: chi installa Koru la
+  /// installa per mettersi dei limiti, quindi si parte da un attrito vero e lo
+  /// si alleggerisce in Impostazioni → Sfida di sblocco, non il contrario.
   static const UnlockChallengeLevel fallback = UnlockChallengeLevel.standard;
 
   /// Valore persistito su Hive. Salviamo il **nome** e non l'indice così
@@ -175,10 +164,11 @@ enum UnlockChallengeLevel {
   /// Inverso di [storageValue].
   ///
   /// Valore assente (mai configurato) o irriconoscibile (dato vecchio,
-  /// scrittura corrotta) ⇒ [fallback]. Nota che `'off'` è un valore
-  /// PERFETTAMENTE riconoscibile: chi ha scelto di non avere attrito continua
-  /// a non averne. Qui si degrada solo verso la direzione protettiva, come fa
-  /// il resto dell'app quando non sa.
+  /// scrittura corrotta) ⇒ [fallback]: si degrada solo verso la direzione
+  /// protettiva, come fa il resto dell'app quando non sa. Ci ricade anche il
+  /// vecchio `'off'` salvato prima che il livello venisse tolto — chi aveva
+  /// spento l'attrito se lo ritrova a [fallback], che è il punto della
+  /// rimozione, non un effetto collaterale.
   static UnlockChallengeLevel fromStorage(String? value) {
     for (final level in UnlockChallengeLevel.values) {
       if (level.name == value) return level;
@@ -317,16 +307,11 @@ _GlyphSet _pickGlyphs({
 ///
 /// [random] è iniettabile per rendere i test deterministici.
 ///
-/// Lancia [StateError] se [level] è [UnlockChallengeLevel.off] (non c'è nulla
-/// da generare) o se [kGlyphFamilies] non contiene abbastanza glifi.
+/// Lancia [StateError] se [kGlyphFamilies] non contiene abbastanza glifi.
 UnlockChallenge generateUnlockChallenge(
   UnlockChallengeLevel level, {
   Random? random,
 }) {
-  if (!level.isActive) {
-    throw StateError('generateUnlockChallenge chiamata con level=off');
-  }
-
   final rng = random ?? Random.secure();
   final glyphs = _pickGlyphs(
     sequenceLength: level.sequenceLength,

@@ -15,12 +15,12 @@ import 'unlock_challenge_source.dart';
 /// indebolisce una protezione (spegnere un profilo, cancellarlo, togliergli app
 /// o siti).
 ///
-/// Ritorna `true` se si può procedere: o perché la sfida è disattivata
-/// ([UnlockChallengeLevel.off], comportamento storico) o perché l'utente l'ha
-/// superata. Ritorna `false` se ha annullato — e annullare è la direzione
-/// SICURA (la protezione resta attiva), quindi è volutamente facile. Non serve
-/// intrappolare nessuno: chi vuole davvero uscire fa il puzzle, chi stava solo
-/// cedendo all'impulso ha già ottenuto la sua pausa.
+/// Ritorna `true` se l'utente ha superato la sfida — che c'è **sempre**: il
+/// livello si sceglie, spegnerlo no (vedi [UnlockChallengeLevel]). Ritorna
+/// `false` se ha annullato — e annullare è la direzione SICURA (la protezione
+/// resta attiva), quindi è volutamente facile. Non serve intrappolare nessuno:
+/// chi vuole davvero uscire fa il puzzle, chi stava solo cedendo all'impulso ha
+/// già ottenuto la sua pausa.
 ///
 /// Per lo strict mode serve [requireStrictUnlockChallenge]: là la sfida non è
 /// opzionale e la verifica è nativa.
@@ -33,8 +33,6 @@ Future<bool> requireUnlockChallenge(
   required String action,
 }) async {
   final level = ref.read(unlockChallengeLevelProvider);
-  if (!level.isActive) return true;
-
   return _showChallenge(
     context,
     source: LocalUnlockChallengeSource(level),
@@ -45,12 +43,8 @@ Future<bool> requireUnlockChallenge(
 /// Gate di attrito per i **limiti giornalieri** con `challengeLock` attivo.
 ///
 /// Differenza dal gate dei profili: qui l'interruttore è **per-app**, e vive
-/// nel dialog del limite. Se dipendesse anche da [unlockChallengeLevelProvider]
-/// — che di default è `off` — una casella accesa di default non proteggerebbe
-/// niente su un'installazione nuova, cioè prometterebbe attrito senza darlo.
-/// Quindi: se l'utente ha alzato il livello globale usiamo quello (chi ha
-/// chiesto un puzzle più duro lo vuole ovunque), altrimenti ricadiamo sul più
-/// mite dei livelli reali.
+/// nel dialog del limite. Il livello del puzzle resta però quello globale —
+/// chi ha chiesto un puzzle più duro lo vuole ovunque.
 ///
 /// La direzione gateata resta solo quella che INDEBOLISCE: alzare i minuti,
 /// togliere il limite, spegnere lo strict, spegnere il lock stesso. Abbassare
@@ -61,10 +55,9 @@ Future<bool> requireLimitUnlockChallenge(
   required String action,
 }) async {
   final level = ref.read(unlockChallengeLevelProvider);
-  final effective = level.isActive ? level : UnlockChallengeLevel.gentle;
   return _showChallenge(
     context,
-    source: LocalUnlockChallengeSource(effective),
+    source: LocalUnlockChallengeSource(level),
     action: action,
   );
 }
