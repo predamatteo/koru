@@ -8,9 +8,29 @@ import '../../domain/entities/statistics_period.dart';
 final selectedPeriodProvider =
     StateProvider<StatisticsPeriod>((_) => StatisticsPeriod.today);
 
+/// Di quanti giorni la schermata Statistiche è indietro rispetto a oggi.
+///
+/// `0` = oggi (il default), `1` = ieri, … fino a
+/// [StatisticsPeriod.maxDaysBack]. Vale per il periodo "Today": la vista
+/// settimana ha già il suo drill-down per-giorno dal grafico, e navigare fra
+/// settimane mostrerebbe soprattutto zeri (la ritenzione degli eventi Android
+/// non arriva alla settimana scorsa).
+///
+/// Come [selectedPeriodProvider] è stato di UI: il pull-to-refresh non lo
+/// tocca, altrimenti aggiornare cancellerebbe il giorno che si sta guardando.
+/// Viene invece azzerato quando si cambia periodo (vedi `_PeriodSwitcher`).
+final selectedDayOffsetProvider = StateProvider<int>((_) => 0);
+
+/// La finestra corrente in date `YYYY-MM-DD`: periodo selezionato + eventuale
+/// spostamento indietro. Unico punto da cui passano le query su Drift, così
+/// non c'è modo di aggiungere una card che ignora la navigazione.
+({String from, String to}) _range(Ref ref) => ref
+    .watch(selectedPeriodProvider)
+    .currentRange(shiftDays: ref.watch(selectedDayOffsetProvider));
+
 /// Count di eventi BLOCK_TRIGGERED (eventType=0) nel periodo.
 final blockTriggeredCountProvider = StreamProvider<int>((ref) {
-  final range = ref.watch(selectedPeriodProvider).currentRange();
+  final range = _range(ref);
   return ref
       .watch(restrictedAccessEventsDaoProvider)
       .watchCountEventsByTypeInRange(0, range.from, range.to);
@@ -33,7 +53,7 @@ final blocksTodayCountProvider = StreamProvider<int>((ref) {
 
 /// Count di eventi BLOCK_SKIPPED (eventType=1) nel periodo.
 final blockSkippedCountProvider = StreamProvider<int>((ref) {
-  final range = ref.watch(selectedPeriodProvider).currentRange();
+  final range = _range(ref);
   return ref
       .watch(restrictedAccessEventsDaoProvider)
       .watchCountEventsByTypeInRange(1, range.from, range.to);
@@ -41,7 +61,7 @@ final blockSkippedCountProvider = StreamProvider<int>((ref) {
 
 /// Breakdown per-app (pkg + count + eventType), ordinato desc.
 final perAppBreakdownProvider = StreamProvider<List<PerAppStatResult>>((ref) {
-  final range = ref.watch(selectedPeriodProvider).currentRange();
+  final range = _range(ref);
   return ref
       .watch(restrictedAccessEventsDaoProvider)
       .watchPerAppBreakdown(range.from, range.to);
@@ -49,7 +69,7 @@ final perAppBreakdownProvider = StreamProvider<List<PerAppStatResult>>((ref) {
 
 /// Intentions selezionate (title + count) ordinate desc.
 final topIntentionsProvider = StreamProvider<List<IntentionUsageResult>>((ref) {
-  final range = ref.watch(selectedPeriodProvider).currentRange();
+  final range = _range(ref);
   return ref
       .watch(intentionUsageEventsDaoProvider)
       .watchIntentionsUsages(range.from, range.to);

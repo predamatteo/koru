@@ -38,6 +38,68 @@ void main() {
     });
   });
 
+  group('periodUsageProvider con navigazione ai giorni passati', () {
+    test('interroga il giorno navigato, per intero', () async {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      final calls = <({int start, int end})>[];
+      when(() => h.blocking.getUsageStats(
+            startMs: any(named: 'startMs'),
+            endMs: any(named: 'endMs'),
+          )).thenAnswer((inv) async {
+        calls.add((
+          start: inv.namedArguments[#startMs] as int,
+          end: inv.namedArguments[#endMs] as int,
+        ));
+        return const [];
+      });
+
+      h.container.read(selectedDayOffsetProvider.notifier).state = 2;
+      await h.container.read(periodUsageProvider.future);
+
+      final now = DateTime.now();
+      final expectedFrom = DateTime(now.year, now.month, now.day - 2);
+      final expectedTo = DateTime(now.year, now.month, now.day - 1);
+      expect(calls, hasLength(1));
+      expect(calls.single.start, expectedFrom.millisecondsSinceEpoch);
+      expect(calls.single.end, expectedTo.millisecondsSinceEpoch);
+    });
+
+    test('il delta scorre con la finestra: ieri si confronta con l\'altroieri',
+        () async {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      final calls = <({int start, int end})>[];
+      when(() => h.blocking.getUsageStats(
+            startMs: any(named: 'startMs'),
+            endMs: any(named: 'endMs'),
+          )).thenAnswer((inv) async {
+        calls.add((
+          start: inv.namedArguments[#startMs] as int,
+          end: inv.namedArguments[#endMs] as int,
+        ));
+        return const [];
+      });
+
+      h.container.read(selectedDayOffsetProvider.notifier).state = 1;
+      await h.container.read(previousPeriodScreenTimeMsProvider.future);
+
+      final now = DateTime.now();
+      expect(calls, hasLength(1));
+      expect(
+        calls.single.end,
+        DateTime(now.year, now.month, now.day - 1).millisecondsSinceEpoch,
+      );
+      // Finestra di un giorno pieno che finisce dove comincia quello mostrato.
+      expect(
+        calls.single.end - calls.single.start,
+        const Duration(days: 1).inMilliseconds,
+      );
+    });
+  });
+
   group('periodScreenTimeMsProvider', () {
     test('sums totalTimeMs across all apps in period', () async {
       final h = buildTestContainer();

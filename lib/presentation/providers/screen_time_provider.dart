@@ -4,10 +4,16 @@ import '../../core/di/providers.dart';
 import '../../platform/blocking_channel.dart';
 import 'statistics_providers.dart';
 
-/// Screen-time aggregato nel periodo corrente. Usa UsageStatsManager
-/// tramite `blocking.getUsageStats(startMs, endMs)`.
+/// Screen-time aggregato nel periodo **visualizzato**: periodo selezionato più
+/// l'eventuale navigazione a un giorno passato ([selectedDayOffsetProvider]).
+/// Usa UsageStatsManager tramite `blocking.getUsageStats(startMs, endMs)`, che
+/// aggrega da `queryEvents` e quindi regge una finestra arbitraria — un giorno
+/// chiuso di sei giorni fa vale quanto oggi, finché resta dentro la ritenzione
+/// degli eventi (vedi `StatisticsPeriod.maxDaysBack`).
 final periodUsageProvider = FutureProvider<List<AppUsageInfo>>((ref) async {
-  final range = ref.watch(selectedPeriodProvider).currentRangeMs();
+  final range = ref
+      .watch(selectedPeriodProvider)
+      .currentRangeMs(shiftDays: ref.watch(selectedDayOffsetProvider));
   final blocking = ref.watch(platformChannelServiceProvider).blocking;
   return blocking.getUsageStats(startMs: range.from, endMs: range.to);
 });
@@ -18,10 +24,14 @@ final periodScreenTimeMsProvider = FutureProvider<int>((ref) async {
   return list.fold<int>(0, (sum, a) => sum + a.totalTimeMs);
 });
 
-/// Screen-time del periodo precedente (per calcolare delta %).
+/// Screen-time del periodo precedente a quello visualizzato (per il delta %).
+/// Navigando indietro il confronto scorre con la finestra: guardando ieri, il
+/// paragone è con l'altroieri.
 final previousPeriodScreenTimeMsProvider = FutureProvider<int>((ref) async {
   final period = ref.watch(selectedPeriodProvider);
-  final range = period.currentRangeMs();
+  final range = period.currentRangeMs(
+    shiftDays: ref.watch(selectedDayOffsetProvider),
+  );
   final windowMs = range.to - range.from;
   final prevFrom = range.from - windowMs;
   final prevTo = range.from;
