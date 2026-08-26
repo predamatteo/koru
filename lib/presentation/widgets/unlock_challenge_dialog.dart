@@ -42,6 +42,33 @@ Future<bool> requireUnlockChallenge(
   );
 }
 
+/// Gate di attrito per i **limiti giornalieri** con `challengeLock` attivo.
+///
+/// Differenza dal gate dei profili: qui l'interruttore è **per-app**, e vive
+/// nel dialog del limite. Se dipendesse anche da [unlockChallengeLevelProvider]
+/// — che di default è `off` — una casella accesa di default non proteggerebbe
+/// niente su un'installazione nuova, cioè prometterebbe attrito senza darlo.
+/// Quindi: se l'utente ha alzato il livello globale usiamo quello (chi ha
+/// chiesto un puzzle più duro lo vuole ovunque), altrimenti ricadiamo sul più
+/// mite dei livelli reali.
+///
+/// La direzione gateata resta solo quella che INDEBOLISCE: alzare i minuti,
+/// togliere il limite, spegnere lo strict, spegnere il lock stesso. Abbassare
+/// il cap o accendere una protezione è sempre gratis.
+Future<bool> requireLimitUnlockChallenge(
+  BuildContext context,
+  WidgetRef ref, {
+  required String action,
+}) async {
+  final level = ref.read(unlockChallengeLevelProvider);
+  final effective = level.isActive ? level : UnlockChallengeLevel.gentle;
+  return _showChallenge(
+    context,
+    source: LocalUnlockChallengeSource(effective),
+    action: action,
+  );
+}
+
 /// Gate dello **strict mode**: sostituisce il backdoor code sul percorso
 /// normale di downgrade della mask.
 ///

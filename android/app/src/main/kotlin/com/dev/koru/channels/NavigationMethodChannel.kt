@@ -25,6 +25,16 @@ object NavigationMethodChannel {
     @Volatile
     private var pendingBackdoorPrompt: Boolean = false
 
+    /// Stesso meccanismo di [pendingBackdoorPrompt] ma per la sfida di sblocco
+    /// di un cap giornaliero: qui il pending porta con sé il PACKAGE, perché il
+    /// lasciapassare che ne esce è legato a quello.
+    ///
+    /// Il caso cold-start è più probabile che per il backdoor: chi tocca
+    /// "Solve to open" può benissimo avere Koru già scaricata dalla memoria,
+    /// visto che stava usando un'altra app.
+    @Volatile
+    private var pendingUsageChallengePackage: String? = null
+
     fun register(flutterEngine: FlutterEngine) {
         val mc = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         // Handler per il PULL dal Dart (cold-start): il listener chiede se c'è
@@ -34,6 +44,11 @@ object NavigationMethodChannel {
                 "consumePendingBackdoorPrompt" -> {
                     val pending = pendingBackdoorPrompt
                     pendingBackdoorPrompt = false
+                    result.success(pending)
+                }
+                "consumePendingUsageChallenge" -> {
+                    val pending = pendingUsageChallengePackage
+                    pendingUsageChallengePackage = null
                     result.success(pending)
                 }
                 else -> result.notImplemented()
@@ -85,15 +100,37 @@ object NavigationMethodChannel {
         invokeSafely("requireBackdoorCode")
     }
 
+    /// Chiede a Flutter di aprire la sfida di sblocco per il cap di
+    /// [packageName]. Invocata da [com.dev.koru.MainActivity] quando l'intent
+    /// porta l'extra
+    /// [com.dev.koru.service.KoruAccessibilityService.EXTRA_REQUIRE_USAGE_CHALLENGE].
+    ///
+    /// Stessa struttura push/pull del backdoor: se il channel non è ancora
+    /// registrato (cold start) la richiesta resta pendente e il listener Dart
+    /// la drena appena è pronto. Perderla non aprirebbe un buco di sicurezza —
+    /// senza sfida non c'è lasciapassare, quindi niente bypass — ma lascerebbe
+    /// l'utente in una Koru che non spiega perché si è aperta.
+    fun goToUsageChallenge(packageName: String) {
+        if (channel == null) {
+            pendingUsageChallengePackage = packageName
+            return
+        }
+        invokeSafely("requireUsageChallenge", packageName)
+    }
+
     /// Test-only: stato del flag di prompt pendente (SEC-12). `internal` per
     /// evitare reflection nei test, senza esporlo all'API pubblica del channel.
     internal fun isBackdoorPromptPendingForTest(): Boolean = pendingBackdoorPrompt
+
+    /// Test-only: package della sfida pendente, o null.
+    internal fun pendingUsageChallengeForTest(): String? = pendingUsageChallengePackage
 
     /// Test-only: azzera lo stato del channel (il singleton `object` persiste tra
     /// i test nello stesso JVM). Riporta channel e pending allo stato vergine.
     internal fun resetForTest() {
         channel = null
         pendingBackdoorPrompt = false
+        pendingUsageChallengePackage = null
     }
 
     /// Wrapper difensivo: `invokeMethod` su un channel attached a un

@@ -155,6 +155,17 @@ class KoruAccessibilityService : AccessibilityService() {
         /// `StrictModeEnforcer`, tenuto allineato solo da un commento).
         val SETTINGS_PACKAGES: Set<String> = BlockingContract.SETTINGS_PACKAGES
 
+        /// Extra su MainActivity: "apri la sfida di sblocco perché l'utente ha
+        /// chiesto di sforare un cap con `challengeLock` attivo". Il puzzle
+        /// vive in Dart (il Kotlin non conosce i glifi), quindi l'overlay non
+        /// può farlo da sé — vedi [UsageChallengePassStore].
+        const val EXTRA_REQUIRE_USAGE_CHALLENGE = "koru.extra.REQUIRE_USAGE_CHALLENGE"
+
+        /// Il package per cui la sfida va superata. Il lasciapassare che ne
+        /// esce è legato a QUESTO package: superare la sfida per Instagram non
+        /// deve aprire YouTube.
+        const val EXTRA_USAGE_CHALLENGE_PACKAGE = "koru.extra.USAGE_CHALLENGE_PACKAGE"
+
         /// Package da NON trattare mai come "app in foreground da valutare":
         /// framework, systemui e launcher di sistema. Promosso a companion
         /// (era property d'istanza) per il riuso da [LauncherRecentsGate],
@@ -378,6 +389,41 @@ class KoruAccessibilityService : AccessibilityService() {
     private fun dismissOverlay(resume: Boolean = false) {
         overlayManager?.dismiss()
         mediaSilencer?.release(resume)
+    }
+
+    /**
+     * Porta l'utente in Koru sulla sfida di sblocco per il cap di
+     * [packageName].
+     *
+     * Stesso meccanismo di `KoruDeviceAdminReceiver` per il prompt del backdoor
+     * code (SEC-12): un extra sull'intent di MainActivity, che Flutter consuma.
+     * `REORDER_TO_FRONT` invece di un task nuovo perché Koru quasi certamente è
+     * già viva (è il launcher o è appena stata usata) e vogliamo il suo stato,
+     * non una seconda istanza.
+     *
+     * Se il lancio fallisce non facciamo nulla di più: l'utente resta con l'app
+     * bloccata e la home, cioè nella direzione SICURA. Un fallback che
+     * concedesse comunque il bypass trasformerebbe un errore di sistema in una
+     * scorciatoia.
+     */
+    private fun openUnlockChallengeInKoru(packageName: String) {
+        try {
+            val intent = Intent(
+                applicationContext,
+                com.dev.koru.MainActivity::class.java,
+            ).apply {
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT,
+                )
+                putExtra(EXTRA_REQUIRE_USAGE_CHALLENGE, true)
+                putExtra(EXTRA_USAGE_CHALLENGE_PACKAGE, packageName)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Impossibile aprire la sfida di sblocco per $packageName", e)
+        }
     }
 
     /// Schedulato dopo un GLOBAL_ACTION_BACK riuscito: a 600ms verifica
@@ -751,6 +797,19 @@ class KoruAccessibilityService : AccessibilityService() {
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to log intention: ${e.message}")
                 }
+            }
+            onUnlockChallengeRequired = { pkg ->
+                // Il cap ha `challengeLock` e non c'è ancora un lasciapassare.
+                // Il puzzle si può disegnare solo in Dart (il Kotlin ragiona su
+                // indici di caselle e non conosce i glifi), quindi qui usciamo
+                // dall'overlay e portiamo l'utente in Koru. Se lo supera, Dart
+                // deposita il lasciapassare e rilancia l'app: il pre-launch gate
+                // rimostra questo stesso overlay, ma con `requiresChallenge`
+                // ormai spento.
+                Log.i(TAG, "USAGE-LIMIT challenge required for $pkg → apro Koru")
+                preLaunchOverlayPackage = null
+                dismissOverlay()
+                openUnlockChallengeInKoru(pkg)
             }
             onBypassOpen = { pkg, durationMs, domain ->
                 // "Open anyway": se l'overlay era PRE-LANCIO, l'app sta per

@@ -42,6 +42,12 @@ object OverlayPolicies {
                 allowBypassAfterCountdown = false,
             ) to BypassPolicy()
         }
+        // `challengeLock` è ortogonale allo strict: sullo strict non c'è
+        // nessun "Open anyway" da gateare, quindi si legge solo qui.
+        // Il lasciapassare, se già emesso, spegne il gate per questo giro —
+        // altrimenti l'utente rifarebbe il puzzle al ritorno dalla sfida.
+        val requiresChallenge = AppUsageLimitsStore.isChallengeLockedFor(context, pkg) &&
+            !UsageChallengePassStore.isValid(context, pkg)
         val count = BypassCountStore.todayCount(context, pkg)
         val countdown = when (count) {
             0 -> 15
@@ -61,6 +67,7 @@ object OverlayPolicies {
             durations = durations,
             countdownSecondsOverride = countdown,
             pauseAllowed = false,
+            requiresChallenge = requiresChallenge,
         )
     }
 }

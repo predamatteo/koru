@@ -133,6 +133,33 @@ class LockForegroundService : Service() {
                 dismissOverlay()
             }
         }
+        // Sfida di sblocco per i cap con `challengeLock`. Va cablata ANCHE qui:
+        // questo è il path di backup che regge quando l'AccessibilityService
+        // viene killato dall'OEM, e senza il callback il pulsante "Solve to
+        // open" resterebbe inerte proprio nello scenario in cui l'utente non
+        // ha altre strade.
+        overlayManager?.onUnlockChallengeRequired = { pkg ->
+            Log.i(TAG, "USAGE-LIMIT challenge required for $pkg (backup path) → apro Koru")
+            dismissOverlay()
+            try {
+                val intent = Intent(
+                    applicationContext,
+                    com.dev.koru.MainActivity::class.java,
+                ).apply {
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT,
+                    )
+                    putExtra(KoruAccessibilityService.EXTRA_REQUIRE_USAGE_CHALLENGE, true)
+                    putExtra(KoruAccessibilityService.EXTRA_USAGE_CHALLENGE_PACKAGE, pkg)
+                }
+                startActivity(intent)
+            } catch (e: Exception) {
+                // Direzione sicura: l'utente resta senza bypass.
+                Log.e(TAG, "Impossibile aprire la sfida di sblocco per $pkg", e)
+            }
+        }
         // O8: wiring del bypass timed. Quando l'utente sceglie una durata
         // dal duration picker, OverlayManager invoca questo callback
         // (l'OverlayManager si è già marcato il bypass internamente via

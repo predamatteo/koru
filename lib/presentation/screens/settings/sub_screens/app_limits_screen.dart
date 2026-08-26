@@ -8,14 +8,54 @@ import '../../../providers/app_limits_provider.dart';
 import '../../../providers/app_list_provider.dart';
 import '../../../widgets/app_icon.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
+import '../../../widgets/unlock_challenge_dialog.dart';
 
-/// Imposta un limite giornaliero (minuti/giorno) per app specifiche, con
-/// flag opzionale "Strict" che impedisce il bypass una volta raggiunto il
-/// cap. Quando Strict è OFF, l'utente può bypassare ma con frizione
-/// progressiva (countdown crescente, durate decrescenti).
+/// Imposta un limite giornaliero (minuti/giorno) per app specifiche.
 ///
-/// Le app con un limite attivo sono mostrate in cima (con badge minuti).
-/// Tap su un'app → dialog per impostare/modificare i minuti e lo strict.
+/// ## Ordinamento
+/// Le app con un limite attivo restano in cima — è il motivo per cui la
+/// schermata esiste, e sprofondarle sotto trenta app non correlate la
+/// trasformerebbe da editor dei propri limiti a elenco. Sotto, l'ordine è per
+/// **tempo d'uso di oggi** decrescente: chi arriva qui cerca l'app che sta
+/// consumando la giornata, non quella che comincia per A.
+///
+/// L'ordine è uno **snapshot**, non un calcolo per frame: l'utilizzo cresce di
+/// continuo e una lista che si riordina da sola fa atterrare i tap sull'app
+/// sbagliata mentre la si scorre.
+///
+/// ## Caricamento
+/// L'uso arriva da [todayUsageMsByPackageProvider]: UNA chiamata nativa per
+/// tutte le app. La lista si dipinge 25 righe alla volta — le righe successive
+/// entrano scorrendo. La ricerca invece lavora sempre sull'elenco INTERO,
+/// altrimenti l'app che stai cercando sparisce proprio perché è oltre il
+/// taglio.
+/// Ordine di visualizzazione della lista: prima i limiti attivi (per minuti
+/// crescenti, il più stretto in cima), poi tutto il resto per uso di oggi
+/// decrescente. A parità — e a zero minuti sono la maggioranza — l'ordine
+/// alfabetico tiene la lista stabile fra un rebuild e l'altro.
+///
+/// Funzione pura e pubblica per un motivo solo: queste tre priorità sono
+/// l'unica cosa che rende la schermata usabile, e vanno verificate senza
+/// montare nulla.
+List<InstalledAppInfo> sortAppsForLimits({
+  required List<InstalledAppInfo> apps,
+  required Map<String, AppLimitConfig> limits,
+  required Map<String, int> usageMs,
+}) {
+  final sorted = [...apps];
+  sorted.sort((a, b) {
+    final al = limits[a.packageName]?.minutes ?? 0;
+    final bl = limits[b.packageName]?.minutes ?? 0;
+    if ((al > 0) != (bl > 0)) return al > 0 ? -1 : 1;
+    if (al > 0 && bl > 0 && al != bl) return al.compareTo(bl);
+    final au = usageMs[a.packageName] ?? 0;
+    final bu = usageMs[b.packageName] ?? 0;
+    if (au != bu) return bu.compareTo(au);
+    return a.label.toLowerCase().compareTo(b.label.toLowerCase());
+  });
+  return sorted;
+}
+
 class AppLimitsScreen extends ConsumerStatefulWidget {
   const AppLimitsScreen({super.key});
 
@@ -27,10 +67,23 @@ class _AppLimitsScreenState extends ConsumerState<AppLimitsScreen> {
   final _searchController = TextEditingController();
   String _query = '';
 
+  /// Quante righe sono dipinte. Cresce a blocchi mentre si scorre; torna al
+  /// valore iniziale a ogni cambio di ricerca, così un nuovo elenco parte
+  /// sempre dall'alto.
+  static const _pageSize = 25;
+  int _visibleCount = _pageSize;
+
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onQueryChanged(String v) {
+    setState(() {
+      _query = v;
+      _visibleCount = _pageSize;
+    });
   }
 
   Future<void> _editLimit(
@@ -43,14 +96,46 @@ class _AppLimitsScreenState extends ConsumerState<AppLimitsScreen> {
       builder: (ctx) => _LimitPickerDialog(label: label, initial: current),
     );
     if (chosen == null) return;
+    if (!mounted) return;
+
+    // Il gate legge la config SALVATA, mai quella che esce dal dialog: se
+    // leggesse `chosen.challengeLock`, basterebbe spegnere l'interruttore
+    // dentro al dialog per uscire senza sfida — cioè la protezione si
+    // disattiverebbe da sé.
+    if (_weakens(current, chosen)) {
+      final ok = await requireLimitUnlockChallenge(
+        context,
+        ref,
+        action: 'allentare il limite di $label',
+      );
+      if (!ok) return;
+    }
+
     // `chosen.minutes == 0` è il sentinel "remove limit" emesso dal dialog.
     if (chosen.minutes <= 0) {
       await ref.read(appLimitsProvider.notifier).clear(pkg);
     } else {
-      await ref
-          .read(appLimitsProvider.notifier)
-          .setLimit(pkg, chosen.minutes, strict: chosen.strict);
+      await ref.read(appLimitsProvider.notifier).setLimit(
+            pkg,
+            chosen.minutes,
+            strict: chosen.strict,
+            challengeLock: chosen.challengeLock,
+          );
     }
+  }
+
+  /// Se il cambiamento richiesto INDEBOLISCE un limite protetto.
+  ///
+  /// Solo questa direzione è gateata — la stessa invariante dei profili e
+  /// dello strict mode. Impostare un limite per la prima volta, abbassare i
+  /// minuti, accendere lo strict o accendere il lock stesso restano gratis.
+  static bool _weakens(AppLimitConfig? current, AppLimitConfig chosen) {
+    if (current == null || current.minutes <= 0) return false;
+    if (!current.challengeLock) return false;
+    return chosen.minutes <= 0 ||
+        chosen.minutes > current.minutes ||
+        (current.strict && !chosen.strict) ||
+        !chosen.challengeLock;
   }
 
   @override
@@ -60,6 +145,11 @@ class _AppLimitsScreenState extends ConsumerState<AppLimitsScreen> {
     // La LISTA arriva da [pickerAppsProvider] (niente altri launcher, niente
     // Koru); `appsAsync` resta solo per gli stati loading/error.
     final apps = ref.watch(pickerAppsProvider);
+    // `.valueOrNull` e non `.when`: la lista si dipinge subito (ordinata per
+    // limite e alfabeto) e si riordina quando l'unica chiamata nativa risponde,
+    // invece di tenere uno spinner davanti a dati che ci sono già.
+    final usageMs =
+        ref.watch(todayUsageMsByPackageProvider).valueOrNull ?? const {};
 
     return Scaffold(
       appBar: AppBar(
@@ -70,7 +160,7 @@ class _AppLimitsScreenState extends ConsumerState<AppLimitsScreen> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: TextField(
               controller: _searchController,
-              onChanged: (v) => setState(() => _query = v),
+              onChanged: _onQueryChanged,
               decoration: InputDecoration(
                 isDense: true,
                 hintText: 'Search apps',
@@ -97,49 +187,44 @@ class _AppLimitsScreenState extends ConsumerState<AppLimitsScreen> {
             final limits =
                 limitsAsync.valueOrNull ?? const <String, AppLimitConfig>{};
             final q = _query.trim().toLowerCase();
+            // Il filtro si applica all'elenco INTERO e l'ordinamento viene
+            // prima del taglio: paginare e poi ordinare mostrerebbe le prime
+            // 25 in ordine alfabetico riordinate fra loro — plausibile e
+            // sbagliato.
             final filtered = q.isEmpty
                 ? apps
                 : apps
-                      .where(
-                        (a) =>
-                            a.label.toLowerCase().contains(q) ||
-                            a.packageName.toLowerCase().contains(q),
-                      )
-                      .toList(growable: false);
-            // Sort: apps con limite in cima.
-            final sorted = [...filtered]
-              ..sort((a, b) {
-                final al = limits[a.packageName]?.minutes ?? 0;
-                final bl = limits[b.packageName]?.minutes ?? 0;
-                if ((al > 0) == (bl > 0)) return 0;
-                return al > 0 ? -1 : 1;
-              });
+                    .where(
+                      (a) =>
+                          a.label.toLowerCase().contains(q) ||
+                          a.packageName.toLowerCase().contains(q),
+                    )
+                    .toList(growable: false);
+            final sorted = sortAppsForLimits(
+              apps: filtered,
+              limits: limits,
+              usageMs: usageMs,
+            );
+            final shown = sorted.length < _visibleCount
+                ? sorted.length
+                : _visibleCount;
+            final hasMore = shown < sorted.length;
+
             return ListView.builder(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(0, 8, 0, kBottomNavClearance),
-              itemCount: sorted.length + 1,
+              // header + righe + eventuale sentinella di caricamento
+              itemCount: shown + (hasMore ? 2 : 1),
               itemBuilder: (context, i) {
-                if (i == 0) {
-                  return const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    child: Text(
-                      'Tap an app to set a daily minutes cap. Strict mode '
-                      'enforces a hard cap (no bypass). Otherwise, bypassing '
-                      'is allowed but gets harder each time.',
-                      style: TextStyle(
-                        color: KoruColors.textSecondary,
-                        height: 1.4,
-                        fontSize: 13,
-                      ),
-                    ),
-                  );
-                }
+                if (i == 0) return const _Intro();
+                if (i == shown + 1) return _LoadMoreSentinel(onVisible: _showMore);
                 final app = sorted[i - 1];
                 final cfg = limits[app.packageName];
                 return _AppLimitRow(
                   label: app.label,
                   packageName: app.packageName,
                   limit: cfg,
+                  usedMinutes: ((usageMs[app.packageName] ?? 0) / 60000).round(),
                   onTap: () => _editLimit(app.packageName, app.label, cfg),
                 );
               },
@@ -149,34 +234,97 @@ class _AppLimitsScreenState extends ConsumerState<AppLimitsScreen> {
       ),
     );
   }
+
+  void _showMore() {
+    if (!mounted) return;
+    setState(() => _visibleCount += _pageSize);
+  }
 }
 
-/// Row con icon + label + (se limite attivo) barra di progresso usato/cap
-/// + badge minuti + (eventuale) icona lock se strict.
-class _AppLimitRow extends ConsumerWidget {
+class _Intro extends StatelessWidget {
+  const _Intro();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Text(
+        'Sorted by how long you used them today. Tap an app to set a daily '
+        'minutes cap.',
+        style: TextStyle(
+          color: KoruColors.textSecondary,
+          height: 1.4,
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+}
+
+/// Sentinella in fondo alla pagina: quando entra nella lista chiede il blocco
+/// successivo. Il `setState` è differito al post-frame perché ampliare la
+/// pagina mentre la lista si sta costruendo è una modifica dell'albero durante
+/// il build.
+class _LoadMoreSentinel extends StatefulWidget {
+  const _LoadMoreSentinel({required this.onVisible});
+
+  final VoidCallback onVisible;
+
+  @override
+  State<_LoadMoreSentinel> createState() => _LoadMoreSentinelState();
+}
+
+class _LoadMoreSentinelState extends State<_LoadMoreSentinel> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onVisible();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+}
+
+/// Row con icon + label + tempo d'uso di oggi, e — se c'è un limite — barra di
+/// progresso usato/cap, badge minuti e le icone di strict / challenge lock.
+class _AppLimitRow extends StatelessWidget {
   const _AppLimitRow({
     required this.label,
     required this.packageName,
     required this.limit,
+    required this.usedMinutes,
     required this.onTap,
   });
 
   final String label;
   final String packageName;
   final AppLimitConfig? limit;
+
+  /// Minuti di foreground di oggi. Arriva dalla mappa bulk, non da una
+  /// chiamata per riga: [todayUsageMsByPackageProvider] spiega perché.
+  /// L'arrotondamento `(ms / 60000).round()` è un contratto di parità col
+  /// widget nativo (`UsageWidgetModel.toMinutes`), non una preferenza.
+  final int usedMinutes;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final hasLimit = limit != null && limit!.minutes > 0;
-    final limitMinutes = limit?.minutes ?? 0;
-    final isStrict = limit?.strict ?? false;
-    final usedMinAsync = hasLimit
-        ? ref.watch(usageTodayMinutesProvider(packageName))
-        : null;
-    final usedMin = usedMinAsync?.valueOrNull ?? 0;
-    final progress = hasLimit ? (usedMin / limitMinutes).clamp(0.0, 1.0) : 0.0;
-    final exceeded = hasLimit && usedMin >= limitMinutes;
+  Widget build(BuildContext context) {
+    final cfg = limit;
+    final hasLimit = cfg != null && cfg.minutes > 0;
+    final limitMinutes = cfg?.minutes ?? 0;
+    final progress = hasLimit ? (usedMinutes / limitMinutes).clamp(0.0, 1.0) : 0.0;
+    final exceeded = hasLimit && usedMinutes >= limitMinutes;
     final barColor = exceeded
         ? KoruColors.danger
         : (progress > 0.8 ? KoruColors.secondary : KoruColors.primary);
@@ -203,7 +351,7 @@ class _AppLimitRow extends ConsumerWidget {
                           style: const TextStyle(fontSize: 15),
                         ),
                       ),
-                      if (hasLimit && isStrict) ...[
+                      if (hasLimit && cfg.strict) ...[
                         const SizedBox(width: 6),
                         const Icon(
                           Icons.lock_outline,
@@ -211,15 +359,30 @@ class _AppLimitRow extends ConsumerWidget {
                           color: KoruColors.primary,
                         ),
                       ],
+                      if (hasLimit && cfg.challengeLock) ...[
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.extension_outlined,
+                          size: 14,
+                          color: KoruColors.primary,
+                        ),
+                      ],
                     ],
                   ),
+                  const SizedBox(height: 2),
                   Text(
-                    packageName,
+                    hasLimit
+                        ? '$usedMinutes / $limitMinutes min today'
+                        : _usageLabel(usedMinutes),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: KoruColors.textSecondary,
+                    style: TextStyle(
+                      color: exceeded
+                          ? KoruColors.danger
+                          : KoruColors.textSecondary,
                       fontSize: 11,
+                      fontWeight:
+                          exceeded ? FontWeight.w600 : FontWeight.w400,
                     ),
                   ),
                   if (hasLimit) ...[
@@ -231,20 +394,6 @@ class _AppLimitRow extends ConsumerWidget {
                         minHeight: 4,
                         backgroundColor: KoruColors.surface,
                         valueColor: AlwaysStoppedAnimation<Color>(barColor),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '$usedMin / $limitMinutes min today'
-                      '${isStrict ? ' · strict' : ''}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: exceeded
-                            ? KoruColors.danger
-                            : KoruColors.textSecondary,
-                        fontWeight: exceeded
-                            ? FontWeight.w600
-                            : FontWeight.w400,
                       ),
                     ),
                   ],
@@ -280,10 +429,25 @@ class _AppLimitRow extends ConsumerWidget {
       ),
     );
   }
+
+  /// Sottotitolo delle app senza limite. A zero minuti dice "Not used today"
+  /// invece di "0 min today": è la stessa informazione, ma non sembra un dato
+  /// mancante.
+  static String _usageLabel(int minutes) {
+    if (minutes <= 0) return 'Not used today';
+    if (minutes < 60) return '$minutes min today';
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+    return m == 0 ? '${h}h today' : '${h}h ${m}m today';
+  }
 }
 
-/// Dialog per impostare minuti + strict flag. Default: minuti=30 (o
-/// l'esistente), strict=true (hard cap fin dal primo set).
+/// Dialog per impostare minuti + strict + challenge lock.
+///
+/// È volutamente **muto**: non conosce Riverpod e non mostra sfide, ritorna
+/// solo un [AppLimitConfig]. La sfida di sblocco la fa partire la schermata
+/// DOPO che il dialog è stato chiuso — chiamarla da qui significherebbe
+/// attendere una rotta annidata da un widget che sta per essere smontato.
 class _LimitPickerDialog extends StatefulWidget {
   const _LimitPickerDialog({required this.label, required this.initial});
 
@@ -297,6 +461,7 @@ class _LimitPickerDialog extends StatefulWidget {
 class _LimitPickerDialogState extends State<_LimitPickerDialog> {
   late double _minutes;
   late bool _strict;
+  late bool _challengeLock;
   static const _max = 360.0; // 6h
   static const _presets = <int>[15, 30, 60, 120];
 
@@ -305,97 +470,226 @@ class _LimitPickerDialogState extends State<_LimitPickerDialog> {
     super.initState();
     final initial = widget.initial;
     _minutes = (initial?.minutes ?? 30).clamp(5, _max.toInt()).toDouble();
-    // Default per nuovi limiti: strict ON. Per esistenti: rispetta il valore
-    // salvato (anche se è una migrazione dal formato legacy, lo store ritorna
-    // strict=true di default).
+    // Default per nuovi limiti: entrambe le protezioni accese. Chi imposta un
+    // cap sta chiedendo attrito; toglierlo deve essere una scelta esplicita.
     _strict = initial?.strict ?? true;
+    _challengeLock = initial?.challengeLock ?? true;
   }
+
+  AppLimitConfig get _result => AppLimitConfig(
+        minutes: _minutes.round(),
+        strict: _strict,
+        challengeLock: _challengeLock,
+      );
 
   @override
   Widget build(BuildContext context) {
     final value = _minutes.round();
-    return AlertDialog(
-      title: Text(widget.label),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '$value min/day',
-              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w600),
-            ),
-            Slider(
-              value: _minutes,
-              min: 5,
-              max: _max,
-              divisions: ((_max - 5) / 5).round(),
-              label: '$value',
-              onChanged: (v) => setState(() => _minutes = v),
-            ),
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final p in _presets)
-                  ChoiceChip(
-                    label: Text('${p}m'),
-                    selected: value == p,
-                    onSelected: (_) => setState(() => _minutes = p.toDouble()),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            // Toggle Strict mode: quando ON, raggiunto il cap non c'è
-            // "Open anyway". Quando OFF, l'utente può bypassare ma con
-            // friction crescente (countdown 15→30→60→120s, durate 5/10
-            // → 1/2 min dopo 3 bypass).
-            Container(
-              decoration: BoxDecoration(
-                color: KoruColors.surface,
-                borderRadius: BorderRadius.circular(12),
+    final isExisting = (widget.initial?.minutes ?? 0) > 0;
+
+    return Dialog(
+      backgroundColor: KoruColors.surface,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      clipBehavior: Clip.antiAlias,
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.3,
+                  color: KoruColors.textPrimary,
+                ),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              child: SwitchListTile.adaptive(
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                title: const Text(
-                  'Strict daily limit',
-                  style: TextStyle(fontSize: 14),
+              const SizedBox(height: 2),
+              const Text(
+                'DAILY CAP',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.6,
+                  color: KoruColors.textSecondary,
                 ),
-                subtitle: Text(
-                  _strict
-                      ? 'Hard cap. No "Open anyway" once reached.'
-                      : 'Bypass allowed, gets harder each time today.',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: KoruColors.textSecondary,
+              ),
+              const SizedBox(height: 18),
+              // Il numero è il protagonista del dialog: chi apre questa
+              // schermata sta scegliendo una quantità, non leggendo un titolo.
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text(
+                    '$value',
+                    style: const TextStyle(
+                      fontSize: 46,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -2,
+                      height: 1,
+                      color: KoruColors.textPrimary,
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'min / day',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: KoruColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Slider(
+                value: _minutes,
+                min: 5,
+                max: _max,
+                divisions: ((_max - 5) / 5).round(),
+                label: '$value',
+                onChanged: (v) => setState(() => _minutes = v),
+              ),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final p in _presets)
+                    ChoiceChip(
+                      label: Text('${p}m'),
+                      selected: value == p,
+                      onSelected: (_) =>
+                          setState(() => _minutes = p.toDouble()),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              _OptionTile(
+                icon: Icons.lock_outline,
+                title: 'Strict daily limit',
+                subtitle: _strict
+                    ? 'Hard cap. No "Open anyway" once reached.'
+                    : 'Bypass allowed, gets harder each time today.',
                 value: _strict,
                 onChanged: (v) => setState(() => _strict = v),
               ),
-            ),
-          ],
+              const SizedBox(height: 8),
+              _OptionTile(
+                icon: Icons.extension_outlined,
+                title: 'Blocco per le sfide',
+                subtitle: _challengeLock
+                    ? 'Serve la sfida a memoria per allentare il limite, e '
+                        'anche per aprire l\'app a cap raggiunto.'
+                    : 'Nessuna sfida: il limite si cambia in un tap.',
+                value: _challengeLock,
+                onChanged: (v) => setState(() => _challengeLock = v),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  if (isExisting)
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(
+                        _result.copyWith(minutes: 0),
+                      ),
+                      style: TextButton.styleFrom(
+                        foregroundColor: KoruColors.danger,
+                      ),
+                      child: const Text('Remove'),
+                    ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(_result),
+                    child: const Text('Save'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
-      actions: [
-        if ((widget.initial?.minutes ?? 0) > 0)
-          TextButton(
-            onPressed: () => Navigator.of(
-              context,
-            ).pop(const AppLimitConfig(minutes: 0, strict: true)),
-            child: const Text('Remove limit'),
+    );
+  }
+}
+
+/// Riga interruttore del dialog: icona + titolo + una riga che dice cosa
+/// succede DAVVERO in quello stato, non cosa fa l'opzione in astratto.
+class _OptionTile extends StatelessWidget {
+  const _OptionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: value
+          ? KoruColors.primaryContainer.withAlpha(70)
+          : KoruColors.surfaceContainer,
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => onChanged(!value),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: value ? KoruColors.primary : KoruColors.textSecondary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: KoruColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        height: 1.3,
+                        color: KoruColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Switch(value: value, onChanged: onChanged),
+            ],
           ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: () => Navigator.of(
-            context,
-          ).pop(AppLimitConfig(minutes: value, strict: _strict)),
-          child: const Text('Save'),
-        ),
-      ],
+      ),
     );
   }
 }

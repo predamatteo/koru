@@ -3,8 +3,11 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/di/providers.dart';
 import '../../core/router/app_router.dart';
 import '../../domain/entities/statistics_period.dart';
+import '../widgets/unlock_challenge_dialog.dart';
+import 'app_list_provider.dart';
 import 'global_refresh.dart';
 import 'screen_time_provider.dart';
 import 'statistics_providers.dart';
@@ -67,6 +70,14 @@ final homeIntentListenerProvider = Provider<void>((ref) {
       case 'requireBackdoorCode': // SEC-12 (push dal native, app già viva)
         openBackdoorPrompt();
         break;
+      case 'requireUsageChallenge':
+        // L'utente ha toccato "Solve to open" sull'overlay di un cap con
+        // challengeLock attivo. Il push arriva col package bersaglio.
+        final pkg = call.arguments;
+        if (pkg is String && pkg.isNotEmpty) {
+          await runUsageLimitChallenge(ref, pkg);
+        }
+        break;
       case 'goToRoute':
         // Tap sul widget home (app già viva). La route arriva dal native, che
         // l'ha già validata contro l'allowlist di MainActivity.widgetRoute;
@@ -128,5 +139,120 @@ final homeIntentListenerProvider = Provider<void>((ref) {
 
   drainPendingBackdoor();
 
+  /// Stesso PULL per la sfida di un cap. Qui il cold start è il caso NORMALE,
+  /// non l'eccezione: chi tocca "Solve to open" arriva da un'altra app, e Koru
+  /// può benissimo essere stata scaricata dalla memoria nel frattempo — quindi
+  /// il push non troverebbe nessun handler registrato.
+  Future<void> drainPendingUsageChallenge() async {
+    try {
+      final pkg =
+          await channel.invokeMethod<String>('consumePendingUsageChallenge');
+      if (pkg == null || pkg.isEmpty) return;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => runUsageLimitChallenge(ref, pkg),
+      );
+    } catch (_) {
+      // Canale non pronto / metodo non implementato: niente da drenare.
+    }
+  }
+
+  drainPendingUsageChallenge();
+
   ref.onDispose(() => channel.setMethodCallHandler(null));
 });
+
+/// Sfida di sblocco per sforare il cap giornaliero di [packageName].
+///
+/// Esiste come funzione a sé (e non inline nell'handler) perché ha DUE punti
+/// d'ingresso: il push dal native quando Koru è già viva, e il PULL al cold
+/// start. Dimenticarne uno rende la feature funzionante solo a memoria calda —
+/// cioè quasi mai, visto da dove arriva l'utente.
+///
+/// Se la sfida è superata, il lasciapassare nativo viene depositato PRIMA di
+/// rilanciare l'app: `launchApp` passa dal gate pre-lancio, che rimostra
+/// l'overlay leggendo quel lasciapassare. Se il deposito fallisce non
+/// lanciamo — meglio un giro a vuoto che un bypass concesso da un errore di
+/// scrittura.
+Future<void> runUsageLimitChallenge(Ref ref, String packageName) async {
+  final ctx = rootNavigatorKey.currentContext;
+  if (ctx == null || !ctx.mounted) return;
+
+  final blocking = ref.read(platformChannelServiceProvider).blocking;
+  final label = _labelFor(ref, packageName);
+
+  final passed = await requireLimitUnlockChallenge(
+    ctx,
+    // `requireLimitUnlockChallenge` vuole un WidgetRef: qui siamo in un
+    // provider, quindi passiamo dal wrapper che ne espone solo `read`.
+    _RefAsWidgetRef(ref),
+    action: 'aprire $label oltre il limite di oggi',
+  );
+  if (!passed) return;
+
+  final granted = await blocking.grantUsageChallengePass(packageName);
+  if (!granted) return;
+  await blocking.launchApp(packageName);
+}
+
+/// Label leggibile del package, se l'inventario è già caricato. Il fallback al
+/// package name è volutamente silenzioso: la frase della sfida deve comparire
+/// anche al cold start, quando la lista app non è ancora arrivata.
+String _labelFor(Ref ref, String packageName) {
+  final apps = ref.read(installedAppsProvider).valueOrNull;
+  if (apps == null) return packageName;
+  for (final a in apps) {
+    if (a.packageName == packageName) return a.label;
+  }
+  return packageName;
+}
+
+/// Adattatore minimo `Ref` → `WidgetRef`.
+///
+/// [requireLimitUnlockChallenge] è pensato per essere chiamato da una UI e
+/// chiede un [WidgetRef], ma qui il chiamante è un provider. Delle molte
+/// capacità di WidgetRef ne usa una sola — `read` — quindi tutto il resto
+/// lancia invece di fingere di funzionare: se un domani il gate iniziasse a
+/// fare `watch`, è meglio un errore rumoroso di una sottoscrizione fantasma
+/// agganciata a un widget che non esiste.
+class _RefAsWidgetRef implements WidgetRef {
+  _RefAsWidgetRef(this._ref);
+
+  final Ref _ref;
+
+  @override
+  T read<T>(ProviderListenable<T> provider) => _ref.read(provider);
+
+  @override
+  BuildContext get context =>
+      throw UnsupportedError('_RefAsWidgetRef non ha un BuildContext');
+
+  @override
+  bool exists(ProviderBase<Object?> provider) => _ref.exists(provider);
+
+  @override
+  T refresh<T>(Refreshable<T> provider) => _ref.refresh(provider);
+
+  @override
+  void invalidate(ProviderOrFamily provider) => _ref.invalidate(provider);
+
+  @override
+  void listen<T>(
+    ProviderListenable<T> provider,
+    void Function(T? previous, T next) listener, {
+    void Function(Object error, StackTrace stackTrace)? onError,
+  }) =>
+      throw UnsupportedError('_RefAsWidgetRef supporta solo read()');
+
+  @override
+  ProviderSubscription<T> listenManual<T>(
+    ProviderListenable<T> provider,
+    void Function(T? previous, T next) listener, {
+    void Function(Object error, StackTrace stackTrace)? onError,
+    bool fireImmediately = false,
+  }) =>
+      throw UnsupportedError('_RefAsWidgetRef supporta solo read()');
+
+  @override
+  T watch<T>(ProviderListenable<T> provider) =>
+      throw UnsupportedError('_RefAsWidgetRef supporta solo read()');
+}

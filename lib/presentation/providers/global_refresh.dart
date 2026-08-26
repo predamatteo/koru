@@ -48,6 +48,7 @@ final List<ProviderOrFamily> _koruDataProviders = [
   // ── Limiti app & utilizzo giornaliero (nativo) ─────────────────────────
   appLimitsProvider,
   usageTodayMinutesProvider,
+  todayUsageMsByPackageProvider,
   bypassCountTodayProvider,
 
   // ── Statistiche di blocco (stream SQLite, scritti anche dal native) ─────
