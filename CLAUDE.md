@@ -189,9 +189,9 @@ Three things that break it silently, in order of likelihood:
    or YouTube update that renames those ids takes the counter to zero with no
    error. The JSONs are hot-updatable for exactly this reason.
 2. **The watched set.** IG/YT reach the service only because
-   `WatchedPackageCalculator` gets them via `observationPackages`, gated on
-   `UiSettingsStore.isReelCounterEnabled`. Drop that and the feature works only
-   for users who already block those apps.
+   `WatchedPackageCalculator` gets them via `observationPackages`. That is
+   now unconditional — the counter has no off switch — so drop it and the
+   feature works only for users who already block those apps.
 3. **The index signal.** `ReelSwipeCounter` counts index *transitions*; if a view
    stops reporting `fromIndex`/`toIndex` it degrades to a time debounce.
    `Result.viaIndex` says which path fired — it is logged to BlackBox under the
@@ -281,7 +281,7 @@ immediately (60s TTL) and leave the UI state untouched if
 The launcher UI (clock + favorites + drawer, `/launcher`) lives **outside** the
 bottom-nav shell and is only shown when Koru is invoked via the HOME intent
 (`MainActivity` sets the initial route accordingly). The dashboard tabs
-(`/home`, `/profiles`, `/focus`, `/stats`, `/settings`) live inside the shell.
+(`/home`, `/profiles`, `/stats`, `/settings`) live inside the shell.
 System-gesture overrides for the launcher are scoped to its route via `RouteAware` —
 never enabled at widget mount. Route names are centralized in `KoruRoutes`.
 

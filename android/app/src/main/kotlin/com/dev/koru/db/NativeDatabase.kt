@@ -274,7 +274,8 @@ object NativeDatabase {
      * Event type: 0 = BLOCK_TRIGGERED, 1 = BLOCK_SKIPPED.
      *
      * Restriction type: 0 = APP, 1 = SECTION, 2 = WEBSITE, 3 = USAGE_LIMIT,
-     * 4 = FOCUS_MODE, 5 = BYPASS_EXPIRED. ARCH-06: questi codici sono dichiarati
+     * 4 = FOCUS_MODE (legacy, non piu' scritto), 5 = BYPASS_EXPIRED.
+     * ARCH-06: questi codici sono dichiarati
      * UNA VOLTA SOLA in [com.dev.koru.contract.BlockingContract]
      * (`RESTRICTION_TYPE_*`) e i call site li passano per nome invece che come
      * literal grezzi. Restano `Int` qui perché vengono scritti in chiaro nella
@@ -323,31 +324,6 @@ object NativeDatabase {
                 "(${t.OCCURRED_AT}, ${t.DAY_START_DATE}, ${t.PACKAGE_NAME}, ${t.INTENTION_NAME}) " +
                 "VALUES (?, ?, ?, ?)",
             arrayOf(timestamp, dayKey, packageName, intentionName),
-        )
-    }
-
-    /**
-     * Registra una sessione di focus (quick block o pomodoro work phase)
-     * completata o stoppata, con la durata effettivamente maturata.
-     * Alimenta il "Focus time" nelle statistiche.
-     */
-    fun insertFocusUsageEvent(
-        context: Context,
-        durationMs: Long,
-        timestamp: Long,
-    ) {
-        if (durationMs <= 0) return
-        val cal = java.util.Calendar.getInstance().apply { timeInMillis = timestamp }
-        val y = cal.get(java.util.Calendar.YEAR).toString().padStart(4, '0')
-        val m = (cal.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')
-        val d = cal.get(java.util.Calendar.DAY_OF_MONTH).toString().padStart(2, '0')
-        val dayKey = "$y-$m-$d"
-        val t = DbSchema.FocusUsageEvents
-        open(context).execSQL(
-            "INSERT INTO ${t.TABLE} " +
-                "(${t.OCCURRED_AT}, ${t.DAY_START_DATE}, ${t.DURATION_IN_MS}) " +
-                "VALUES (?, ?, ?)",
-            arrayOf(timestamp, dayKey, durationMs),
         )
     }
 

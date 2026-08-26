@@ -30,12 +30,6 @@ class LockRunnable(
     private val onBlock: (String, String, NativeProfile, NativeAppRelation?) -> Unit,
     private val onLimitBlock: (pkg: String, appLabel: String, limitMinutes: Int, todayMs: Long) -> Unit,
     private val onUnblock: () -> Unit,
-    /// Callback per il blocco FOCUS_MODE (quick-block / pomodoro work phase).
-    /// CR-01: il backup ora applica anche il focus, prima era assente — se
-    /// l'AccessibilityService moriva durante una sessione focus, le app
-    /// non-whitelist restavano sbloccate. Il wiring (overlay FOCUS_MODE +
-    /// performGoHome + restrictionType=4) vive in [LockForegroundService].
-    private val onFocusBlock: (pkg: String, appLabel: String) -> Unit,
 ) : Runnable {
 
     companion object {
@@ -241,19 +235,15 @@ class LockRunnable(
         if (iterationCount % 33 == 0) Log.d(TAG, "[BACKUP] Foreground: $pkg")
 
         // Decisione DELEGATA a [BlockPolicyEvaluator] — STESSA logica del path
-        // accessibility (focus → daily limit → bypass profilo → profile loop).
-        // Prima il backup aveva una copia divergente: niente focus (CR-01),
-        // niente wifi (CR-03), intervalli CHIUSI invece di half-open. Ora è
-        // l'evaluator a decidere e qui restano solo i side-effect del backup.
+        // accessibility (daily limit → bypass profilo → profile loop).
+        // Prima il backup aveva una copia divergente: niente wifi (CR-03),
+        // intervalli CHIUSI invece di half-open. Ora è l'evaluator a decidere
+        // e qui restano solo i side-effect del backup.
         //
         // Letture d'ambiente (lette qui, non dall'AccessibilityService che è
         // morto se siamo arrivati fin qui):
-        // - focusShouldBlock: QuickBlockStore (CR-01, prima assente nel backup).
         // - limit (SEC-03 guarded): solo se esiste un cap, evita la query usage.
         // - currentWifiSsid: helper condiviso (CR-03).
-        val qb = QuickBlockStore.read(context)
-        val focusShouldBlock = qb.shouldBlock(pkg, System.currentTimeMillis())
-
         val limitEntry = AppUsageLimitsStore.entryFor(context, pkg)
         val limitMinutes = limitEntry?.minutes ?: 0
         val isLimitStrict = limitEntry?.strict ?: true
@@ -277,7 +267,6 @@ class LockRunnable(
                 limitMinutes = limitMinutes,
                 isLimitStrict = isLimitStrict,
                 limitTodayMs = limitTodayMs,
-                focusShouldBlock = focusShouldBlock,
                 // Scope per-app (null): il backup non ha node tree, quindi non
                 // valuta sezioni/siti → solo bypass per-app, come prima.
                 bypassReasonFor = { scope -> OverlayManager.bypassReason(pkg, scope) },
@@ -299,26 +288,6 @@ class LockRunnable(
 
         when (decision) {
             is BlockDecision.Block -> when (decision.reason) {
-                BlockReason.FOCUS_MODE -> {
-                    if (currentlyBlockingPackage != pkg) {
-                        currentlyBlockingPackage = pkg
-                        val appLabel = getAppLabel(pkg)
-                        Log.w(TAG, ">>> [BACKUP] BLOCKING $pkg (focus)")
-                        onFocusBlock(pkg, appLabel)
-                        try {
-                            NativeDatabase.insertBlockSession(context, pkg, System.currentTimeMillis())
-                            NativeDatabase.insertRestrictedAccessEvent(
-                                context,
-                                pkg,
-                                eventType = 0, // TRIGGERED
-                                restrictionType = BlockingContract.RESTRICTION_TYPE_FOCUS_MODE,
-                                timestamp = System.currentTimeMillis(),
-                            )
-                        } catch (_: Exception) {}
-                    }
-                    return
-                }
-
                 BlockReason.USAGE_LIMIT -> {
                     if (currentlyBlockingPackage != pkg) {
                         currentlyBlockingPackage = pkg
@@ -339,7 +308,7 @@ class LockRunnable(
                     return
                 }
 
-                else -> { // APP_BLOCKED (FOCUS/USAGE_LIMIT gestiti sopra; WEBSITE/SECTION irraggiungibili)
+                else -> { // APP_BLOCKED (USAGE_LIMIT gestito sopra; WEBSITE/SECTION irraggiungibili)
                     val profile = profiles.firstOrNull { it.id == decision.profileId }
                     if (currentlyBlockingPackage != pkg && profile != null) {
                         currentlyBlockingPackage = pkg

@@ -185,39 +185,4 @@ void main() {
       expect(rows.last.usageCount, 1);
     });
   });
-
-  group('focusTimeMsProvider', () {
-    test('sums focus durations within the period', () async {
-      final h = buildTestContainer();
-      addTearDown(h.dispose);
-
-      final today = _todayKey();
-      final now = DateTime.now().millisecondsSinceEpoch;
-      await h.db.focusUsageEventsDao.insertEvent(
-        FocusUsageEventsCompanion.insert(
-          occurredAt: now,
-          dayStartDate: today,
-          durationInMs: 60000,
-        ),
-      );
-      await h.db.focusUsageEventsDao.insertEvent(
-        FocusUsageEventsCompanion.insert(
-          occurredAt: now,
-          dayStartDate: today,
-          durationInMs: 30000,
-        ),
-      );
-
-      final v = await h.container.read(focusTimeMsProvider.stream).first;
-      expect(v, 90000);
-    });
-
-    test('returns 0 when there are no events', () async {
-      final h = buildTestContainer();
-      addTearDown(h.dispose);
-
-      final v = await h.container.read(focusTimeMsProvider.stream).first;
-      expect(v, 0);
-    });
-  });
 }

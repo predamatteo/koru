@@ -6,11 +6,6 @@ import '../constants/hive_keys.dart';
 import '../di/providers.dart';
 import '../theme/launcher_motion.dart';
 import '../../presentation/screens/all_apps/all_apps_screen.dart';
-import '../../presentation/screens/focus/focus_screen.dart';
-import '../../presentation/screens/focus/pomodoro_screen.dart';
-import '../../presentation/screens/focus/quick_block_screen.dart';
-import '../../presentation/screens/focus/whitelist_editor_screen.dart';
-import '../../presentation/providers/focus_whitelist_provider.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/launcher/launcher_home_screen.dart';
 import '../../presentation/screens/launcher/launcher_shortcut_picker_screen.dart';
@@ -58,7 +53,6 @@ class KoruRoutes {
   static const String home = '/home';
   static const String drawer = '/home/drawer';
   static const String profiles = '/profiles';
-  static const String focus = '/focus';
   static const String stats = '/stats';
   static const String settings = '/settings';
 }
@@ -100,7 +94,6 @@ final launcherRouteObserver = RouteObserver<PageRoute<dynamic>>();
 
 final shellNavigatorHomeKey = GlobalKey<NavigatorState>();
 final shellNavigatorProfilesKey = GlobalKey<NavigatorState>();
-final shellNavigatorFocusKey = GlobalKey<NavigatorState>();
 final shellNavigatorStatsKey = GlobalKey<NavigatorState>();
 final shellNavigatorSettingsKey = GlobalKey<NavigatorState>();
 
@@ -198,7 +191,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         // Lazy IndexedStack: al cold start solo la tab visibile viene
         // costruita, le altre restano `SizedBox.shrink` finché l'utente
         // non le tocca. Questo evita che HomeScreen + ProfilesListScreen +
-        // FocusScreen + StatisticsScreen + SettingsScreen vengano
+        // StatisticsScreen + SettingsScreen vengano
         // istanziate tutte insieme (l'IndexedStack di default builda tutti
         // i children in parallelo). Riduce drasticamente il numero di
         // provider FutureProvider/StreamProvider attivati al boot — in
@@ -284,43 +277,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                           profileId: int.parse(state.pathParameters['id']!),
                           packageName: state.pathParameters['pkg']!,
                         ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            navigatorKey: shellNavigatorFocusKey,
-            routes: [
-              GoRoute(
-                path: KoruRoutes.focus,
-                builder: (context, state) => const FocusScreen(),
-                routes: [
-                  GoRoute(
-                    path: 'quick',
-                    parentNavigatorKey: rootNavigatorKey,
-                    builder: (context, state) => const QuickBlockScreen(),
-                    routes: [
-                      GoRoute(
-                        path: 'whitelist',
-                        parentNavigatorKey: rootNavigatorKey,
-                        builder: (context, state) =>
-                            const WhitelistEditorScreen(mode: FocusMode.quickBlock),
-                      ),
-                    ],
-                  ),
-                  GoRoute(
-                    path: 'pomodoro',
-                    parentNavigatorKey: rootNavigatorKey,
-                    builder: (context, state) => const PomodoroScreen(),
-                    routes: [
-                      GoRoute(
-                        path: 'whitelist',
-                        parentNavigatorKey: rootNavigatorKey,
-                        builder: (context, state) =>
-                            const WhitelistEditorScreen(mode: FocusMode.pomodoro),
                       ),
                     ],
                   ),
@@ -423,7 +379,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 /// Sostituisce il container default di `StatefulShellRoute.indexedStack` che
 /// monta tutti i Navigator dei branch al primo build dello shell, causando
 /// la costruzione contemporanea di HomeScreen + ProfilesListScreen +
-/// FocusScreen + StatisticsScreen + SettingsScreen al cold start — e con
+/// StatisticsScreen + SettingsScreen al cold start — e con
 /// loro l'attivazione in parallelo di tutti i provider che quelle schermate
 /// `ref.watch`, fra cui chiamate native onerose (UsageStats, PackageManager
 /// scan + icon decode) della Stats tab anche quando l'utente entra in app

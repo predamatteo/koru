@@ -85,56 +85,15 @@ class UiSettingsStoreTest {
             .isEqualTo(UiSettingsStore.DEFAULT_FONT_ID)
     }
 
-    // -------- contatore di reel --------
-
     @Test
-    fun reelCounter_emptyFile_isEnabledByDefault() {
+    fun legacyFileWithTheRetiredReelKey_stillReadsTheFont() {
+        // File scritto quando il contatore di reel aveva ancora un
+        // interruttore: la chiave `reelCounterEnabled` c'e' ma nessuno la
+        // legge piu'. Non deve far fallire il parsing del resto.
         val ctx = ApplicationProvider.getApplicationContext<Context>()
-        assertThat(UiSettingsStore.isReelCounterEnabled(ctx)).isTrue()
-    }
-
-    @Test
-    fun setReelCounterEnabled_roundTrips() {
-        val ctx = ApplicationProvider.getApplicationContext<Context>()
-        assertThat(UiSettingsStore.setReelCounterEnabled(ctx, false)).isTrue()
-        assertThat(UiSettingsStore.isReelCounterEnabled(ctx)).isFalse()
+        File(ctx.filesDir, fileName)
+            .writeText("""{"activeFontId":3,"reelCounterEnabled":false}""")
         UiSettingsStore.invalidateCacheForTest()
-        assertThat(UiSettingsStore.isReelCounterEnabled(ctx)).isFalse()
-    }
-
-    @Test
-    fun legacyFileWithoutTheKey_readsAsEnabled() {
-        // File scritto da una versione precedente: la chiave non esiste. Deve
-        // leggersi come "acceso", non come `false` implicito — un update
-        // dell'app non deve spegnere la feature di soppiatto.
-        val ctx = ApplicationProvider.getApplicationContext<Context>()
-        File(ctx.filesDir, fileName).writeText("""{"activeFontId":3}""")
-        UiSettingsStore.invalidateCacheForTest()
-        assertThat(UiSettingsStore.isReelCounterEnabled(ctx)).isTrue()
         assertThat(UiSettingsStore.activeFontId(ctx)).isEqualTo(3)
-    }
-
-    @Test
-    fun theTwoSettingsDoNotOverwriteEachOther() {
-        // Regressione: con una `write` incondizionata al posto di una
-        // read-modify-write, salvare il font azzerava il flag del contatore
-        // (e viceversa), perché ogni scrittura rigenerava il file intero dai
-        // soli valori noti al chiamante.
-        val ctx = ApplicationProvider.getApplicationContext<Context>()
-        UiSettingsStore.setReelCounterEnabled(ctx, false)
-        UiSettingsStore.setActiveFontId(ctx, 4)
-        assertThat(UiSettingsStore.isReelCounterEnabled(ctx)).isFalse()
-        assertThat(UiSettingsStore.activeFontId(ctx)).isEqualTo(4)
-
-        UiSettingsStore.setReelCounterEnabled(ctx, true)
-        assertThat(UiSettingsStore.activeFontId(ctx)).isEqualTo(4)
-    }
-
-    @Test
-    fun reelCounter_corruptedFile_fallsBackToEnabled() {
-        val ctx = ApplicationProvider.getApplicationContext<Context>()
-        File(ctx.filesDir, fileName).writeText("{not json")
-        UiSettingsStore.invalidateCacheForTest()
-        assertThat(UiSettingsStore.isReelCounterEnabled(ctx)).isTrue()
     }
 }

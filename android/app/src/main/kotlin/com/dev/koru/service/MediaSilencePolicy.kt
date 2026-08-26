@@ -104,7 +104,6 @@ object MediaSilencePolicy {
             BlockReason.APP_BLOCKED,
             BlockReason.SECTION_BLOCKED,
             BlockReason.WEBSITE_BLOCKED,
-            BlockReason.FOCUS_MODE,
             BlockReason.USAGE_LIMIT,
             BlockReason.BYPASS_EXPIRED,
             -> SilenceIntent.PAUSE_RESUMABLE

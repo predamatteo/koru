@@ -124,8 +124,6 @@ class _AchievementBadge extends StatelessWidget {
 }
 
 Color _tintFor(AchievementCategory c) => switch (c) {
-      AchievementCategory.focus => KoruColors.primary,
-      AchievementCategory.consistency => KoruColors.secondary,
       AchievementCategory.discipline => KoruColors.danger,
       AchievementCategory.setup => KoruColors.textSecondary,
     };

@@ -60,7 +60,6 @@ enum class BlockReason {
     APP_BLOCKED,
     SECTION_BLOCKED,
     WEBSITE_BLOCKED,
-    FOCUS_MODE,
     /// USAGE_LIMIT e BYPASS_EXPIRED sono gli unici reason "derivati dal
     /// limite": [com.dev.koru.service.OverlayManager.isLimitBypassActive] li
     /// usa per decidere se un bypass può sospendere il cap giornaliero. Se

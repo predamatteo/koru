@@ -44,25 +44,20 @@ final achievementStatsProvider = FutureProvider<AchievementStats>((ref) async {
 /// Aggrega tutte le metriche lifetime necessarie per [evaluateAchievements].
 Future<AchievementStats> buildAchievementStats(Ref ref) async {
   final db = ref.read(appDatabaseProvider);
-  final focusDao = ref.read(focusUsageEventsDaoProvider);
   final intentionsDao = ref.read(intentionUsageEventsDaoProvider);
   final raeDao = ref.read(restrictedAccessEventsDaoProvider);
   final streaksRepo = ref.read(streaksRepositoryProvider);
   final platform = ref.read(platformChannelServiceProvider);
 
   final now = DateTime.now();
-  final today = dayKeyFor(now);
 
   // PERF (F2.5): metriche indipendenti lanciate in parallelo invece che in
   // sequenza. `Future.wait` (eagerError:false di default) attende TUTTE le
   // future anche se una fallisce, poi rilancia il primo errore → nessuna
   // rejection orfana; i singoli `await` successivi sono già completi e quindi
   // restano TIPIZZATI (nessun cast).
-  final lifetimeMsF = focusDao.getLifetimeFocusMs();
-  final todayMsF = focusDao.watchFocusTimeUsage(today, today).first;
   final intentionsCountF = intentionsDao.getLifetimeIntentionsCount();
   final honestBlocksF = raeDao.getLifetimeHonestBlockCount();
-  final focusStreakF = streaksRepo.current(StreakId.focus);
   final cleanStreakF = streaksRepo.current(StreakId.clean);
   final profilesF = db.getAllProfiles();
   final limitsF = platform.blocking.getAppDailyLimits();
@@ -74,11 +69,8 @@ Future<AchievementStats> buildAchievementStats(Ref ref) async {
   final strictMaskF = platform.strictMode.getStrictModeOptions();
 
   await Future.wait<Object?>([
-    lifetimeMsF,
-    todayMsF,
     intentionsCountF,
     honestBlocksF,
-    focusStreakF,
     cleanStreakF,
     profilesF,
     limitsF,
@@ -86,11 +78,8 @@ Future<AchievementStats> buildAchievementStats(Ref ref) async {
     strictMaskF,
   ]);
 
-  final lifetimeMs = await lifetimeMsF;
-  final todayMs = await todayMsF;
   final intentionsCount = await intentionsCountF;
   final honestBlocks = await honestBlocksF;
-  final focusStreak = await focusStreakF;
   final cleanStreak = await cleanStreakF;
   final profiles = await profilesF;
   final limits = await limitsF;
@@ -102,9 +91,6 @@ Future<AchievementStats> buildAchievementStats(Ref ref) async {
   final strictMode = strictMask > 0;
 
   return AchievementStats(
-    totalFocusMinutes: (lifetimeMs / 60000).floor(),
-    focusMinutesToday: (todayMs / 60000).floor(),
-    focusStreakCurrent: StreaksRepository.effectiveCurrent(focusStreak, now),
     cleanStreakCurrent: StreaksRepository.effectiveCurrent(cleanStreak, now),
     intentionsCount: intentionsCount,
     honestBlocksCount: honestBlocks,
@@ -179,9 +165,9 @@ class AchievementEvaluationNotifier extends Notifier<void> {
     try {
       final stats = await buildAchievementStats(ref);
       developer.log(
-        'stats: focusLife=${stats.totalFocusMinutes}min '
-        'focusToday=${stats.focusMinutesToday}min '
-        'focusStreak=${stats.focusStreakCurrent} '
+        'stats: clean=${stats.cleanStreakCurrent} '
+        'intentions=${stats.intentionsCount} '
+        'honestBlocks=${stats.honestBlocksCount} '
         'profiles=${stats.profilesCount} '
         'limits=${stats.appsWithLimitsCount} '
         'strict=${stats.strictModeEnabled} '

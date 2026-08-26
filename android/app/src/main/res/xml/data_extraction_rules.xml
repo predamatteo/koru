@@ -4,9 +4,8 @@
     transfer. Koru contiene preferenze locali, DB con dati di utilizzo e
     file di stato del blocking engine che non devono propagarsi tra
     dispositivi: il ripristino su un device diverso porterebbe a uno
-    stato incoerente (es. timestamp di sessioni Pomodoro, pacchetti
-    bloccati che non esistono sul device target, identificativi di
-    profili etc.). Meglio partire puliti.
+    stato incoerente (es. pacchetti bloccati che non esistono sul device
+    target, identificativi di profili etc.). Meglio partire puliti.
 -->
 <data-extraction-rules>
     <cloud-backup>

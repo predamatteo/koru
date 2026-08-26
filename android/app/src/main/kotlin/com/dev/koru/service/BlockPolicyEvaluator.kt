@@ -48,7 +48,7 @@ sealed interface BlockDecision {
      *
      * @param reason determina copy/icona dell'overlay (riusa [BlockReason]).
      * @param profileId profilo che blocca, o `null` per i blocchi globali
-     *   (focus, daily limit) che non sono profile-scoped.
+     *   (daily limit) che non sono profile-scoped.
      * @param relation la [NativeAppRelation] sorgente (per overlayConfigJson /
      *   blockedSectionsJson), quando disponibile.
      * @param bypassScopeDomain scope del bypass "Open anyway": per i siti è il
@@ -82,7 +82,6 @@ sealed interface BlockDecision {
  * della regola per i siti, `section:<wireId>` per le sezioni).
  *
  * @param limitTodayMs già la variante GUARDATA (SEC-03, anti clock-backward).
- * @param focusShouldBlock già `qbSnapshot.shouldBlock(pkg, nowWall)`.
  * @param todayDayFlag il singolo bit del giorno corrente (vedi DayFlags lato Dart).
  * @param websiteScopeDomain non-null solo quando l'adapter ha già un match
  *   sito (name della regola, lowercased/trimmed) → l'evaluator applica solo
@@ -98,7 +97,6 @@ data class BlockQuery(
     val limitMinutes: Int,
     val isLimitStrict: Boolean,
     val limitTodayMs: Long,
-    val focusShouldBlock: Boolean,
     val bypassReasonFor: (scopeDomain: String?) -> BlockReason?,
     val nowWallMs: Long,
     val nowMinutesOfDay: Int,
@@ -167,36 +165,29 @@ object BlockPolicyEvaluator {
      * caso di ambiguità si tende verso "blocked" (l'avversario è l'utente che
      * cerca di aggirare i propri limiti).
      *
-     * 1. **Focus / quick-block**: vince su tutto (il backup ora lo applica
-     *    anch'esso — CR-01).
-     * 2. **Daily limit**: cap cumulativo. Valutato PRIMA del bypass di profilo
+     * 1. **Daily limit**: cap cumulativo. Valutato PRIMA del bypass di profilo
      *    (un "Open anyway" su un blocco di profilo non ricarica il budget).
      *    STRICT ⇒ ignora QUALSIASI bypass. NON-strict ⇒ sospeso solo da un
      *    bypass NATO dal limite (USAGE_LIMIT / BYPASS_EXPIRED).
-     * 3. **Bypass di profilo attivo** (whole-app) ⇒ Allow short-circuit: il cap
+     * 2. **Bypass di profilo attivo** (whole-app) ⇒ Allow short-circuit: il cap
      *    è già stato valutato sopra; l'adapter fa il bookkeeping di auto-revoke.
-     * 4. **APP match**: per ogni profilo attivo ORA, blocklist contiene /
+     * 3. **APP match**: per ogni profilo attivo ORA, blocklist contiene /
      *    allowlist (non vuota && non contiene).
-     * 5. **SECTION match** (solo se [BlockQuery.sectionWireId] != null): profilo
+     * 4. **SECTION match** (solo se [BlockQuery.sectionWireId] != null): profilo
      *    attivo, relation esiste, app NON bloccata interamente
      *    (`!relation.isEnabled`), blockedSectionsJson contiene il wireId.
      *    CR-07: rispetta il bypass scoped `section:<wireId>`.
-     * 6. **WEBSITE match** (solo se [BlockQuery.websiteScopeDomain] != null;
+     * 5. **WEBSITE match** (solo se [BlockQuery.websiteScopeDomain] != null;
      *    l'adapter ha già fatto girare WebsiteMatcher): rispetta il bypass
      *    per-dominio.
-     * 7. else Allow.
+     * 6. else Allow.
+     *
+     * Il ramo "focus / quick-block", che precedeva il daily limit e vinceva su
+     * tutto, è stato rimosso con la tab Focus: nessun adapter produce più uno
+     * stato di sessione a tempo.
      */
     fun evaluate(q: BlockQuery): BlockDecision {
-        // 1) Focus / quick-block.
-        if (q.focusShouldBlock) {
-            return BlockDecision.Block(
-                reason = BlockReason.FOCUS_MODE,
-                profileTitle = "Focus session",
-                profileEmoji = "🎯", // 🎯
-            )
-        }
-
-        // 2) Daily limit. limitBypassActive = un bypass nato DAL limite stesso.
+        // 1) Daily limit. limitBypassActive = un bypass nato DAL limite stesso.
         val limitBypassActive = q.bypassReasonFor(null).let {
             it == BlockReason.USAGE_LIMIT || it == BlockReason.BYPASS_EXPIRED
         }

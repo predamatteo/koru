@@ -124,14 +124,14 @@ class OverlayConfigTest {
     // -------- BlockReason enum --------
 
     @Test
-    fun blockReason_hasSixValuesInExpectedOrder() {
-        // Six values: APP_BLOCKED, SECTION_BLOCKED, WEBSITE_BLOCKED,
-        // FOCUS_MODE, USAGE_LIMIT, BYPASS_EXPIRED.
+    fun blockReason_hasFiveValuesInExpectedOrder() {
+        // Five values: APP_BLOCKED, SECTION_BLOCKED, WEBSITE_BLOCKED,
+        // USAGE_LIMIT, BYPASS_EXPIRED. FOCUS_MODE e' stato rimosso con la
+        // tab Focus (quick block + pomodoro).
         assertThat(BlockReason.values()).asList().containsExactly(
             BlockReason.APP_BLOCKED,
             BlockReason.SECTION_BLOCKED,
             BlockReason.WEBSITE_BLOCKED,
-            BlockReason.FOCUS_MODE,
             BlockReason.USAGE_LIMIT,
             BlockReason.BYPASS_EXPIRED,
         ).inOrder()

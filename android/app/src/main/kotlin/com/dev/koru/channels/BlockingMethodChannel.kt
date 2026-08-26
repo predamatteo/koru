@@ -7,7 +7,6 @@ import com.dev.koru.channels.blocking.BlockingCallHandler
 import com.dev.koru.channels.blocking.DeviceInfoCallHandler
 import com.dev.koru.channels.blocking.LimitsCallHandler
 import com.dev.koru.channels.blocking.NotificationFilterCallHandler
-import com.dev.koru.channels.blocking.QuickBlockCallHandler
 import com.dev.koru.channels.blocking.RecentsCallHandler
 import com.dev.koru.channels.blocking.ReelsCallHandler
 import com.dev.koru.channels.blocking.ServiceLifecycleCallHandler
@@ -21,7 +20,7 @@ import io.flutter.plugin.common.MethodChannel
  *
  * ARCH-09: prima questo era un god-facade da ~558 righe con un `when` di ~29
  * cases che mescolava 7+ concern (service lifecycle, inventory app, usage-stats,
- * quick-block/pomodoro, azioni app, device-info, limiti giornalieri + bypass,
+ * azioni app, device-info, limiti giornalieri + bypass,
  * filtro notifiche, wifi). Ora ogni concern vive in un [BlockingCallHandler]
  * dedicato sotto `channels/blocking/`; qui resta SOLO il routing.
  *
@@ -44,7 +43,6 @@ object BlockingMethodChannel {
         ServiceLifecycleCallHandler,
         AppInventoryCallHandler,
         UsageStatsCallHandler,
-        QuickBlockCallHandler,
         AppActionsCallHandler,
         DeviceInfoCallHandler,
         LimitsCallHandler,

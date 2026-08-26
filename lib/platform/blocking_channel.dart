@@ -215,40 +215,6 @@ class BlockingChannel {
       0;
 
   // =========================================================================
-  // Concern: quick-block e Pomodoro (focus a tempo).
-  // =========================================================================
-
-  Future<bool> startQuickBlock(
-    Duration duration, {
-    List<String> whitelist = const [],
-  }) async =>
-      (await _channel.invokeMethod<bool>('startQuickBlock', {
-        'durationMs': duration.inMilliseconds,
-        'whitelist': whitelist,
-      })) ??
-      false;
-
-  Future<bool> stopQuickBlock() async =>
-      (await _channel.invokeMethod<bool>('stopQuickBlock')) ?? false;
-
-  Future<bool> startPomodoro({
-    required Duration workPhase,
-    required Duration breakPhase,
-    required int cycles,
-    List<String> whitelist = const [],
-  }) async =>
-      (await _channel.invokeMethod<bool>('startPomodoro', {
-        'workMs': workPhase.inMilliseconds,
-        'breakMs': breakPhase.inMilliseconds,
-        'cycles': cycles,
-        'whitelist': whitelist,
-      })) ??
-      false;
-
-  Future<bool> stopPomodoro() async =>
-      (await _channel.invokeMethod<bool>('stopPomodoro')) ?? false;
-
-  // =========================================================================
   // Concern: azioni dirette su una singola app (launch / uninstall / app-info).
   // =========================================================================
 
@@ -416,18 +382,6 @@ class BlockingChannel {
         .map(ReelDayCounts.fromMap)
         .toList(growable: false);
   }
-
-  Future<bool> isReelCounterEnabled() async =>
-      (await _channel.invokeMethod<bool>('isReelCounterEnabled')) ?? false;
-
-  /// Accende/spegne il contatore. Spegnendolo il nativo smette anche di
-  /// osservare Instagram e YouTube, quindi non è solo un toggle di UI.
-  /// Ritorna il vero esito del salvataggio (CR-09), non un `true` fisso.
-  Future<bool> setReelCounterEnabled(bool enabled) async =>
-      (await _channel.invokeMethod<bool>('setReelCounterEnabled', {
-        'enabled': enabled,
-      })) ??
-      false;
 }
 
 /// Le sorgenti di feed verticale che Koru sa contare.

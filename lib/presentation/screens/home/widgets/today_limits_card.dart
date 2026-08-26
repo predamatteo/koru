@@ -9,9 +9,14 @@ import '../../../../platform/blocking_channel.dart';
 import '../../../providers/app_limits_provider.dart';
 import '../../../providers/app_list_provider.dart';
 
-/// Card riepilogo delle app con un daily limit attivo: mostra
-/// progress bar usato/cap per ogni app. Visibile solo se almeno un
-/// limite è impostato.
+/// Card riepilogo delle app con un daily limit attivo: mostra progress bar
+/// usato/cap per ogni app.
+///
+/// Senza limiti impostati la card NON sparisce: mostra un invito a crearne uno.
+/// Nasconderla lasciava la feature invisibile proprio a chi non l'ha ancora
+/// scoperta — i limiti stanno sepolti in Impostazioni, e chi non sa che
+/// esistono non va a cercarli. Il posto fisso in dashboard è anche l'unico
+/// punto in cui l'app può proporli nel momento giusto.
 class TodayLimitsCard extends ConsumerStatefulWidget {
   const TodayLimitsCard({super.key});
 
@@ -55,7 +60,7 @@ class _TodayLimitsCardState extends ConsumerState<TodayLimitsCard> {
   Widget build(BuildContext context) {
     final limitsAsync = ref.watch(appLimitsProvider);
     final limits = limitsAsync.valueOrNull ?? const <String, AppLimitConfig>{};
-    if (limits.isEmpty) return const SizedBox.shrink();
+    if (limits.isEmpty) return const _NoLimitsCard();
 
     // Fonte autoritativa per "questo pkg è ancora installato?":
     // [installedPackageNamesProvider] è cheap (~50ms, no icon decode)
@@ -85,7 +90,10 @@ class _TodayLimitsCardState extends ConsumerState<TodayLimitsCard> {
         .where((e) => !filterActive || installedNames.contains(e.key))
         .toList()
       ..sort((a, b) => b.value.minutes.compareTo(a.value.minutes));
-    if (entries.isEmpty) return const SizedBox.shrink();
+    // Tutti i limiti puntano ad app disinstallate (il cleanup async non è
+    // ancora passato): per l'utente equivale a non averne, quindi stesso
+    // invito invece di un buco.
+    if (entries.isEmpty) return const _NoLimitsCard();
 
     return Card(
       child: Padding(
@@ -127,6 +135,82 @@ class _TodayLimitsCardState extends ConsumerState<TodayLimitsCard> {
                 strict: e.value.strict,
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Stato vuoto: nessun limite impostato (o nessuno che punti a un'app ancora
+/// installata). Stessa scocca della card piena — header identico, corpo che
+/// spiega cosa fa la feature e un solo tap per andarla a configurare.
+///
+/// L'intera card è tappabile *oltre* al bottone: il bersaglio grande è per chi
+/// sta scoprendo la feature, il bottone è per chi sa già cosa vuole.
+class _NoLimitsCard extends StatelessWidget {
+  const _NoLimitsCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => context.push('/settings/app-limits'),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.hourglass_bottom_outlined,
+                      size: 18, color: KoruColors.textSecondary),
+                  const SizedBox(width: 8),
+                  Text(
+                    "TODAY'S LIMITS",
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: KoruColors.textSecondary,
+                          letterSpacing: 2,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'No daily limits yet',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: KoruColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Cap how long you can spend in an app each day. '
+                'Koru steps in when you reach it.',
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.35,
+                  color: KoruColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.tonalIcon(
+                  onPressed: () => context.push('/settings/app-limits'),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Set a limit'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    minimumSize: const Size(0, 36),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

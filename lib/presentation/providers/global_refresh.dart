@@ -50,12 +50,11 @@ final List<ProviderOrFamily> _koruDataProviders = [
   usageTodayMinutesProvider,
   bypassCountTodayProvider,
 
-  // ── Statistiche di blocco/focus (stream SQLite, scritti anche dal native)
+  // ── Statistiche di blocco (stream SQLite, scritti anche dal native) ─────
   blockTriggeredCountProvider,
   blockSkippedCountProvider,
   perAppBreakdownProvider,
   topIntentionsProvider,
-  focusTimeMsProvider,
 
   // ── Screen time (UsageStatsManager nativo) ─────────────────────────────
   periodUsageProvider,
@@ -125,10 +124,9 @@ final List<ProviderOrFamily> _statsScreenProviders = [
   previousPeriodScreenTimeMsProvider,
   weeklyDailyUsageProvider,
 
-  // ── Blocchi & focus (stream SQLite, scritti anche dal native) ───────────
+  // ── Blocchi (stream SQLite, scritti anche dal native) ───────────────────
   blockTriggeredCountProvider,
   blockSkippedCountProvider,
-  focusTimeMsProvider,
 
   // ── Mood, streak, achievement (SQLite) ─────────────────────────────────
   todayMoodProvider,

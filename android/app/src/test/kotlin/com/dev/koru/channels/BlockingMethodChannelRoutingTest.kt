@@ -5,7 +5,6 @@ import com.dev.koru.channels.blocking.AppInventoryCallHandler
 import com.dev.koru.channels.blocking.DeviceInfoCallHandler
 import com.dev.koru.channels.blocking.LimitsCallHandler
 import com.dev.koru.channels.blocking.NotificationFilterCallHandler
-import com.dev.koru.channels.blocking.QuickBlockCallHandler
 import com.dev.koru.channels.blocking.RecentsCallHandler
 import com.dev.koru.channels.blocking.ReelsCallHandler
 import com.dev.koru.channels.blocking.ServiceLifecycleCallHandler
@@ -52,11 +51,6 @@ class BlockingMethodChannelRoutingTest {
         "getUsageStats",
         "getUsageStatsByDay",
         "getUsageTodayMs",
-        // quick block / pomodoro
-        "startQuickBlock",
-        "stopQuickBlock",
-        "startPomodoro",
-        "stopPomodoro",
         // app actions
         "launchApp",
         "uninstallApp",
@@ -85,8 +79,6 @@ class BlockingMethodChannelRoutingTest {
         // contatore reel / short
         "getReelCountsToday",
         "getReelCountsHistory",
-        "isReelCounterEnabled",
-        "setReelCounterEnabled",
     )
 
     @Test
@@ -96,14 +88,17 @@ class BlockingMethodChannelRoutingTest {
     }
 
     @Test
-    fun routingTable_hasExactly37Methods() {
+    fun routingTable_hasExactly31Methods() {
         // Sentinella sul numero: se un futuro metodo viene aggiunto senza
         // aggiornare questo test, il count diverge e il test fallisce,
         // forzando una rivisitazione consapevole del wire-contract.
-        // 37 = 29 storici + `getAppIcon` (Fase 2: decode lazy delle icone)
+        // 31 = 29 storici + `getAppIcon` (Fase 2: decode lazy delle icone)
         // + i 3 del contatore schede launcher (getOpenAppsCount /
-        // resetOpenAppsCount / openSystemRecents) + i 4 del contatore reel.
-        assertThat(BlockingMethodChannel.routingTable).hasSize(37)
+        // resetOpenAppsCount / openSystemRecents) + i 2 di lettura del
+        // contatore reel - i 4 di quick block / pomodoro, rimossi con la tab
+        // Focus. L'interruttore del contatore reel (is/setReelCounterEnabled)
+        // è stato tolto: il conteggio è sempre attivo.
+        assertThat(BlockingMethodChannel.routingTable).hasSize(31)
     }
 
     @Test
@@ -125,12 +120,6 @@ class BlockingMethodChannelRoutingTest {
         assertThat(table["getUsageStats"]).isEqualTo(UsageStatsCallHandler)
         assertThat(table["getUsageStatsByDay"]).isEqualTo(UsageStatsCallHandler)
         assertThat(table["getUsageTodayMs"]).isEqualTo(UsageStatsCallHandler)
-
-        // quick block / pomodoro
-        assertThat(table["startQuickBlock"]).isEqualTo(QuickBlockCallHandler)
-        assertThat(table["stopQuickBlock"]).isEqualTo(QuickBlockCallHandler)
-        assertThat(table["startPomodoro"]).isEqualTo(QuickBlockCallHandler)
-        assertThat(table["stopPomodoro"]).isEqualTo(QuickBlockCallHandler)
 
         // app actions
         assertThat(table["launchApp"]).isEqualTo(AppActionsCallHandler)
@@ -166,8 +155,6 @@ class BlockingMethodChannelRoutingTest {
         // contatore reel / short
         assertThat(table["getReelCountsToday"]).isEqualTo(ReelsCallHandler)
         assertThat(table["getReelCountsHistory"]).isEqualTo(ReelsCallHandler)
-        assertThat(table["isReelCounterEnabled"]).isEqualTo(ReelsCallHandler)
-        assertThat(table["setReelCounterEnabled"]).isEqualTo(ReelsCallHandler)
     }
 
     @Test

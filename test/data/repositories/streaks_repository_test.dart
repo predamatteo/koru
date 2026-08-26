@@ -43,8 +43,8 @@ void main() {
 
     group('current', () {
       test('returns StreakSnapshot.empty when nothing is stored', () async {
-        final snap = await repo.current(StreakId.focus);
-        expect(snap.id, StreakId.focus);
+        final snap = await repo.current(StreakId.mindful);
+        expect(snap.id, StreakId.mindful);
         expect(snap.currentCount, 0);
         expect(snap.longest, 0);
         expect(snap.lastIncrementedDay, isNull);
@@ -52,12 +52,12 @@ void main() {
 
       test('returns the persisted values when a row exists', () async {
         await seed(
-          StreakId.focus,
+          StreakId.mindful,
           currentCount: 3,
           longest: 5,
           lastIncrementedDay: '2026-04-17',
         );
-        final snap = await repo.current(StreakId.focus);
+        final snap = await repo.current(StreakId.mindful);
         expect(snap.currentCount, 3);
         expect(snap.longest, 5);
         expect(snap.lastIncrementedDay, '2026-04-17');
@@ -66,7 +66,7 @@ void main() {
 
     group('markToday', () {
       test('first ever mark sets current=1 and longest=1', () async {
-        final snap = await repo.markToday(StreakId.focus);
+        final snap = await repo.markToday(StreakId.mindful);
         expect(snap.currentCount, 1);
         expect(snap.longest, 1);
         expect(snap.lastIncrementedDay, dayKeyFor(DateTime.now()));
@@ -75,8 +75,8 @@ void main() {
       test(
           'calling markToday twice on the same calendar day is idempotent '
           '(no double-counting)', () async {
-        final first = await repo.markToday(StreakId.focus);
-        final second = await repo.markToday(StreakId.focus);
+        final first = await repo.markToday(StreakId.mindful);
+        final second = await repo.markToday(StreakId.mindful);
         expect(second.currentCount, first.currentCount);
         expect(second.longest, first.longest);
         expect(second.lastIncrementedDay, first.lastIncrementedDay);
@@ -87,13 +87,13 @@ void main() {
           'longest follows when surpassed', () async {
         final now = DateTime.now();
         await seed(
-          StreakId.focus,
+          StreakId.mindful,
           currentCount: 4,
           longest: 4,
           lastIncrementedDay: dayKeyMinus(now, 1),
         );
 
-        final snap = await repo.markToday(StreakId.focus);
+        final snap = await repo.markToday(StreakId.mindful);
         expect(snap.currentCount, 5);
         expect(snap.longest, 5);
         expect(snap.lastIncrementedDay, dayKeyFor(now));
@@ -104,13 +104,13 @@ void main() {
           () async {
         final now = DateTime.now();
         await seed(
-          StreakId.focus,
+          StreakId.mindful,
           currentCount: 2,
           longest: 10,
           lastIncrementedDay: dayKeyMinus(now, 1),
         );
 
-        final snap = await repo.markToday(StreakId.focus);
+        final snap = await repo.markToday(StreakId.mindful);
         expect(snap.currentCount, 3);
         expect(snap.longest, 10);
       });
@@ -120,13 +120,13 @@ void main() {
           'but longest is preserved', () async {
         final now = DateTime.now();
         await seed(
-          StreakId.focus,
+          StreakId.mindful,
           currentCount: 7,
           longest: 7,
           lastIncrementedDay: dayKeyMinus(now, 3),
         );
 
-        final snap = await repo.markToday(StreakId.focus);
+        final snap = await repo.markToday(StreakId.mindful);
         expect(snap.currentCount, 1);
         expect(snap.longest, 7);
         expect(snap.lastIncrementedDay, dayKeyFor(now));
@@ -134,9 +134,9 @@ void main() {
 
       test('idempotent on same-day repeated calls (DB does not duplicate row)',
           () async {
-        await repo.markToday(StreakId.focus);
-        await repo.markToday(StreakId.focus);
-        await repo.markToday(StreakId.focus);
+        await repo.markToday(StreakId.mindful);
+        await repo.markToday(StreakId.mindful);
+        await repo.markToday(StreakId.mindful);
 
         final all = await db.streaksDao.watchAll().first;
         expect(all, hasLength(1));
@@ -144,13 +144,10 @@ void main() {
       });
 
       test('different StreakIds are tracked independently', () async {
-        await repo.markToday(StreakId.focus);
         await repo.markToday(StreakId.mindful);
 
-        final focus = await repo.current(StreakId.focus);
         final mindful = await repo.current(StreakId.mindful);
         final clean = await repo.current(StreakId.clean);
-        expect(focus.currentCount, 1);
         expect(mindful.currentCount, 1);
         expect(clean.currentCount, 0); // never marked
       });
@@ -159,7 +156,7 @@ void main() {
     group('watch', () {
       test('emits StreakSnapshot.empty when no row exists yet', () async {
         await expectLater(
-          repo.watch(StreakId.focus),
+          repo.watch(StreakId.mindful),
           emits(
             isA<StreakSnapshot>()
                 .having((s) => s.currentCount, 'currentCount', 0)
@@ -172,9 +169,9 @@ void main() {
 
       test('emits an updated snapshot after markToday', () async {
         final emissions = <StreakSnapshot>[];
-        final sub = repo.watch(StreakId.focus).listen(emissions.add);
+        final sub = repo.watch(StreakId.mindful).listen(emissions.add);
 
-        await repo.markToday(StreakId.focus);
+        await repo.markToday(StreakId.mindful);
         await Future<void>.delayed(const Duration(milliseconds: 50));
         await sub.cancel();
 
@@ -185,14 +182,14 @@ void main() {
 
     group('effectiveCurrent (static)', () {
       test('returns 0 when there is no last increment', () {
-        final s = StreakSnapshot.empty(StreakId.focus);
+        final s = StreakSnapshot.empty(StreakId.mindful);
         expect(StreaksRepository.effectiveCurrent(s, DateTime.now()), 0);
       });
 
       test('returns currentCount when last increment is today', () {
         final now = DateTime(2026, 4, 17);
         final s = StreakSnapshot(
-          id: StreakId.focus,
+          id: StreakId.mindful,
           currentCount: 5,
           longest: 10,
           lastIncrementedDay: '2026-04-17',
@@ -203,7 +200,7 @@ void main() {
       test('returns currentCount when last increment is yesterday', () {
         final now = DateTime(2026, 4, 17);
         final s = StreakSnapshot(
-          id: StreakId.focus,
+          id: StreakId.mindful,
           currentCount: 5,
           longest: 10,
           lastIncrementedDay: '2026-04-16',
@@ -215,7 +212,7 @@ void main() {
           () {
         final now = DateTime(2026, 4, 17);
         final s = StreakSnapshot(
-          id: StreakId.focus,
+          id: StreakId.mindful,
           currentCount: 5,
           longest: 10,
           lastIncrementedDay: '2026-04-14',

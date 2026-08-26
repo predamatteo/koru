@@ -7,7 +7,6 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../core/diagnostics/black_box.dart';
 import 'daos/achievements_dao.dart';
-import 'daos/focus_usage_events_dao.dart';
 import 'daos/intention_usage_events_dao.dart';
 import 'daos/journal_dao.dart';
 import 'daos/restricted_access_events_dao.dart';
@@ -22,13 +21,11 @@ import 'tables/blocking_configs_table.dart';
 import 'tables/browser_configs_table.dart';
 import 'tables/emergency_unblocks_table.dart';
 import 'tables/favorites_table.dart';
-import 'tables/focus_usage_events.dart';
 import 'tables/geo_addresses_table.dart';
 import 'tables/intention_usage_events.dart';
 import 'tables/intervals_table.dart';
 import 'tables/launcher_folders_table.dart';
 import 'tables/mood_check_ins_table.dart';
-import 'tables/pomodoro_sessions_table.dart';
 import 'tables/profiles_table.dart';
 import 'tables/restricted_access_events.dart';
 import 'tables/settings_table.dart';
@@ -47,7 +44,7 @@ part 'app_database.g.dart';
 /// si è già rivelato stale, vedi review ARCH-10). Provenienza, per gruppi:
 /// la maggior parte da app_blocker (con ritocchi su profiles/
 /// app_profile_relations), 3 da ascent (restricted_access_events /
-/// intention_usage_events / focus_usage_events), più le aggiunte Koru per il
+/// intention_usage_events), più le aggiunte Koru per il
 /// launcher e la Phase 2 (favorites, launcher_folders, achievements_unlocked,
 /// streak_state, journal_entries).
 ///
@@ -95,7 +92,6 @@ part 'app_database.g.dart';
     BlockSessions,
     BrowserConfigs,
     AdultContentSites,
-    PomodoroSessions,
     BlockingConfigs,
     MoodCheckIns,
     EmergencyUnblocks,
@@ -103,7 +99,6 @@ part 'app_database.g.dart';
     Settings,
     RestrictedAccessEvents,
     IntentionUsageEvents,
-    FocusUsageEvents,
     Favorites,
     LauncherFolders,
     AchievementsUnlocked,
@@ -113,7 +108,6 @@ part 'app_database.g.dart';
   daos: [
     RestrictedAccessEventsDao,
     IntentionUsageEventsDao,
-    FocusUsageEventsDao,
     AchievementsDao,
     StreaksDao,
     JournalDao,
@@ -125,7 +119,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -144,9 +138,6 @@ class AppDatabase extends _$AppDatabase {
           );
           await customStatement(
             'CREATE INDEX idx_iue_pkg_day ON intention_usage_events (package_name, day_start_date)',
-          );
-          await customStatement(
-            'CREATE INDEX idx_fue_day ON focus_usage_events (day_start_date)',
           );
 
           // Seed default blocking overlay config.
@@ -177,6 +168,20 @@ class AppDatabase extends _$AppDatabase {
             // Ordine obbligato: prima la tabella referenziata, poi la FK.
             await m.createTable(launcherFolders);
             await m.addColumn(favorites, favorites.folderId);
+          }
+          if (from < 5) {
+            // v5: rimozione della tab Focus (quick block + pomodoro). Le due
+            // tabelle non hanno più nessun lettore né scrittore — né Drift né
+            // il nativo (che scriveva focus_usage_events via
+            // NativeDatabase.insertFocusUsageEvent, anch'essa rimossa).
+            //
+            // DROP distruttivo e volutamente irreversibile: lo storico delle
+            // sessioni non alimenta più nessuna schermata. `IF EXISTS` perché
+            // pomodoro_sessions è stata dichiarata ma mai usata, quindi su un
+            // DB creato prima potrebbe non essere mai stata materializzata.
+            // L'indice cade insieme alla tabella.
+            await customStatement('DROP TABLE IF EXISTS focus_usage_events');
+            await customStatement('DROP TABLE IF EXISTS pomodoro_sessions');
           }
         },
       );

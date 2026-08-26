@@ -65,7 +65,6 @@ class BlockPolicyEvaluatorDecisionTest {
         limitMinutes: Int = 0,
         isLimitStrict: Boolean = false,
         limitTodayMs: Long = 0L,
-        focusShouldBlock: Boolean = false,
         bypassReasonFor: (String?) -> BlockReason? = noBypass,
         websiteScopeDomain: String? = null,
         sectionWireId: String? = null,
@@ -78,7 +77,6 @@ class BlockPolicyEvaluatorDecisionTest {
         limitMinutes = limitMinutes,
         isLimitStrict = isLimitStrict,
         limitTodayMs = limitTodayMs,
-        focusShouldBlock = focusShouldBlock,
         bypassReasonFor = bypassReasonFor,
         nowWallMs = 1_000L,
         nowMinutesOfDay = 12 * 60,
@@ -88,26 +86,7 @@ class BlockPolicyEvaluatorDecisionTest {
         sectionWireId = sectionWireId,
     )
 
-    // ---- 1) Focus -----------------------------------------------------------
-
-    @Test
-    fun focus_blocksWithFocusReason() {
-        val d = BlockPolicyEvaluator.evaluate(query(focusShouldBlock = true))
-        assertThat(d).isInstanceOf(BlockDecision.Block::class.java)
-        assertThat((d as BlockDecision.Block).reason).isEqualTo(BlockReason.FOCUS_MODE)
-        assertThat(d.profileId).isNull()
-    }
-
-    @Test
-    fun focus_winsOverDailyLimit() {
-        // Focus E cap superato: deve vincere FOCUS_MODE (è il ramo 1).
-        val d = BlockPolicyEvaluator.evaluate(
-            query(focusShouldBlock = true, limitMinutes = 30, limitTodayMs = 60 * 60_000L),
-        )
-        assertThat((d as BlockDecision.Block).reason).isEqualTo(BlockReason.FOCUS_MODE)
-    }
-
-    // ---- 2) Daily limit -----------------------------------------------------
+    // ---- 1) Daily limit -----------------------------------------------------
 
     @Test
     fun limit_capReached_blocks() {
@@ -185,7 +164,7 @@ class BlockPolicyEvaluatorDecisionTest {
         assertThat((d as BlockDecision.Block).reason).isEqualTo(BlockReason.USAGE_LIMIT)
     }
 
-    // ---- 3) Whole-app bypass short-circuit ----------------------------------
+    // ---- 2) Whole-app bypass short-circuit ----------------------------------
 
     @Test
     fun appBypass_belowCap_allowsAndShortCircuitsProfiles() {
@@ -203,7 +182,7 @@ class BlockPolicyEvaluatorDecisionTest {
         assertThat(d).isEqualTo(BlockDecision.Allow)
     }
 
-    // ---- 4) APP match -------------------------------------------------------
+    // ---- 3) APP match -------------------------------------------------------
 
     @Test
     fun app_blocklist_contains_blocks() {
@@ -266,7 +245,7 @@ class BlockPolicyEvaluatorDecisionTest {
         assertThat(d).isEqualTo(BlockDecision.Allow)
     }
 
-    // ---- 5) SECTION match (CR-07) -------------------------------------------
+    // ---- 4) SECTION match (CR-07) -------------------------------------------
 
     @Test
     fun section_noBypass_blocksWithScopedDomain() {
@@ -364,7 +343,7 @@ class BlockPolicyEvaluatorDecisionTest {
         assertThat(d).isEqualTo(BlockDecision.Allow)
     }
 
-    // ---- 6) WEBSITE match ---------------------------------------------------
+    // ---- 5) WEBSITE match ---------------------------------------------------
 
     @Test
     fun website_noBypass_blocksWithScopeDomain() {
@@ -402,7 +381,7 @@ class BlockPolicyEvaluatorDecisionTest {
         assertThat(d).isEqualTo(BlockDecision.Allow)
     }
 
-    // ---- 7) else Allow ------------------------------------------------------
+    // ---- 6) else Allow ------------------------------------------------------
 
     @Test
     fun nothingMatches_allows() {

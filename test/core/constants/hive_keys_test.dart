@@ -9,11 +9,10 @@ void main() {
       HiveKeys.uiStateBox,
       HiveKeys.cacheBox,
       HiveKeys.hiddenAppsBox,
-      HiveKeys.quickTogglesBox,
     };
 
-    test('there are exactly 6 unique box names', () {
-      expect(boxNames.length, 6);
+    test('there are exactly 5 unique box names', () {
+      expect(boxNames.length, 5);
     });
 
     test('all box names start with "koru_" prefix', () {
@@ -32,7 +31,6 @@ void main() {
       expect(HiveKeys.uiStateBox, 'koru_ui_state');
       expect(HiveKeys.cacheBox, 'koru_cache');
       expect(HiveKeys.hiddenAppsBox, 'koru_hidden_apps');
-      expect(HiveKeys.quickTogglesBox, 'koru_quick_toggles');
     });
   });
 
@@ -46,7 +44,6 @@ void main() {
       HiveKeys.intentionsMode,
       HiveKeys.privacyPolicyAccepted,
       HiveKeys.accessibilityPrivacyAccepted,
-      HiveKeys.focusSessionsCount,
       HiveKeys.lastMoodCheckInDay,
       HiveKeys.firstInstallTimestamp,
     };
@@ -54,7 +51,7 @@ void main() {
     test('all settings keys are unique', () {
       // The Set literal above would dedupe; assert the size matches the
       // expected count to defend against future duplicates.
-      expect(settingsKeys.length, 11);
+      expect(settingsKeys.length, 10);
     });
 
     test('STRICT_MODE_ENABLED, MONOCHROME_ENABLED, THEME_MODE literals', () {
@@ -86,7 +83,6 @@ void main() {
       HiveKeys.intentionsMode,
       HiveKeys.privacyPolicyAccepted,
       HiveKeys.accessibilityPrivacyAccepted,
-      HiveKeys.focusSessionsCount,
       HiveKeys.lastMoodCheckInDay,
       HiveKeys.firstInstallTimestamp,
       // onboarding
@@ -108,11 +104,6 @@ void main() {
       // hidden apps
       HiveKeys.hiddenApps,
       HiveKeys.renamedApps,
-      // quick toggles
-      HiveKeys.lastQuickBlockDurationMinutes,
-      HiveKeys.lastPomodoroWorkMinutes,
-      HiveKeys.lastPomodoroBreakMinutes,
-      HiveKeys.lastPomodoroCycles,
     };
 
     test('every key is non-empty', () {
@@ -139,7 +130,6 @@ void main() {
         HiveKeys.uiStateBox,
         HiveKeys.cacheBox,
         HiveKeys.hiddenAppsBox,
-        HiveKeys.quickTogglesBox,
       };
       expect(allKeys.intersection(boxNames), isEmpty);
     });
