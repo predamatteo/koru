@@ -26,28 +26,37 @@ class SettingsScreen extends ConsumerWidget {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 8, 16, kBottomNavClearance),
           children: [
-            _Section(
-              label: 'Appearance',
-              children: [
-                _Tile(
-                  icon: Icons.palette_outlined,
-                  title: 'Font',
-                  onTap: () => context.push('/settings/font'),
-                ),
-                // Impostazione Monochrome rimossa. Per ripristinarla servono
-                // tutti e quattro i pezzi commentati insieme: questa tile, la
-                // locale + l'import in cima al file, `_SwitchTile` in fondo e
-                // il `ColorFiltered` nel builder di `app.dart`.
-                // _SwitchTile(
-                //   icon: Icons.invert_colors_outlined,
-                //   title: 'Monochrome',
-                //   value: monochrome,
-                //   onChanged: (v) =>
-                //       ref.read(monochromeProvider.notifier).setEnabled(v),
-                // ),
-              ],
-            ),
-            const SizedBox(height: 24),
+            // Sezione Appearance rimossa per intero: era rimasta con la sola
+            // tile Font, e anche quella è uscita. Una `_Section` senza figli
+            // disegnerebbe comunque etichetta e scocca vuota, quindi si
+            // commenta il blocco intero — non solo le tile.
+            //
+            // Per ripristinare Font basta questa tile + la rotta
+            // `/settings/font`, che è rimasta registrata in `app_router.dart`
+            // insieme a `font_screen.dart` (il font scelto continua a valere:
+            // qui sparisce solo il modo di cambiarlo).
+            //
+            // Monochrome ha bisogno di quattro pezzi insieme: la tile qui
+            // sotto, la locale + l'import in cima al file, `_SwitchTile` in
+            // fondo e il `ColorFiltered` nel builder di `app.dart`.
+            // _Section(
+            //   label: 'Appearance',
+            //   children: [
+            //     _Tile(
+            //       icon: Icons.palette_outlined,
+            //       title: 'Font',
+            //       onTap: () => context.push('/settings/font'),
+            //     ),
+            //     _SwitchTile(
+            //       icon: Icons.invert_colors_outlined,
+            //       title: 'Monochrome',
+            //       value: monochrome,
+            //       onChanged: (v) =>
+            //           ref.read(monochromeProvider.notifier).setEnabled(v),
+            //     ),
+            //   ],
+            // ),
+            // const SizedBox(height: 24),
             _Section(
               label: 'Launcher',
               children: [
