@@ -153,6 +153,41 @@ void main() {
       expect(blocksTile.height, closeTo(reels.height, 0.5));
     });
 
+    testWidgets('icona, numero ed etichetta sono centrati nella tessera',
+        (tester) async {
+      // La tessera è alta quanto la card reel accanto: con il contenuto in
+      // alto a sinistra restava un vuoto sotto che la faceva leggere come
+      // tagliata. Si verifica il centro, non i singoli padding.
+      final h = _harness(blocksToday: 7, reelsToday: 40);
+      addTearDown(h.dispose);
+
+      await tester.pumpWidget(_wrap(h.container));
+      await _settle(tester);
+
+      final tile = tester.getRect(
+        find.ancestor(
+          of: find.text('Blocks'),
+          matching: find.byType(Container),
+        ).first,
+      );
+      final icon = tester.getRect(find.byIcon(Icons.shield));
+      final value = tester.getRect(find.text('7'));
+      final label = tester.getRect(find.text('Blocks'));
+
+      for (final r in [icon, value, label]) {
+        expect(r.center.dx, closeTo(tile.center.dx, 0.5));
+      }
+      // Centrati anche in verticale: il blocco icona+numero+etichetta sta a
+      // metà altezza, non appoggiato al bordo superiore.
+      final content = Rect.fromLTRB(
+        tile.left,
+        icon.top,
+        tile.right,
+        label.bottom,
+      );
+      expect(content.center.dy, closeTo(tile.center.dy, 1.5));
+    });
+
     testWidgets('il conteggio dei blocchi è quello di oggi', (tester) async {
       final h = _harness(blocksToday: 12);
       addTearDown(h.dispose);

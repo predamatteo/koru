@@ -292,15 +292,21 @@ class _MiniStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Icona, numero ed etichetta centrati sui due assi: la tessera è alta
+    // quanto la card reel accanto (vedi `IntrinsicHeight` in `_TodayStatsRow`),
+    // e allineare in alto a sinistra lasciava un vuoto sotto al testo che
+    // faceva leggere la card come "tagliata".
     final content = Padding(
       padding: const EdgeInsets.fromLTRB(18, 17, 18, 19),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Icon(icon, size: 21, color: iconColor),
           const SizedBox(height: 12),
           Text(
             value,
+            textAlign: TextAlign.center,
             style: const TextStyle(
               fontSize: 33,
               fontWeight: FontWeight.w800,
@@ -312,6 +318,7 @@ class _MiniStat extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             label,
+            textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 13, color: KoruColors.textSecondary),
           ),
         ],
