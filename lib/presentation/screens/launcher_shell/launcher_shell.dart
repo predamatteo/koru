@@ -69,12 +69,6 @@ class LauncherShell extends StatelessWidget {
                       tooltip: l10n.tabProfiles,
                     ),
                     NavigationDestination(
-                      icon: const Icon(Icons.self_improvement_outlined),
-                      selectedIcon: const Icon(Icons.self_improvement),
-                      label: l10n.tabFocus,
-                      tooltip: l10n.tabFocus,
-                    ),
-                    NavigationDestination(
                       icon: const Icon(Icons.insights_outlined),
                       selectedIcon: const Icon(Icons.insights),
                       label: l10n.tabStats,

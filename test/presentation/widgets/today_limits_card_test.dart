@@ -30,7 +30,31 @@ Widget _wrap(ProviderContainer container, Widget child) {
 
 void main() {
   group('TodayLimitsCard', () {
-    testWidgets('renders nothing when no limits are configured',
+    testWidgets('proposes creating one when no limits are configured',
+        (tester) async {
+      // La card NON sparisce piu' a vuoto: i limiti vivono sepolti in
+      // Impostazioni, e nasconderla lasciava la feature invisibile proprio a
+      // chi non l'ha ancora scoperta.
+      final h = buildTestContainer(extra: [
+        appLimitsProvider.overrideWith(
+          () => _StubAppLimitsNotifier(const {}),
+        ),
+        installedAppsProvider.overrideWith((ref) async => const []),
+      ]);
+      addTearDown(h.dispose);
+
+      await tester.pumpWidget(_wrap(h.container, const TodayLimitsCard()));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Card), findsOneWidget);
+      expect(find.text("TODAY'S LIMITS"), findsOneWidget);
+      expect(find.text('No daily limits yet'), findsOneWidget);
+      expect(find.text('Set a limit'), findsOneWidget);
+      // Nessuna progress bar: non c'e' niente da misurare.
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+    });
+
+    testWidgets('the empty state routes to the app-limits screen',
         (tester) async {
       final h = buildTestContainer(extra: [
         appLimitsProvider.overrideWith(
@@ -43,8 +67,33 @@ void main() {
       await tester.pumpWidget(_wrap(h.container, const TodayLimitsCard()));
       await tester.pumpAndSettle();
 
-      expect(find.byType(Card), findsNothing);
-      expect(find.text("TODAY'S LIMITS"), findsNothing);
+      await tester.tap(find.text('Set a limit'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('AppLimitsPage'), findsOneWidget);
+    });
+
+    testWidgets('proposes creating one when every limit points to an '
+        'uninstalled app', (tester) async {
+      // Il cleanup async non e' ancora passato: per l'utente equivale a non
+      // avere limiti, quindi stesso invito invece di un buco.
+      final h = buildTestContainer(extra: [
+        appLimitsProvider.overrideWith(
+          () => _StubAppLimitsNotifier(const {
+            'com.gone': AppLimitConfig(minutes: 30, strict: false),
+          }),
+        ),
+        installedPackageNamesProvider.overrideWith(
+          (ref) async => const {'com.still.here'},
+        ),
+        installedAppsProvider.overrideWith((ref) async => const []),
+      ]);
+      addTearDown(h.dispose);
+
+      await tester.pumpWidget(_wrap(h.container, const TodayLimitsCard()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('No daily limits yet'), findsOneWidget);
     });
 
     testWidgets('renders one row per limited package, sorted desc by minutes',

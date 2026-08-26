@@ -19,7 +19,6 @@ void _invalidateStats(Ref ref) {
   ref.invalidate(blockSkippedCountProvider);
   ref.invalidate(perAppBreakdownProvider);
   ref.invalidate(topIntentionsProvider);
-  ref.invalidate(focusTimeMsProvider);
   ref.invalidate(todayMoodProvider);
   // Contatore reel: cresce mentre Koru è in background (lo incrementa
   // l'AccessibilityService), quindi il rientro nell'app è esattamente il
@@ -136,31 +135,17 @@ Future<void> _cleanupStaleAppLimits(
   }
 }
 
-/// Ascolta lo stream di eventi native (BLOCKING_STATE / IN_APP_SECTION_DETECTED
-/// / QUICK_BLOCK_TICK) e invalida i provider di statistiche così i conteggi
-/// di Blocks e Focus time si aggiornano in real-time anche se il native
-/// scrive direttamente su SQLite (bypassando il tracking di Drift.watch).
+/// Ascolta lo stream di eventi native (BLOCKING_STATE / IN_APP_SECTION_DETECTED)
+/// e invalida i provider di statistiche così il conteggio dei Blocks si
+/// aggiorna in real-time anche se il native scrive direttamente su SQLite
+/// (bypassando il tracking di Drift.watch).
 final blockingEventsRefresherProvider = Provider<void>((ref) {
   final events = ref.watch(platformChannelServiceProvider).events.events();
   final sub = events.listen((event) {
     final shouldInvalidate = (event is BlockingStateEvent && event.isBlocking) ||
         (event is UnknownServiceEvent &&
             event.raw['type'] == 'IN_APP_SECTION_DETECTED');
-    if (shouldInvalidate) {
-      _invalidateStats(ref);
-      return;
-    }
-    // Quick-block / pomodoro session finita → il native ha appena scritto
-    // un focus_usage_event. Invalida le stats per aggiornare focus time.
-    // Edge-driven: ascoltiamo QUICK_BLOCK_FINISHED (emesso una volta a fine
-    // sessione) invece di parsare ogni tick 1Hz — vedi service_event_channel.
-    if (event is QuickBlockFinishedEvent) {
-      developer.log(
-        'Focus session finished, invalidating stats',
-        name: 'EventsRefresher',
-      );
-      _invalidateStats(ref);
-    }
+    if (shouldInvalidate) _invalidateStats(ref);
   });
   ref.onDispose(sub.cancel);
 });

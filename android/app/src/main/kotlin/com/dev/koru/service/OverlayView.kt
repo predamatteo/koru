@@ -661,10 +661,9 @@ private fun CountdownButton(
 
 /// Icona lineare per-reason (vector drawable in res/drawable). Mirror, dove
 /// esistono, delle icone outline dell'anteprima Flutter (block_overlay_screen):
-/// spa / self_improvement / layers_clear / language; hourglass e alarm coprono i
-/// due reason solo-nativi (USAGE_LIMIT, BYPASS_EXPIRED).
+/// spa / layers_clear / language; hourglass e alarm coprono i due reason
+/// solo-nativi (USAGE_LIMIT, BYPASS_EXPIRED).
 private fun reasonIcon(reason: BlockReason): Int = when (reason) {
-    BlockReason.FOCUS_MODE -> R.drawable.ic_block_self_improvement
     BlockReason.SECTION_BLOCKED -> R.drawable.ic_block_layers_clear
     BlockReason.WEBSITE_BLOCKED -> R.drawable.ic_block_language
     BlockReason.APP_BLOCKED -> R.drawable.ic_block_spa
@@ -674,7 +673,6 @@ private fun reasonIcon(reason: BlockReason): Int = when (reason) {
 
 private fun reasonTitle(reason: BlockReason, config: OverlayConfig): String =
     config.messageTitle ?: when (reason) {
-        BlockReason.FOCUS_MODE -> "Focus mode is active"
         BlockReason.SECTION_BLOCKED -> "Section paused"
         BlockReason.WEBSITE_BLOCKED -> "Website paused"
         BlockReason.APP_BLOCKED -> "Take a breath"

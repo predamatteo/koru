@@ -59,11 +59,11 @@ void main() {
       // Emit un achievement via il controller del provider.
       final controller = h.container.read(newUnlocksControllerProvider);
       controller.emit(const Achievement(
-        id: 'focus_first',
-        title: 'First focus',
-        description: 'Complete your first focus session.',
-        iconKey: 'self_improvement_outlined',
-        category: AchievementCategory.focus,
+        id: 'setup_first_profile',
+        title: 'First profile',
+        description: 'Create your first blocking profile.',
+        iconKey: 'add_circle_outline',
+        category: AchievementCategory.setup,
         target: 1,
       ));
 
@@ -76,7 +76,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
 
       // Lo snackbar deve mostrare il titolo dell'achievement.
-      expect(find.text('First focus'), findsOneWidget);
+      expect(find.text('First profile'), findsOneWidget);
       expect(find.text('Achievement unlocked'), findsOneWidget);
     });
 

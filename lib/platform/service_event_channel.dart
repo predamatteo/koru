@@ -18,17 +18,6 @@ sealed class KoruServiceEvent {
           profileId: json['profileId'] as int? ?? -1,
           profileTitle: json['profileTitle'] as String? ?? '',
         );
-      case 'QUICK_BLOCK_TICK':
-        return QuickBlockTickEvent(
-          remainingMs: (json['remainingMs'] as num?)?.toInt() ?? 0,
-          totalMs: (json['totalMs'] as num?)?.toInt() ?? 0,
-          isPomodoroBreak: json['isPomodoroBreak'] as bool? ?? false,
-          isActive: json['isActive'] as bool? ?? false,
-          currentCycle: json['currentCycle'] as int? ?? 0,
-          totalCycles: json['totalCycles'] as int? ?? 0,
-        );
-      case 'QUICK_BLOCK_FINISHED':
-        return const QuickBlockFinishedEvent();
       case 'PACKAGE_CHANGED':
         return PackageChangedEvent(
           kind: json['kind'] as String? ?? '',
@@ -61,33 +50,6 @@ class BlockingStateEvent extends KoruServiceEvent {
   final String packageName;
   final int profileId;
   final String profileTitle;
-}
-
-class QuickBlockTickEvent extends KoruServiceEvent {
-  const QuickBlockTickEvent({
-    required this.remainingMs,
-    required this.totalMs,
-    required this.isPomodoroBreak,
-    required this.isActive,
-    required this.currentCycle,
-    required this.totalCycles,
-  });
-  final int remainingMs;
-  final int totalMs;
-  final bool isPomodoroBreak;
-  final bool isActive;
-  final int currentCycle;
-  final int totalCycles;
-}
-
-/// Emesso UNA VOLTA dal native sulla transizione fine-sessione focus/pomodoro
-/// (isActive true→false). Sostituisce il parsing del tick 1Hz per i consumer
-/// che reagiscono solo alla FINE (stats refresh, focus streak, achievements):
-/// prima svegliavano l'isolate ogni secondo per tutta la sessione solo per
-/// intercettare quest'unico edge. Il tick [QuickBlockTickEvent] resta per il
-/// display del countdown in /focus ([quickBlockTickProvider]).
-class QuickBlockFinishedEvent extends KoruServiceEvent {
-  const QuickBlockFinishedEvent();
 }
 
 class PackageChangedEvent extends KoruServiceEvent {
@@ -126,7 +88,7 @@ class ServiceEventChannel {
   // del canale: l'engine Flutter (e il lato Kotlin con un unico `eventSink`)
   // tiene UN solo listener per canale, e impostare un nuovo listener cancella
   // il precedente. Con più subscriber (blocking refresher, package refresher,
-  // achievement evaluator, quick-block tick) ognuno che chiamava
+  // achievement evaluator) ognuno che chiamava
   // `receiveBroadcastStream()` clobberava la registrazione degli altri: solo
   // l'ultimo riceveva gli eventi e lo smontaggio di uno chiudeva il canale per
   // tutti → eventi persi/duplicati e "reload casuali" dei provider.

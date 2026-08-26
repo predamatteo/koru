@@ -38,8 +38,6 @@ class ProfileModel {
       ProfileType.hasType(typeCombinations, ProfileType.time);
   bool get hasUsageLimit =>
       ProfileType.hasType(typeCombinations, ProfileType.usageLimit);
-  bool get isQuickBlock =>
-      ProfileType.hasType(typeCombinations, ProfileType.quickBlock);
 
   String get modeLabel =>
       blockingMode == BlockingMode.allowlist ? 'Allowlist' : 'Blocklist';

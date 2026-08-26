@@ -16,8 +16,8 @@ import 'widgets/accessibility_health_banner.dart';
 import 'widgets/reels_scrolled_card.dart';
 import 'widgets/today_limits_card.dart';
 
-/// Tab Home dell'app: dashboard con greeting, profilo attivo ora, quick stats,
-/// shortcuts a Focus/Profiles/All apps.
+/// Tab Home dell'app: dashboard con greeting, profilo attivo ora (tap →
+/// Profiles), blocchi di oggi, reel scrollati e limiti giornalieri.
 ///
 /// Questa NON è la home del launcher (clock+favoriti) — quella vive a
 /// `/launcher` ed è visibile solo quando Koru è lanciato come default launcher.
@@ -40,7 +40,6 @@ class HomeScreen extends ConsumerWidget {
     final allProfiles = ref.watch(profilesProvider).valueOrNull ?? [];
     final activeProfiles = ref.watch(activeProfilesProvider).valueOrNull ?? [];
     final blocksToday = ref.watch(blockTriggeredCountProvider).valueOrNull ?? 0;
-    final focusMs = ref.watch(focusTimeMsProvider).valueOrNull ?? 0;
 
     // Pre-warm della lista app così quando l'utente entra in
     // "Select apps" dentro un profilo la risposta native è già cached.
@@ -64,7 +63,7 @@ class HomeScreen extends ConsumerWidget {
               activeProfiles: activeProfiles,
             ),
             const SizedBox(height: 12),
-            _TodayStatsRow(blocksToday: blocksToday, focusMs: focusMs),
+            _TodayStatsRow(blocksToday: blocksToday),
             const SizedBox(height: 12),
             // Si auto-nasconde a zero reel: sopra ai limiti perché è un dato
             // che l'utente non ha configurato e quindi non si aspetta —
@@ -73,8 +72,6 @@ class HomeScreen extends ConsumerWidget {
             // lascia un buco doppio fra le due card vicine.
             const ReelsScrolledCard(),
             const TodayLimitsCard(),
-            const SizedBox(height: 12),
-            const _QuickActionsCard(),
           ],
         ),
       ),
@@ -236,41 +233,17 @@ class _ActiveProfileCard extends StatelessWidget {
 }
 
 class _TodayStatsRow extends StatelessWidget {
-  const _TodayStatsRow({required this.blocksToday, required this.focusMs});
+  const _TodayStatsRow({required this.blocksToday});
 
   final int blocksToday;
-  final int focusMs;
-
-  String _fmtMs(int ms) {
-    final s = ms ~/ 1000;
-    final h = s ~/ 3600;
-    final m = (s % 3600) ~/ 60;
-    if (h == 0) return '${m}m';
-    return '${h}h ${m}m';
-  }
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _MiniStat(
-            icon: Icons.shield,
-            iconColor: KoruColors.primary,
-            label: 'Blocks',
-            value: '$blocksToday',
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _MiniStat(
-            icon: Icons.self_improvement,
-            iconColor: KoruColors.tertiary,
-            label: 'Focus',
-            value: _fmtMs(focusMs),
-          ),
-        ),
-      ],
+    return _MiniStat(
+      icon: Icons.shield,
+      iconColor: KoruColors.primary,
+      label: 'Blocks',
+      value: '$blocksToday',
     );
   }
 }
@@ -317,115 +290,6 @@ class _MiniStat extends StatelessWidget {
             style: const TextStyle(fontSize: 13, color: KoruColors.textSecondary),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _QuickActionsCard extends StatelessWidget {
-  const _QuickActionsCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(4, 2, 4, 9),
-          child: Text(
-            'QUICK ACTIONS',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.4,
-              color: KoruColors.textSecondary,
-            ),
-          ),
-        ),
-        Container(
-          decoration: BoxDecoration(
-            color: KoruColors.surface,
-            borderRadius: BorderRadius.circular(26),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            children: [
-              _QuickActionRow(
-                icon: Icons.timer_outlined,
-                label: 'Quick block',
-                onTap: () => GoRouter.of(context).go('/focus/quick'),
-              ),
-              const _QuickActionDivider(),
-              _QuickActionRow(
-                icon: Icons.hourglass_top,
-                label: 'Pomodoro',
-                onTap: () => GoRouter.of(context).go('/focus/pomodoro'),
-              ),
-              const _QuickActionDivider(),
-              _QuickActionRow(
-                icon: Icons.shield_outlined,
-                label: 'Manage profiles',
-                onTap: () => GoRouter.of(context).go('/profiles'),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _QuickActionDivider extends StatelessWidget {
-  const _QuickActionDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 1,
-      margin: const EdgeInsets.symmetric(horizontal: 18),
-      color: KoruColors.outline,
-    );
-  }
-}
-
-class _QuickActionRow extends StatelessWidget {
-  const _QuickActionRow({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-        child: Row(
-          children: [
-            Icon(icon, size: 22, color: KoruColors.primary),
-            const SizedBox(width: 15),
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w600,
-                  color: KoruColors.textPrimary,
-                ),
-              ),
-            ),
-            const Icon(
-              Icons.chevron_right,
-              size: 20,
-              color: KoruColors.textSecondary,
-            ),
-          ],
-        ),
       ),
     );
   }

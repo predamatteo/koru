@@ -11,7 +11,6 @@ class HiveKeys {
   static const String uiStateBox = 'koru_ui_state';
   static const String cacheBox = 'koru_cache';
   static const String hiddenAppsBox = 'koru_hidden_apps';
-  static const String quickTogglesBox = 'koru_quick_toggles';
 
   // ─── settings box keys ─────────────────────────────────────────────────────
   static const String strictModeEnabled = 'STRICT_MODE_ENABLED';
@@ -22,7 +21,6 @@ class HiveKeys {
   static const String intentionsMode = 'INTENTIONS_MODE';
   static const String privacyPolicyAccepted = 'PRIVACY_POLICY_ACCEPTED';
   static const String accessibilityPrivacyAccepted = 'ACCESSIBILITY_PRIVACY_ACCEPTED';
-  static const String focusSessionsCount = 'FOCUS_SESSIONS_COUNT';
   static const String lastMoodCheckInDay = 'LAST_MOOD_CHECK_IN_DAY';
   static const String firstInstallTimestamp = 'FIRST_INSTALL_TIMESTAMP';
 
@@ -69,10 +67,4 @@ class HiveKeys {
   /// `Set<String>` di package nascosti dal drawer (feature Phase 2 da MP).
   static const String hiddenApps = 'HIDDEN_APPS';
   static const String renamedApps = 'RENAMED_APPS';
-
-  // ─── quick_toggles box keys ────────────────────────────────────────────────
-  static const String lastQuickBlockDurationMinutes = 'LAST_QUICK_BLOCK_DURATION_MINUTES';
-  static const String lastPomodoroWorkMinutes = 'LAST_POMODORO_WORK_MINUTES';
-  static const String lastPomodoroBreakMinutes = 'LAST_POMODORO_BREAK_MINUTES';
-  static const String lastPomodoroCycles = 'LAST_POMODORO_CYCLES';
 }

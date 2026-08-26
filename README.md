@@ -82,14 +82,6 @@ Samsung Internet, Opera, Edge, DuckDuckGo, Vivaldi, Kiwi, Mi Browser…) by
 reading the URL bar through the Accessibility service. No DNS hack, no VPN,
 no certificate install — and it works inside private/incognito tabs.
 
-### Focus tools
-
-- **Quick Block** — pick a duration, lock everything that isn't on a
-  short whitelist.
-- **Pomodoro** — 25/5 (or custom) work-break cycles backed by a
-  persistent foreground service, so the timer survives task-killers,
-  app swipes, and Doze.
-
 ### Strict Mode (the "I really mean it" switch)
 
 For when you know you'll try to wriggle out:
@@ -111,7 +103,6 @@ A weekly view of:
 
 - **Interventions** — how many times an overlay caught you
 - **Skipped blocks** — how many times you bypassed (and why)
-- **Focus minutes** — time spent inside Pomodoro / Quick Block
 - **Top distractions** and **top intentions** of the week
 - An optional **daily mood check-in**
 
@@ -153,8 +144,8 @@ android/app/src/main/kotlin/com/dev/koru/   Kotlin side
 
 The blocking engine is event-driven (Accessibility events), with a
 foreground-service polling loop as a backup for OEMs that throttle
-Accessibility. Cross-process state (Quick Block, usage counters,
-notification filters) is stored in file-backed stores readable from the
+Accessibility. Cross-process state (usage counters, notification
+filters) is stored in file-backed stores readable from the
 `:accessibility` process, so the overlay can decide what to do without
 waking the main Flutter isolate.
 

@@ -74,6 +74,12 @@ object BlockingContract {
     const val RESTRICTION_TYPE_SECTION = 1
     const val RESTRICTION_TYPE_WEBSITE = 2
     const val RESTRICTION_TYPE_USAGE_LIMIT = 3
+
+    /// LEGACY: nessuno lo scrive più da quando la tab Focus (quick block +
+    /// pomodoro) è stata rimossa. Resta dichiarato perché le righe storiche in
+    /// `restricted_access_events` portano ancora il valore 4 e il codice non va
+    /// riassegnato: rinumerare farebbe leggere quelle righe come un'altra
+    /// restrizione.
     const val RESTRICTION_TYPE_FOCUS_MODE = 4
     const val RESTRICTION_TYPE_BYPASS_EXPIRED = 5
 }

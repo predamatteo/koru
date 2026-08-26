@@ -8,13 +8,16 @@ import '../../../providers/reel_counts_provider.dart';
 /// Card "reel scrollati oggi": totale grande, ripartizione per sorgente e
 /// confronto con la media dei giorni precedenti.
 ///
-/// ## Perché sparisce a zero
-/// La card non si mostra finché non c'è almeno un reel. Un "0" permanente in
-/// cima alla dashboard sarebbe rumore per chi non usa Reels o Shorts, e
-/// soprattutto sarebbe indistinguibile dal caso in cui la detection si è rotta
-/// dopo un aggiornamento di Instagram — cioè trasformerebbe un guasto in un
-/// complimento. Stessa scelta della pill sul widget e di [TodayLimitsCard], che
-/// si nasconde senza limiti impostati.
+/// ## Perché c'è SEMPRE
+/// La card è un elemento fisso della dashboard: non sparisce a zero e non ha
+/// un interruttore che la spenga (il contatore è sempre attivo). Nasconderla
+/// quando non c'è niente da mostrare rendeva la feature indistinguibile da una
+/// rotta — il primo giorno non vedevi nulla e non avevi modo di sapere se
+/// stesse contando, e un aggiornamento di Instagram che spacca la detection
+/// diventava silenziosamente un complimento. Un posto fisso in dashboard è
+/// anche il modo più economico per accorgersi che si è rotta: se resta a zero
+/// per giorni in cui hai scrollato, il colpevole è nei view-id (vedi
+/// `REELS_PAGER` / `SHORTS_PAGER` in `res/raw/*_view_ids.json`).
 ///
 /// ## Cosa NON dice
 /// Nessun giudizio, nessuna soglia rossa: il numero è il messaggio. È lo stesso
@@ -25,24 +28,13 @@ class ReelsScrolledCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Spenta la feature, sparisce la card: chi non vuole essere contato non
-    // deve trovarsi un promemoria della cosa in cima alla dashboard.
-    // `?? true` come l'interruttore in Impostazioni — il default nativo è
-    // acceso, e far lampeggiare la card ad ogni resume sarebbe peggio.
-    final enabled = ref.watch(reelCounterEnabledProvider).valueOrNull ?? true;
-    if (!enabled) return const SizedBox.shrink();
-
-    // `valueOrNull` e non uno spinner: la card compare quando il dato c'è,
+    // `valueOrNull` con fallback a vuoto e non uno spinner: la card occupa
+    // sempre lo stesso posto e il numero si riempie quando il dato arriva,
     // senza far saltare il layout della dashboard a ogni resume (stessa
-    // postura degli altri contatori della home).
-    //
-    // A zero la card RESTA. Nasconderla era la scelta di partenza ("uno 0
-    // fisso non dice niente"), ma rende la feature indistinguibile da una
-    // rotta: il primo giorno non vedi nulla e non hai modo di sapere se stia
-    // contando. E in un'app che misura quanto scrolli, "oggi nessuno" non è
-    // un vuoto — è il risultato migliore possibile.
-    final counts = ref.watch(reelCountsTodayProvider).valueOrNull;
-    if (counts == null) return const SizedBox.shrink();
+    // postura degli altri contatori della home). Al primissimo frame mostra
+    // "0 reels / None today", che è anche la verità più probabile.
+    final counts =
+        ref.watch(reelCountsTodayProvider).valueOrNull ?? ReelCounts.empty;
 
     final average = ref.watch(reelWeeklyAverageProvider);
     final sources = ReelSource.values
@@ -51,9 +43,8 @@ class ReelsScrolledCard extends ConsumerWidget {
 
     return Container(
       // Il margine inferiore appartiene alla card e non alla lista che la
-      // ospita: la home la include incondizionatamente, quindi uno spaziatore
-      // esterno resterebbe anche nei (molti) giorni in cui la card non c'è,
-      // lasciando un vuoto doppio fra le due card vicine.
+      // ospita, per non dover riaggiustare gli spaziatori della home ogni
+      // volta che l'ordine delle card cambia.
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: KoruColors.surfaceContainer,

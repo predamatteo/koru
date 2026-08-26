@@ -113,7 +113,6 @@ class DbSchemaContractTest {
             ctx, "com.foo", eventType = 0, restrictionType = 0, timestamp = now,
         )
         NativeDatabase.insertIntentionEvent(ctx, "com.foo", "Work", now)
-        NativeDatabase.insertFocusUsageEvent(ctx, durationMs = 1_000L, timestamp = now)
 
         // Verifica che gli INSERT siano davvero atterrati nelle colonne giuste
         // (non solo "non ha lanciato"): un INSERT con colonna sbagliata
@@ -121,7 +120,6 @@ class DbSchemaContractTest {
         countRows(DbSchema.BlockSessions.TABLE).let { assertThat(it).isEqualTo(1) }
         countRows(DbSchema.RestrictedAccessEvents.TABLE).let { assertThat(it).isEqualTo(1) }
         countRows(DbSchema.IntentionUsageEvents.TABLE).let { assertThat(it).isEqualTo(1) }
-        countRows(DbSchema.FocusUsageEvents.TABLE).let { assertThat(it).isEqualTo(1) }
     }
 
     // ─── helpers ─────────────────────────────────────────────────────────────
@@ -154,7 +152,6 @@ class DbSchemaContractTest {
             db.execSQL(createTable(DbSchema.BlockSessions.TABLE, blockSessionColumns()))
             db.execSQL(createTable(DbSchema.RestrictedAccessEvents.TABLE, raeColumns()))
             db.execSQL(createTable(DbSchema.IntentionUsageEvents.TABLE, iueColumns()))
-            db.execSQL(createTable(DbSchema.FocusUsageEvents.TABLE, fueColumns()))
         } finally {
             db.close()
         }
@@ -200,9 +197,5 @@ class DbSchemaContractTest {
 
     private fun iueColumns() = with(DbSchema.IntentionUsageEvents) {
         listOf(OCCURRED_AT, DAY_START_DATE, PACKAGE_NAME, INTENTION_NAME)
-    }
-
-    private fun fueColumns() = with(DbSchema.FocusUsageEvents) {
-        listOf(OCCURRED_AT, DAY_START_DATE, DURATION_IN_MS)
     }
 }

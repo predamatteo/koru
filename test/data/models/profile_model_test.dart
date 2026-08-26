@@ -198,21 +198,6 @@ void main() {
         isFalse,
       );
     });
-
-    test('isQuickBlock reflects ProfileType.quickBlock bit', () {
-      expect(
-        ProfileModel(
-          data: buildProfile(typeCombinations: ProfileType.quickBlock),
-        ).isQuickBlock,
-        isTrue,
-      );
-      expect(
-        ProfileModel(
-          data: buildProfile(typeCombinations: ProfileType.time),
-        ).isQuickBlock,
-        isFalse,
-      );
-    });
   });
 
   group('modeLabel', () {

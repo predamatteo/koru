@@ -137,11 +137,4 @@ object DbSchema {
         const val PACKAGE_NAME = "package_name"
         const val INTENTION_NAME = "intention_name"
     }
-
-    object FocusUsageEvents {
-        const val TABLE = "focus_usage_events"
-        const val OCCURRED_AT = "occurred_at"
-        const val DAY_START_DATE = "day_start_date"
-        const val DURATION_IN_MS = "duration_in_ms"
-    }
 }

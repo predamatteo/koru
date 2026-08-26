@@ -43,7 +43,6 @@ void main() {
           HiveKeys.uiStateBox,
           HiveKeys.cacheBox,
           HiveKeys.hiddenAppsBox,
-          HiveKeys.quickTogglesBox,
         ]) {
           await service.put(box, 'probe', 1);
           expect(service.get<int>(box, 'probe'), 1);

@@ -6,7 +6,7 @@ import '../../../../data/repositories/streaks_repository.dart';
 import '../../../../domain/entities/streak.dart';
 import '../../../providers/achievements_provider.dart';
 
-/// Row orizzontale con chip streak (🔥 Focus / 🌿 Mindful / ✨ Clean).
+/// Row orizzontale con chip streak (🌿 Mindful / ✨ Clean).
 /// Mostra `current` effettivo (azzerato se persa) e indicatore sottile
 /// quando "at risk" (streak mantenuta solo se marchi oggi).
 class StreaksRow extends ConsumerWidget {
@@ -16,14 +16,6 @@ class StreaksRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Row(
       children: [
-        Expanded(
-          child: _StreakChip(
-            id: StreakId.focus,
-            emoji: '🔥',
-            label: 'Focus',
-          ),
-        ),
-        const SizedBox(width: 8),
         Expanded(
           child: _StreakChip(
             id: StreakId.mindful,

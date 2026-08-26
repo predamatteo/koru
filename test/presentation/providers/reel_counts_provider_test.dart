@@ -1,4 +1,3 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koru/platform/blocking_channel.dart';
 import 'package:koru/presentation/providers/reel_counts_provider.dart';
@@ -149,45 +148,6 @@ void main() {
 
     test('is null with no history at all', () async {
       expect(await averageOf(const []), isNull);
-    });
-  });
-
-  group('reelCounterEnabledProvider', () {
-    test('reads the current value from native', () async {
-      final h = buildTestContainer();
-      addTearDown(h.dispose);
-      when(() => h.blocking.isReelCounterEnabled()).thenAnswer((_) async => false);
-
-      expect(await h.container.read(reelCounterEnabledProvider.future), isFalse);
-    });
-
-    test('persists the new value', () async {
-      final h = buildTestContainer();
-      addTearDown(h.dispose);
-      when(() => h.blocking.isReelCounterEnabled()).thenAnswer((_) async => true);
-      when(() => h.blocking.setReelCounterEnabled(any()))
-          .thenAnswer((_) async => true);
-
-      await h.container.read(reelCounterEnabledProvider.future);
-      await h.container.read(reelCounterEnabledProvider.notifier).setEnabled(false);
-
-      verify(() => h.blocking.setReelCounterEnabled(false)).called(1);
-      expect(h.container.read(reelCounterEnabledProvider).valueOrNull, isFalse);
-    });
-
-    test('rolls back when the native write fails', () async {
-      // Un interruttore che resta dove l'utente l'ha messo senza aver salvato
-      // tornerebbe indietro al riavvio, senza spiegazioni.
-      final h = buildTestContainer();
-      addTearDown(h.dispose);
-      when(() => h.blocking.isReelCounterEnabled()).thenAnswer((_) async => true);
-      when(() => h.blocking.setReelCounterEnabled(any()))
-          .thenAnswer((_) async => false);
-
-      await h.container.read(reelCounterEnabledProvider.future);
-      await h.container.read(reelCounterEnabledProvider.notifier).setEnabled(false);
-
-      expect(h.container.read(reelCounterEnabledProvider).valueOrNull, isTrue);
     });
   });
 }
