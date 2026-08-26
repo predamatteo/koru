@@ -2,7 +2,6 @@ package com.dev.koru.channels.blocking
 
 import android.app.Activity
 import android.content.Context
-import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -12,6 +11,7 @@ import android.graphics.drawable.Drawable
 import android.util.Log
 import com.dev.koru.BuildConfig
 import com.dev.koru.diagnostics.BlackBox
+import com.dev.koru.inventory.PackageInventory
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
@@ -119,7 +119,7 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
                 // di `InstalledAppInfo` lato Dart; il provider Dart
                 // fa il merge.
                 result.success(
-                    resolveLauncherPackages(activity.packageManager).toList()
+                    resolveLauncherPackages(activity.applicationContext).toList()
                 )
             }
             "getAppIcon" -> {
@@ -162,8 +162,8 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
         // dominante dei secondi del cold start) — così nei black-box si vede
         // quale ramo va attaccato per primo (es. cache disco label-only).
         val tQuery = System.currentTimeMillis()
-        val launcherPkgs = resolveLauncherPackages(pm)
-        val apps = launchableApplications(pm)
+        val launcherPkgs = resolveLauncherPackages(context)
+        val apps = launchableApplications(context)
         val queryMs = System.currentTimeMillis() - tQuery
         val tLabel = System.currentTimeMillis()
         val result = apps
@@ -198,53 +198,39 @@ internal object AppInventoryCallHandler : BlockingCallHandler {
     /// le tastiere/IME — non di sistema ma non apribili → comparivano nel drawer
     /// senza fare nulla al tap. Il gating per membership nel set launchable li
     /// esclude tutti, senza denylist hardcoded da mantenere.
-    private fun launchableApplications(pm: PackageManager): List<ApplicationInfo> {
-        val launchablePkgs = resolveLaunchablePackages(pm)
-        return pm.getInstalledApplications(PackageManager.GET_META_DATA)
+    private fun launchableApplications(context: Context): List<ApplicationInfo> {
+        val launchablePkgs = resolveLaunchablePackages(context)
+        return context.packageManager
+            .getInstalledApplications(PackageManager.GET_META_DATA)
             .filter { launchablePkgs.contains(it.packageName) }
     }
 
-    /// Set di package che dichiarano almeno un'activity con
-    /// CATEGORY_HOME (cioè sono launcher). Calcolato una volta per
-    /// chiamata a `getInstalledApps` e poi usato come lookup O(1) per
-    /// taggare il flag `isLauncher` su ciascuna app — il Dart-side
-    /// filtra il drawer per nascondere altri launcher (Nova, Pixel
-    /// Launcher, ecc.) che altrimenti creavano confusione.
-    private fun resolveLauncherPackages(pm: PackageManager): Set<String> {
-        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-        return try {
-            pm.queryIntentActivities(intent, 0)
-                .mapNotNull { it.activityInfo?.packageName }
-                .toSet()
-        } catch (_: Exception) {
-            emptySet()
-        }
-    }
+    /// Set di package che dichiarano almeno un'activity con CATEGORY_HOME
+    /// (cioè sono launcher), usato come lookup O(1) per taggare il flag
+    /// `isLauncher` su ciascuna app — il Dart-side filtra il drawer per
+    /// nascondere altri launcher (Nova, Pixel Launcher, ecc.) che altrimenti
+    /// creavano confusione.
+    ///
+    /// Delega a [PackageInventory]: la stessa `queryIntentActivities` era
+    /// duplicata qui, nel widget e in `OpenAppsTracker`, ognuna con la sua
+    /// cache (o senza).
+    private fun resolveLauncherPackages(context: Context): Set<String> =
+        PackageInventory.homePackages(context)
 
-    /// Set di package che dichiarano almeno un'activity con
-    /// CATEGORY_LAUNCHER, cioè sono apribili dal drawer (hanno un'icona
-    /// "front-door"). È il criterio di visibilità del drawer Koru: tutto
-    /// ciò che non è in questo set — componenti Play come SafetyCore /
-    /// Key Verifier, IME/tastiere, servizi di background — non è apribile
-    /// e va nascosto. Speculare a [resolveLauncherPackages] ma con
-    /// CATEGORY_LAUNCHER al posto di CATEGORY_HOME.
-    private fun resolveLaunchablePackages(pm: PackageManager): Set<String> {
-        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        return try {
-            pm.queryIntentActivities(intent, 0)
-                .mapNotNull { it.activityInfo?.packageName }
-                .toSet()
-        } catch (_: Exception) {
-            emptySet()
-        }
-    }
+    /// Set di package apribili dal drawer (activity MAIN + CATEGORY_LAUNCHER,
+    /// cioè con un'icona "front-door"). È il criterio di visibilità del drawer
+    /// Koru: tutto ciò che non è qui — componenti Play come SafetyCore / Key
+    /// Verifier, IME/tastiere, servizi di background — non è apribile e va
+    /// nascosto. Speculare a [resolveLauncherPackages].
+    private fun resolveLaunchablePackages(context: Context): Set<String> =
+        PackageInventory.launchablePackages(context)
 
     /// Variante "cheap" usata dal lifecycle observer Dart per il diff-based
     /// refresh: ritorna solo i package names launchable, senza label e senza
     /// icone. Stesso set di [getInstalledApps] per COSTRUZIONE (entrambi via
     /// [launchableApplications]) — vedi nota di parità lì.
     private fun getInstalledPackageNames(context: Context): List<String> {
-        return launchableApplications(context.packageManager)
+        return launchableApplications(context)
             .map { it.packageName }
             .sorted()
     }
