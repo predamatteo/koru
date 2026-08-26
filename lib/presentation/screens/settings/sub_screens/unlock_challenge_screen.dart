@@ -39,20 +39,14 @@ class UnlockChallengeScreen extends ConsumerWidget {
                 children: [
                   Row(
                     children: [
-                      Icon(
-                        level.isActive
-                            ? Icons.psychology_outlined
-                            : Icons.bolt_outlined,
-                        color: level.isActive
-                            ? KoruColors.primary
-                            : KoruColors.textSecondary,
+                      const Icon(
+                        Icons.psychology_outlined,
+                        color: KoruColors.primary,
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          level.isActive
-                              ? 'Attrito attivo: ${level.label.toLowerCase()}'
-                              : 'Nessun attrito',
+                          'Attrito attivo: ${level.label.toLowerCase()}',
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                       ),
@@ -65,7 +59,10 @@ class UnlockChallengeScreen extends ConsumerWidget {
                     'simboli e di ricostruirla in una griglia piena di sosia.\n\n'
                     'Serve a mettere qualche secondo di lucidità fra '
                     'l\'impulso e il tap. Attivare una protezione resta '
-                    'sempre immediato.',
+                    'sempre immediato.\n\n'
+                    'Si sceglie quanto attrito, non se averlo: una sfida che '
+                    'si spegne con un tap è proprio il tap che vorresti '
+                    'fermare.',
                     style: TextStyle(
                       color: KoruColors.textSecondary,
                       fontSize: 13,
@@ -88,9 +85,7 @@ class UnlockChallengeScreen extends ConsumerWidget {
               ),
             const SizedBox(height: 28),
             OutlinedButton.icon(
-              onPressed: level.isActive
-                  ? () => _preview(context, ref)
-                  : null,
+              onPressed: () => _preview(context, ref),
               icon: const Icon(Icons.play_arrow_outlined),
               label: const Text('Provala adesso'),
               style: OutlinedButton.styleFrom(
@@ -100,12 +95,10 @@ class UnlockChallengeScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 10),
-            Text(
-              level.isActive
-                  ? 'Una prova a vuoto: non disattiva niente.'
-                  : 'Scegli un livello per poterla provare.',
+            const Text(
+              'Una prova a vuoto: non disattiva niente.',
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 color: KoruColors.textSecondary,
                 fontSize: 12,
               ),

@@ -6,8 +6,6 @@ import 'active_profile_provider.dart';
 import 'app_limits_provider.dart';
 import 'app_list_provider.dart';
 import 'favorites_provider.dart';
-import 'journal_provider.dart';
-import 'mood_provider.dart';
 import 'notification_filter_provider.dart';
 import 'preset_provider.dart';
 import 'profile_providers.dart';
@@ -28,8 +26,10 @@ import 'statistics_providers.dart';
 ///     senza notificare l'app.
 ///
 /// NON sono inclusi di proposito:
-///   - lo STATO UI ([selectedPeriodProvider], [appSearchQueryProvider]):
-///     resettarli su un pull cancellerebbe la scelta dell'utente;
+///   - lo STATO UI ([selectedPeriodProvider], [selectedDayOffsetProvider],
+///     [appSearchQueryProvider]): resettarli su un pull cancellerebbe la
+///     scelta dell'utente — nel caso del giorno navigato, lo riporterebbe a
+///     oggi proprio mentre sta guardando martedì;
 ///   - le IMPOSTAZIONI puramente locali (monochrome, font, personalizzazione
 ///     app, scorciatoie launcher): nessun writer esterno le tocca, quindi
 ///     non si "freezano" mai e invalidarle causerebbe solo flicker;
@@ -74,11 +74,6 @@ final List<ProviderOrFamily> _koruDataProviders = [
   // ── Filtro notifiche & accesso (file JSON nativo + permesso di sistema) ─
   notificationFilterProvider,
   notificationAccessGrantedProvider,
-
-  // ── Mood & journal (SQLite) ────────────────────────────────────────────
-  todayMoodProvider,
-  todayJournalProvider,
-  allJournalsProvider,
 
   // ── Achievement & streak (SQLite) ──────────────────────────────────────
   streakSnapshotProvider,
@@ -130,8 +125,7 @@ final List<ProviderOrFamily> _statsScreenProviders = [
   blockTriggeredCountProvider,
   blockSkippedCountProvider,
 
-  // ── Mood, streak, achievement (SQLite) ─────────────────────────────────
-  todayMoodProvider,
+  // ── Streak & achievement (SQLite) ──────────────────────────────────────
   streakSnapshotProvider,
   unlockedAchievementIdsProvider,
   achievementStatsProvider,

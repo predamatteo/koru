@@ -305,7 +305,12 @@ object NativeDatabase {
 
     /**
      * Log di una intention scelta dall'utente sull'overlay di blocco.
-     * Alimenta il "Top intentions" nelle statistiche.
+     *
+     * **Senza chiamanti in produzione**: il prompt "Why are you opening it?" è
+     * stato tolto dall'overlay, quindi oggi questa scrive solo dal test del
+     * contratto di schema. Resta perché la tabella `intention_usage_events`
+     * resta nello schema Drift — toglierla sarebbe una migrazione — ed è quel
+     * test a garantire che le colonne lette dal nativo esistano ancora.
      */
     fun insertIntentionEvent(
         context: Context,

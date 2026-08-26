@@ -89,4 +89,70 @@ void main() {
       expect(range.to - range.from, greaterThan(0));
     });
   });
+
+  /// La navigazione ai giorni passati passa tutta da `shiftDays`: se questa
+  /// finestra scivola, ogni card delle Statistiche mente insieme.
+  group('StatisticsPeriod con shiftDays', () {
+    test('today: shiftDays=1 è ieri, from e to sullo stesso giorno', () {
+      final range = StatisticsPeriod.today.currentRange(
+        now: DateTime(2026, 4, 17, 14, 30),
+        shiftDays: 1,
+      );
+      expect(range.from, '2026-04-16');
+      expect(range.to, '2026-04-16');
+    });
+
+    test('today: shiftDays scavalca il confine di mese', () {
+      final range = StatisticsPeriod.today.currentRange(
+        now: DateTime(2026, 5, 2),
+        shiftDays: 4,
+      );
+      expect(range.from, '2026-04-28');
+      expect(range.to, '2026-04-28');
+    });
+
+    test('week: shiftDays=7 è la settimana prima, 7 giorni inclusivi', () {
+      final range = StatisticsPeriod.week.currentRange(
+        now: DateTime(2026, 4, 17),
+        shiftDays: 7,
+      );
+      expect(range.from, '2026-04-04');
+      expect(range.to, '2026-04-10');
+    });
+
+    test('un giorno passato è contato per intero, non fino a quest ora', () {
+      // È la ragione per cui `to` non può restare "adesso": ieri è chiuso, e
+      // fermarsi alle 14:30 di ieri taglierebbe via mezza giornata.
+      final now = DateTime(2026, 4, 17, 14, 30);
+      final range = StatisticsPeriod.today.currentRangeMs(
+        now: now,
+        shiftDays: 1,
+      );
+      expect(range.from, DateTime(2026, 4, 16).millisecondsSinceEpoch);
+      expect(range.to, DateTime(2026, 4, 17).millisecondsSinceEpoch);
+      expect(range.to - range.from, const Duration(days: 1).inMilliseconds);
+    });
+
+    test('shiftDays=0 lascia il comportamento di prima (to = adesso)', () {
+      final now = DateTime(2026, 4, 17, 14, 30);
+      for (final period in StatisticsPeriod.values) {
+        expect(
+          period.currentRangeMs(now: now, shiftDays: 0),
+          period.currentRangeMs(now: now),
+          reason: period.name,
+        );
+        expect(
+          period.currentRange(now: now, shiftDays: 0),
+          period.currentRange(now: now),
+          reason: period.name,
+        );
+      }
+    });
+
+    test('maxDaysBack resta dentro la ritenzione di UsageStatsManager', () {
+      // ~7-10 giorni di eventi: oltre, lo screen-time tornerebbe zero senza
+      // modo di distinguerlo da "quel giorno non hai usato niente".
+      expect(StatisticsPeriod.maxDaysBack, 6);
+    });
+  });
 }

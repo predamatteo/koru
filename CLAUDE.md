@@ -213,7 +213,7 @@ thing to keep straight**:
 | entry point | `requireUnlockChallenge` | `requireStrictUnlockChallenge` |
 | source | `LocalUnlockChallengeSource` | `StrictModeUnlockChallengeSource` |
 | who picks the sequence | Dart | **Kotlin** (`StrictUnlockChallengeStore`) |
-| optional? | yes — `UnlockChallengeLevel`, off by default | **no** |
+| optional? | **no** — `UnlockChallengeLevel` sizes it (`gentle`/`standard`/`stubborn`), it can't be switched off | **no** |
 | on success | just proceed | a one-shot `UnblockTokenStore` token |
 
 The strict-mode half exists in Kotlin for one reason: `setStrictModeOptions`

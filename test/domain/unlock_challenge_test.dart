@@ -19,7 +19,9 @@ void main() {
     return null;
   }
 
-  final activeLevels = UnlockChallengeLevel.values.where((l) => l.isActive);
+  // Ogni livello è "attivo": il livello `off` non esiste più (la sfida si
+  // alleggerisce, non si spegne).
+  final activeLevels = UnlockChallengeLevel.values;
 
   group('kGlyphFamilies', () {
     test('nessun id di glifo appartiene a due famiglie', () {
@@ -91,28 +93,28 @@ void main() {
       );
     });
 
-    test('il fallback è un livello attivo, non off', () {
-      expect(UnlockChallengeLevel.fallback.isActive, isTrue);
+    test('non esiste un livello che spegne la sfida', () {
+      // Il senso della feature è che nel momento dell'impulso NON ci sia un
+      // "nessuno" a un tap di distanza: ogni livello genera un puzzle vero.
+      for (final level in UnlockChallengeLevel.values) {
+        expect(level.sequenceLength, greaterThan(0), reason: level.name);
+        expect(level.gridSize, greaterThan(0), reason: level.name);
+        expect(level.memorizeDuration, greaterThan(Duration.zero),
+            reason: level.name);
+      }
     });
 
-    test('"off" scelto esplicitamente viene rispettato', () {
-      // Il degrado va SOLO verso la direzione protettiva: chi ha spento
-      // l'attrito di proposito non deve ritrovarselo acceso al riavvio.
+    test('il vecchio "off" salvato degrada al fallback', () {
+      // Chi aveva spento l'attrito prima che il livello sparisse se lo
+      // ritrova al fallback: è il punto della rimozione, non un incidente.
       expect(
-        UnlockChallengeLevel.fromStorage(UnlockChallengeLevel.off.storageValue),
-        UnlockChallengeLevel.off,
+        UnlockChallengeLevel.fromStorage('off'),
+        UnlockChallengeLevel.fallback,
       );
     });
   });
 
   group('generateUnlockChallenge', () {
-    test('rifiuta il livello off', () {
-      expect(
-        () => generateUnlockChallenge(UnlockChallengeLevel.off),
-        throwsStateError,
-      );
-    });
-
     // 60 semi diversi per livello: la generazione è randomizzata e alcune
     // proprietà (i sosia round-robin, il riempimento) dipendono da quali
     // famiglie escono per prime.

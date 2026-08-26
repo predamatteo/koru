@@ -3,7 +3,6 @@ package com.dev.koru.service
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,8 +16,6 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,13 +64,6 @@ internal val KoruPrimary = Color(0xFF5C8262)
 internal val KoruTextPrimary = Color(0xFFE8E6E1)
 internal val KoruTextSecondary = Color(0xFF8B8F8A)
 
-private val mindfulIntentions = listOf(
-    "Reply to a message",
-    "Check one thing",
-    "Just scroll",
-    "Not sure",
-)
-
 /// State machine del CountdownButton. Sostituisce le magic string
 /// "animating" / "paused" / "finished" usate in precedenza — i refactor
 /// silenziosi di una stringa erano un magnete per bug.
@@ -81,7 +71,6 @@ private enum class CountdownPhase { ANIMATING, PAUSED, FINISHED }
 
 @Composable
 internal fun BlockedScreen(
-    packageName: String,
     appLabel: String,
     profileTitle: String,
     reason: BlockReason,
@@ -89,7 +78,6 @@ internal fun BlockedScreen(
     profileEmoji: String?,
     bypassPolicy: BypassPolicy,
     launching: Boolean,
-    onIntentionChosen: (String) -> Unit,
     onGoHome: (forceHome: Boolean) -> Unit,
     onBypass: (durationMs: Long) -> Unit,
     onChallengeRequired: () -> Unit = {},
@@ -99,7 +87,6 @@ internal fun BlockedScreen(
     val gradientTop = Color(config.backgroundColorArgb)
     val gradient = Brush.verticalGradient(listOf(gradientTop, KoruBgBase))
 
-    var chosenIntention by remember { mutableStateOf<String?>(null) }
     // Step "duration picker": quando true, sostituisce il contenuto
     // principale con il picker di durata per il bypass.
     var showDurationPicker by remember { mutableStateOf(false) }
@@ -247,17 +234,6 @@ internal fun BlockedScreen(
                 letterSpacing = 0.1.sp,
                 textAlign = TextAlign.Center,
             )
-
-            if (reason == BlockReason.APP_BLOCKED || reason == BlockReason.SECTION_BLOCKED) {
-                Spacer(Modifier.height(32.dp))
-                MindfulIntentionPrompt(
-                    selected = chosenIntention,
-                    onSelected = {
-                        chosenIntention = it
-                        onIntentionChosen(it)
-                    },
-                )
-            }
 
             Spacer(Modifier.weight(1f))
 
@@ -539,53 +515,6 @@ private fun ExtensionPromptSection(
             )
         }
     }
-}
-
-@Composable
-private fun MindfulIntentionPrompt(
-    selected: String?,
-    onSelected: (String) -> Unit,
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            "Why are you opening it?",
-            color = KoruTextPrimary.copy(alpha = 0.80f),
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-        )
-        Spacer(Modifier.height(12.dp))
-        // Manual wrap su 2 righe (2 + 2) per evitare dipendenza da FlowRow
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            mindfulIntentions.take(2).forEach { intention ->
-                IntentionChip(intention, selected == intention) { onSelected(intention) }
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            mindfulIntentions.drop(2).forEach { intention ->
-                IntentionChip(intention, selected == intention) { onSelected(intention) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun IntentionChip(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        label = { Text(label, fontSize = 13.sp) },
-        colors = FilterChipDefaults.filterChipColors(
-            containerColor = KoruSurface.copy(alpha = 0.6f),
-            selectedContainerColor = KoruPrimary.copy(alpha = 0.35f),
-            labelColor = KoruTextPrimary.copy(alpha = 0.85f),
-            selectedLabelColor = KoruTextPrimary,
-        ),
-    )
 }
 
 /// Indicatore non-actionable mostrato al posto del CountdownButton quando

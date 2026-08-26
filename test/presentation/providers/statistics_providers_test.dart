@@ -6,12 +6,12 @@ import 'package:koru/presentation/providers/statistics_providers.dart';
 import '../../_helpers/provider_test_utils.dart';
 
 /// Helper: today's day-key matching StatisticsPeriod.currentRange formatting.
-String _todayKey() {
-  final d = DateTime.now();
-  return '${d.year.toString().padLeft(4, '0')}-'
-      '${d.month.toString().padLeft(2, '0')}-'
-      '${d.day.toString().padLeft(2, '0')}';
-}
+String _todayKey() => _dayKey(DateTime.now());
+
+String _dayKey(DateTime d) =>
+    '${d.year.toString().padLeft(4, '0')}-'
+    '${d.month.toString().padLeft(2, '0')}-'
+    '${d.day.toString().padLeft(2, '0')}';
 
 void main() {
   group('selectedPeriodProvider', () {
@@ -34,6 +34,79 @@ void main() {
       expect(
         h.container.read(selectedPeriodProvider),
         StatisticsPeriod.week,
+      );
+    });
+  });
+
+  /// Il ritorno a "oggi" ha tre pezzi di stato da azzerare insieme: se ne
+  /// resta anche uno solo, la schermata si riapre su una finestra che l'utente
+  /// non ha chiesto — ed è esattamente il bug per cui questa funzione esiste.
+  group('resetStatsView', () {
+    test('riporta periodo, giorno del grafico e navigazione a oggi', () {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      h.container.read(selectedPeriodProvider.notifier).state =
+          StatisticsPeriod.week;
+      h.container.read(selectedStatsDayProvider.notifier).state = 123456;
+      h.container.read(selectedDayOffsetProvider.notifier).state = 4;
+
+      resetStatsView(h.container.read);
+
+      expect(h.container.read(selectedPeriodProvider), StatisticsPeriod.today);
+      expect(h.container.read(selectedStatsDayProvider), isNull);
+      expect(h.container.read(selectedDayOffsetProvider), 0);
+    });
+
+    test('su una vista già a oggi non cambia niente', () {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      resetStatsView(h.container.read);
+
+      expect(h.container.read(selectedPeriodProvider), StatisticsPeriod.today);
+      expect(h.container.read(selectedStatsDayProvider), isNull);
+      expect(h.container.read(selectedDayOffsetProvider), 0);
+    });
+  });
+
+  group('selectedDayOffsetProvider', () {
+    test('parte da oggi', () {
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      expect(h.container.read(selectedDayOffsetProvider), 0);
+    });
+
+    test('sposta anche i conteggi di blocco sul giorno navigato', () async {
+      // Non basta che lo screen time segua la navigazione: se i blocchi
+      // restassero fermi a oggi, la stessa schermata mostrerebbe due giorni
+      // diversi nello stesso momento.
+      final h = buildTestContainer();
+      addTearDown(h.dispose);
+
+      final now = DateTime.now();
+      final threeDaysAgo = DateTime(now.year, now.month, now.day - 3);
+      await h.db.restrictedAccessEventsDao.insertEvent(
+        RestrictedAccessEventsCompanion.insert(
+          occurredAt: threeDaysAgo.millisecondsSinceEpoch,
+          dayStartDate: _dayKey(threeDaysAgo),
+          packageName: 'com.x',
+          eventType: 0,
+          restrictionType: 0,
+        ),
+      );
+
+      expect(
+        await h.container.read(blockTriggeredCountProvider.stream).first,
+        0,
+        reason: 'oggi non ha eventi',
+      );
+
+      h.container.read(selectedDayOffsetProvider.notifier).state = 3;
+      expect(
+        await h.container.read(blockTriggeredCountProvider.stream).first,
+        1,
       );
     });
   });
