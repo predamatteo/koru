@@ -9,13 +9,10 @@ import '../../../core/constants/layout.dart';
 import '../../../domain/entities/statistics_period.dart';
 import '../../../platform/blocking_channel.dart';
 import '../../providers/app_list_provider.dart';
-import '../../providers/mood_provider.dart';
 import '../../providers/screen_time_provider.dart';
 import '../../providers/statistics_providers.dart';
 import '../../widgets/koru_pull_to_refresh.dart';
-import '../mood/mood_check_in_sheet.dart';
 import 'widgets/achievements_grid.dart';
-import 'widgets/streaks_row.dart';
 
 class StatisticsScreen extends ConsumerWidget {
   const StatisticsScreen({super.key});
@@ -48,11 +45,9 @@ class StatisticsScreen extends ConsumerWidget {
             const SizedBox(height: 16),
             const _InterventionsCard(),
             const SizedBox(height: 16),
-            const StreaksRow(),
-            const SizedBox(height: 16),
             const AchievementsGrid(),
             const SizedBox(height: 16),
-            const _MoodJournalCard(),
+            const _JournalCard(),
           ],
         ),
       ),
@@ -694,76 +689,59 @@ class _DonutPainter extends CustomPainter {
       old.total != total || old.respected != respected;
 }
 
-// ─── Mood + Journal quick access card ───────────────────────────────────────
+// ─── Journal quick access card ──────────────────────────────────────────────
 
-class _MoodJournalCard extends ConsumerWidget {
-  const _MoodJournalCard();
-
-  String _emojiFor(int mood) => switch (mood) {
-    1 => '😫',
-    2 => '😔',
-    3 => '😐',
-    4 => '🙂',
-    _ => '😊',
-  };
+/// Accesso al journal. Era la metà destra di una card che iniziava con il
+/// mood check-in ("How do you feel?"): quello è stato tolto, questo è rimasto
+/// perché `/stats/journal` non ha altri ingressi — sparita la card, la
+/// schermata diventava irraggiungibile senza che niente lo segnalasse.
+class _JournalCard extends StatelessWidget {
+  const _JournalCard();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final todayMood = ref.watch(todayMoodProvider).valueOrNull;
-    final has = todayMood != null;
+  Widget build(BuildContext context) {
     return _Card(
-      child: Row(
-        children: [
-          Text(
-            has ? _emojiFor(todayMood.mood) : '🌱',
-            style: const TextStyle(fontSize: 32),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  has ? 'You checked in today' : 'How do you feel?',
-                  style: const TextStyle(
-                    color: KoruColors.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  has
-                      ? (todayMood.note ?? 'Tap to update')
-                      : 'Pause for 10 seconds and notice.',
-                  style: const TextStyle(
-                    color: KoruColors.textSecondary,
-                    fontSize: 12,
-                    height: 1.3,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          TextButton(
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              foregroundColor: KoruColors.primary,
-            ),
-            onPressed: () => MoodCheckInSheet.show(context),
-            child: Text(has ? 'Update' : 'Check in'),
-          ),
-          IconButton(
-            tooltip: 'Journal',
-            icon: const Icon(
+      child: InkWell(
+        onTap: () => context.push('/stats/journal'),
+        child: Row(
+          children: [
+            const Icon(
               Icons.edit_note_outlined,
-              color: KoruColors.textSecondary,
+              size: 26,
+              color: KoruColors.primary,
             ),
-            onPressed: () => context.push('/stats/journal'),
-          ),
-        ],
+            const SizedBox(width: 16),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Journal',
+                    style: TextStyle(
+                      color: KoruColors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'One entry a day, whenever you feel like it.',
+                    style: TextStyle(
+                      color: KoruColors.textSecondary,
+                      fontSize: 12,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: KoruColors.textSecondary.withAlpha(140),
+            ),
+          ],
+        ),
       ),
     );
   }
