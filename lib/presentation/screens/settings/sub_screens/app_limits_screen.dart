@@ -57,6 +57,9 @@ class _AppLimitsScreenState extends ConsumerState<AppLimitsScreen> {
   Widget build(BuildContext context) {
     final limitsAsync = ref.watch(appLimitsProvider);
     final appsAsync = ref.watch(installedAppsProvider);
+    // La LISTA arriva da [pickerAppsProvider] (niente altri launcher, niente
+    // Koru); `appsAsync` resta solo per gli stati loading/error.
+    final apps = ref.watch(pickerAppsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -90,7 +93,7 @@ class _AppLimitsScreenState extends ConsumerState<AppLimitsScreen> {
         child: appsAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => Center(child: Text('$e')),
-          data: (apps) {
+          data: (_) {
             final limits =
                 limitsAsync.valueOrNull ?? const <String, AppLimitConfig>{};
             final q = _query.trim().toLowerCase();

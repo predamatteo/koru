@@ -111,13 +111,24 @@ class UsageWidgetModelTest {
     // ── Totale ─────────────────────────────────────────────────────────────
 
     @Test
-    fun totalSumsEveryPackageIncludingSystemOnes() {
-        // Parità con periodScreenTimeMsProvider, che NON filtra: se il widget
-        // filtrasse, mostrerebbe un totale diverso dalla schermata Statistiche.
-        val total = UsageWidgetModel.totalMs(
-            mapOf(IG to min(40), KORU to min(20), SYSTEMUI to min(5)),
-        )
-        assertThat(total).isEqualTo(min(65))
+    fun totalSumsExactlyTheMapItIsGiven() {
+        // `totalMs` non seleziona: somma quello che riceve. La selezione la fa
+        // `UsageWidgetDataSource` con lo stesso predicato del canale delle
+        // statistiche, quindi la parità widget↔app regge a monte.
+        val total = UsageWidgetModel.totalMs(mapOf(IG to min(40), WA to min(20)))
+        assertThat(total).isEqualTo(min(60))
+    }
+
+    @Test
+    fun totalMatchesTheSumOfTheRowsWhenFedTheFilteredMap() {
+        // L'invariante che la vecchia "divergenza intenzionale 1" sacrificava:
+        // il totale del widget era grezzo (systemui + Koru inclusi) mentre le
+        // righe erano filtrate, quindi le righe non sommavano al totale. Ora la
+        // mappa arriva già filtrata e le due cose coincidono.
+        val filtered = mapOf(IG to min(40), WA to min(20))
+        val out = rows(usage = filtered, limits = emptyMap())
+
+        assertThat(out.sumOf { it.usedMs }).isEqualTo(UsageWidgetModel.totalMs(filtered))
     }
 
     // ── Ordinamento ────────────────────────────────────────────────────────

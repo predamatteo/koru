@@ -74,6 +74,10 @@ class _AppPersonalizationScreenState
   @override
   Widget build(BuildContext context) {
     final appsAsync = ref.watch(installedAppsProvider);
+    // [pickerAppsProvider] e non [visibleAppsProvider]: quello scarta le app
+    // NASCOSTE, e questa è proprio la schermata da cui si ri-mostrano — usarlo
+    // renderebbe una app nascosta irrecuperabile.
+    final apps = ref.watch(pickerAppsProvider);
     final personalization = ref.watch(appPersonalizationProvider);
 
     return Scaffold(
@@ -139,7 +143,7 @@ class _AppPersonalizationScreenState
         child: appsAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => Center(child: Text('$e')),
-          data: (apps) {
+          data: (_) {
             final q = _query.trim().toLowerCase();
             final filtered = q.isEmpty
                 ? apps

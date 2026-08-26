@@ -18,23 +18,25 @@ package com.dev.koru.widget
  *    (`lib/presentation/screens/home/widgets/today_limits_card.dart`):
  *    `used >= cap` → danger, `used/cap > 0.8` → sand, altrimenti sage.
  *
- * ── DUE DIVERGENZE INTENZIONALI (non regressioni: leggile prima di "aggiustarle") ──
+ * ── TOTALE E RIGHE, STESSO INSIEME ──
  *
- * 1. **Totale grezzo, righe filtrate.** Il totale è la somma di TUTTI i package
- *    con uso > 0, esattamente come `periodScreenTimeMsProvider` (che non filtra
- *    nulla). Le righe invece escludono launcher/systemui/Koru: sono voci su cui
- *    l'utente non può agire e, con Koru impostato come launcher di default,
- *    occuperebbero stabilmente il primo posto. Conseguenza da conoscere: su un
- *    device in cui Koru È il launcher, il totale include il tempo di Koru e può
- *    quindi essere molto più grande della somma delle righe visibili.
- *    Il compromesso è deliberato — è lo stesso schema del widget Digital
- *    Wellbeing (totale + top app che non sommano al totale) — e privilegia
- *    l'invariante più importante: **il numero del widget e quello della
- *    schermata Statistiche devono coincidere**. Filtrare anche il totale
- *    renderebbe il widget internamente coerente ma in disaccordo con l'app,
- *    cioè un bug che l'utente non può diagnosticare.
+ * [totalMs] somma esattamente i package da cui escono le righe. Non è
+ * un'ovvietà: fino al filtro condiviso il totale era volutamente GREZZO —
+ * includeva systemui, gli altri launcher e Koru — perché doveva coincidere con
+ * `periodScreenTimeMsProvider`, che a sua volta non filtrava nulla. Su un
+ * device in cui Koru è il launcher, il totale poteva così essere molto più
+ * grande della somma delle righe visibili.
  *
- * 2. **Contatore NON guardato.** L'enforcement del cap usa
+ * Ora il filtro è UNO SOLO ([com.dev.koru.inventory.PackageVisibility]) e sta a
+ * monte di entrambe le sponde: `UsageStatsCallHandler` per il Dart,
+ * `UsageWidgetDataSource` per il widget. L'invariante importante — **il numero
+ * del widget e quello della schermata Statistiche devono coincidere** — regge
+ * quindi per costruzione, e in più il widget torna coerente con sé stesso.
+ * Chi filtra una sola delle due sponde riapre la divergenza.
+ *
+ * ── UNA DIVERGENZA INTENZIONALE (non una regressione: leggila prima di "aggiustarla") ──
+ *
+ * **Contatore NON guardato.** L'enforcement del cap usa
  *    `UsageCounter.guardedTodayForegroundMs` (con la guardia monotonica
  *    anti clock-backward di `UsageGuardStore`); il widget usa la variante
  *    grezza. Non è una svista: la card `TodayLimitsCard` in-app fa lo stesso,
@@ -189,8 +191,12 @@ object UsageWidgetModel {
         return limited + plain
     }
 
-    /// Somma grezza del tempo di foreground di oggi — parità con
-    /// `periodScreenTimeMsProvider` lato Flutter, che NON filtra alcun package.
+    /// Somma del tempo di foreground di oggi sulla mappa RICEVUTA: la
+    /// selezione dei package è responsabilità del chiamante
+    /// (`UsageWidgetDataSource`, che applica lo stesso predicato del canale
+    /// delle statistiche). Passare qui una mappa non filtrata rimette il
+    /// widget in disaccordo con la schermata Statistiche — vedi la nota di
+    /// classe.
     fun totalMs(usageMs: Map<String, Long>): Long =
         usageMs.values.sumOf { it.coerceAtLeast(0L) }
 

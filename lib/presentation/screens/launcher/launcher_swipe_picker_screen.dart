@@ -67,6 +67,9 @@ class _LauncherSwipePickerScreenState
     // Stale-while-revalidate: come AllAppsScreen / shortcut picker, la lista
     // cached resta visibile durante i reload (post-resume / PACKAGE_*).
     final appsAsync = ref.watch(installedAppsProvider);
+    // La LISTA arriva da [pickerAppsProvider] (niente altri launcher, niente
+    // Koru); `appsAsync` resta solo per gli stati loading/error.
+    final apps = ref.watch(pickerAppsProvider);
     final current = ref.watch(swipeActionForProvider(widget.direction));
     final distracting = ref.watch(distractingAppsProvider);
 
@@ -101,7 +104,7 @@ class _LauncherSwipePickerScreenState
         skipLoadingOnReload: true,
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('$e')),
-        data: (apps) {
+        data: (_) {
           final q = _query.trim().toLowerCase();
           // Escludi le app distraenti, poi applica la query di ricerca.
           final filtered = apps

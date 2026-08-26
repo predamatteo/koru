@@ -56,6 +56,9 @@ class _NotificationFilterScreenState
     final grantedAsync = ref.watch(notificationAccessGrantedProvider);
     final granted = grantedAsync.valueOrNull ?? false;
     final appsAsync = ref.watch(installedAppsProvider);
+    // La LISTA arriva da [pickerAppsProvider] (niente altri launcher, niente
+    // Koru); `appsAsync` resta solo per gli stati loading/error.
+    final apps = ref.watch(pickerAppsProvider);
     final silencedAsync = ref.watch(notificationFilterProvider);
     final silenced = silencedAsync.valueOrNull ?? const <String>{};
 
@@ -104,7 +107,7 @@ class _NotificationFilterScreenState
         child: appsAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => Center(child: Text('$e')),
-          data: (apps) {
+          data: (_) {
             final q = _query.trim().toLowerCase();
             final filtered = q.isEmpty
                 ? apps

@@ -195,10 +195,10 @@ final visibleAppsProvider = Provider<List<InstalledAppInfo>>((ref) {
   final personalization = ref.watch(appPersonalizationProvider);
   final launcherPkgs =
       ref.watch(launcherPackagesProvider).valueOrNull ?? const <String>{};
-  // Hardcoded: il package di Koru stessa. Volutamente NON filtrato dal drawer
-  // anche se compare nel set launcher (l'utente vuole poterla aprire da lì se
-  // ha cambiato launcher di default).
-  const koruPkg = 'com.dev.koru';
+  // Volutamente NON filtrata dal drawer anche se compare nel set launcher
+  // (l'utente vuole poterla aprire da lì se ha cambiato launcher di default).
+  // È l'unica differenza di criterio rispetto a [pickerAppsProvider].
+  const koruPkg = kKoruPackage;
 
   // Applica rename: produciamo nuovi InstalledAppInfo con label custom (stesso
   // packageName) così tutto il resto della UI usa la label corretta.
@@ -219,6 +219,41 @@ final visibleAppsProvider = Provider<List<InstalledAppInfo>>((ref) {
     (a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()),
   );
   return withNames;
+});
+
+/// Package di Koru stessa. Compare in [launcherPackagesProvider] (è un
+/// launcher a tutti gli effetti) ma il drawer la tiene di proposito, quindi il
+/// filtro non può essere solo "non è un launcher".
+const kKoruPackage = 'com.dev.koru';
+
+/// Lista per i **picker** di app: scegli-app-da-bloccare, limiti giornalieri,
+/// filtro notifiche, shortcut e swipe del launcher.
+///
+/// Stesso criterio delle statistiche: fuori i non-apribili (già esclusi dal
+/// nativo), fuori gli altri launcher e fuori Koru stessa. Prima ogni picker
+/// leggeva [installedAppsProvider] grezzo e applicava solo la query di
+/// ricerca, quindi mostrava Nova/Pixel Launcher e Koru — voci su cui l'utente
+/// non ha motivo di agire (bloccare Koru con Koru non vuol dire niente, e
+/// tappare un altro launcher non porta da nessuna parte).
+///
+/// Differenza deliberata da [visibleAppsProvider]: quello è il drawer, e ha
+/// due regole in più che qui NON valgono — tiene Koru (chi ha cambiato
+/// launcher deve poterla riaprire) e applica rename/hidden della
+/// personalizzazione. Un picker che nascondesse le app "hidden" renderebbe
+/// impossibile impostarci sopra un limite.
+///
+/// Stale-while-revalidate come il drawer: `.valueOrNull` con fallback sulla
+/// cache disco, mai `unwrapPrevious()`.
+final pickerAppsProvider = Provider<List<InstalledAppInfo>>((ref) {
+  final List<InstalledAppInfo> apps =
+      ref.watch(installedAppsProvider).valueOrNull ??
+          ref.watch(cachedAppInventoryProvider);
+  final launcherPkgs =
+      ref.watch(launcherPackagesProvider).valueOrNull ?? const <String>{};
+  return apps
+      .where((a) =>
+          a.packageName != kKoruPackage && !launcherPkgs.contains(a.packageName))
+      .toList(growable: false);
 });
 
 /// App filtrate per la query corrente. Query vuota → ritorna la lista base già
