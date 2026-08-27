@@ -8,6 +8,7 @@ import '../../../../core/di/providers.dart';
 import '../../../../data/database/app_database.dart';
 import '../../../../domain/entities/overlay_config.dart';
 import '../../../../platform/blocking_channel.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../providers/achievements_provider.dart';
 import '../../../providers/app_list_provider.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
@@ -132,10 +133,12 @@ class _OverlayDesignerScreenState extends ConsumerState<OverlayDesignerScreen> {
       ),
     );
 
+    final l10n = AppLocalizations.of(context);
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('Overlay · ${app.label}'),
-        actions: [TextButton(onPressed: _save, child: const Text('Save'))],
+        title: Text(l10n.overlayDesignerTitle(app.label)),
+        actions: [TextButton(onPressed: _save, child: Text(l10n.commonSave))],
       ),
       body: KoruPullToRefresh(
         child: ListView(
@@ -157,7 +160,7 @@ class _OverlayDesignerScreenState extends ConsumerState<OverlayDesignerScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            _SectionHeader('Background'),
+            _SectionHeader(l10n.overlayDesignerBackground),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -192,27 +195,29 @@ class _OverlayDesignerScreenState extends ConsumerState<OverlayDesignerScreen> {
                   .toList(growable: false),
             ),
             const SizedBox(height: 24),
-            _SectionHeader('Message'),
+            _SectionHeader(l10n.overlayDesignerMessage),
             const SizedBox(height: 8),
             TextField(
               controller: _titleController,
-              decoration: const InputDecoration(labelText: 'Title (optional)'),
+              decoration: InputDecoration(
+                labelText: l10n.overlayDesignerTitleField,
+              ),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: _subtitleController,
-              decoration: const InputDecoration(
-                labelText: 'Subtitle (optional)',
+              decoration: InputDecoration(
+                labelText: l10n.overlayDesignerSubtitleField,
               ),
             ),
             const SizedBox(height: 24),
-            _SectionHeader('Countdown'),
+            _SectionHeader(l10n.overlayDesignerCountdown),
             Slider(
               value: _config.countdownSeconds.toDouble(),
               min: 3,
               max: 30,
               divisions: 27,
-              label: '${_config.countdownSeconds}s',
+              label: l10n.overlayDesignerSeconds(_config.countdownSeconds),
               onChanged: (v) => setState(
                 () => _config = _config.copyWith(countdownSeconds: v.round()),
               ),
@@ -223,10 +228,8 @@ class _OverlayDesignerScreenState extends ConsumerState<OverlayDesignerScreen> {
               onChanged: (v) => setState(
                 () => _config = _config.copyWith(allowBypassAfterCountdown: v),
               ),
-              title: const Text('Allow opening after countdown'),
-              subtitle: const Text(
-                'Show "Open anyway" button when countdown completes.',
-              ),
+              title: Text(l10n.overlayDesignerAllowOpen),
+              subtitle: Text(l10n.overlayDesignerAllowOpenSubtitle),
             ),
           ],
         ),

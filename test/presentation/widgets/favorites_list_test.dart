@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:koru/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koru/domain/entities/launcher_item.dart';
@@ -25,7 +26,10 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: h.container,
-          child: const MaterialApp(
+          child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
             home: Scaffold(body: FavoritesList(phase: LauncherPhase.night)),
           ),
         ),
@@ -58,7 +62,10 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: h.container,
-          child: const MaterialApp(
+          child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
             home: Scaffold(
               body: SizedBox(
                 height: 400,
@@ -93,7 +100,10 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: h.container,
-          child: const MaterialApp(
+          child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
             home: Scaffold(
               body: SizedBox(
                 height: 200,
@@ -134,7 +144,10 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: h.container,
-          child: const MaterialApp(
+          child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
             home: Scaffold(
               body: SizedBox(height: 400, child: FavoritesList(phase: LauncherPhase.night)),
             ),
@@ -178,7 +191,10 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: h.container,
-          child: const MaterialApp(
+          child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
             home: Scaffold(
               body: SizedBox(
                 height: 200,

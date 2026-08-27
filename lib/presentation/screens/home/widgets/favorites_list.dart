@@ -8,6 +8,7 @@ import '../../../../core/di/providers.dart';
 import '../../../../core/theme/launcher_phase.dart';
 import '../../../../data/database/app_database.dart';
 import '../../../../domain/entities/launcher_item.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../../platform/blocking_channel.dart';
 import '../../../providers/favorites_provider.dart';
 import '../../all_apps/widgets/app_list_view.dart';
@@ -186,11 +187,11 @@ class _FavoritesListState extends ConsumerState<FavoritesList> {
     return showStyledSheet(
       context: context,
       title: folder.name,
-      subtitle: 'Folder options',
+      subtitle: AppLocalizations.of(context).favoritesFolderOptions,
       builder: (ctx) => [
         SheetActionTile(
           icon: Icons.drive_file_rename_outline,
-          label: 'Rename folder',
+          label: AppLocalizations.of(context).favoritesRenameFolder,
           onTap: () async {
             Navigator.pop(ctx);
             if (!context.mounted) return;
@@ -203,17 +204,22 @@ class _FavoritesListState extends ConsumerState<FavoritesList> {
         ),
         SheetActionTile(
           icon: Icons.folder_delete_outlined,
-          label: 'Delete folder',
-          subtitle: 'Its apps return to the home',
+          label: AppLocalizations.of(context).favoritesDeleteFolder,
+          subtitle: AppLocalizations.of(context).favoritesDeleteFolderSubtitle,
           danger: true,
           onTap: () async {
             final messenger = ScaffoldMessenger.maybeOf(context);
+            // Il messaggio si compone PRIMA dell'await, come il messenger:
+            // dopo la cancellazione questo `context` può essere già smontato,
+            // e leggerlo lì sarebbe la stessa trappola.
+            final deletedMessage =
+                AppLocalizations.of(context).favoritesFolderDeleted(folder.name);
             Navigator.pop(ctx);
             await controller.deleteFolder(folder.id);
             messenger?.hideCurrentSnackBar();
             messenger?.showSnackBar(
               SnackBar(
-                content: Text('Deleted folder "${folder.name}"'),
+                content: Text(deletedMessage),
                 duration: const Duration(seconds: 2),
               ),
             );
@@ -377,7 +383,10 @@ class _FolderTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (folder.apps.isEmpty)
-                    _FolderChild(style: childStyle, label: 'Empty folder')
+                    _FolderChild(
+                      style: childStyle,
+                      label: AppLocalizations.of(context).favoritesEmptyFolder,
+                    )
                   else
                     for (final app in folder.apps)
                       _FolderChild(
@@ -457,7 +466,7 @@ class _EmptyFavoritesHint extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
         child: Text(
-          'Long-press an app in the drawer to add it here.',
+          AppLocalizations.of(context).favoritesEmptyHint,
           style: Theme.of(context)
               .textTheme
               .bodyMedium

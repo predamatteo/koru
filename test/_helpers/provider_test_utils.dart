@@ -90,6 +90,10 @@ TestHarness buildTestContainer({List<Override> extra = const []}) {
   // non incappano in un mock non stubato (Null vs Future<void>).
   when(() => profileCh.setActiveFontId(any())).thenAnswer((_) async {});
 
+  // Stesso discorso per la lingua: `LocalePreferenceNotifier.set()` propaga la
+  // scelta al per-app locale di Android in fire-and-forget.
+  when(() => profileCh.setAppLocale(any())).thenAnswer((_) async {});
+
   final container = ProviderContainer(overrides: [
     appDatabaseProvider.overrideWithValue(db),
     hiveSettingsServiceProvider.overrideWithValue(hive),

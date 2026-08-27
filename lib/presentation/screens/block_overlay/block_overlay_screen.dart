@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/koru_colors.dart';
 import '../../../domain/entities/overlay_config.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import 'overlay_config_style.dart';
 import 'widgets/countdown_button_widget.dart';
 
@@ -50,19 +51,19 @@ enum BlockReason { appBlocked, focusMode, sectionBlocked, websiteBlocked }
 class _BlockOverlayScreenState extends ConsumerState<BlockOverlayScreen> {
   bool _countdownFinished = false;
 
-  String get _title => switch (widget.reason) {
-        BlockReason.focusMode => 'Focus mode is active',
-        BlockReason.sectionBlocked => 'Section blocked',
-        BlockReason.websiteBlocked => 'Website blocked',
+  String _title(AppLocalizations l10n) => switch (widget.reason) {
+        BlockReason.focusMode => l10n.overlayFocusModeActive,
+        BlockReason.sectionBlocked => l10n.overlaySectionBlocked,
+        BlockReason.websiteBlocked => l10n.overlayWebsiteBlocked,
         BlockReason.appBlocked =>
-          widget.config.messageTitle ?? 'Take a breath',
+          widget.config.messageTitle ?? l10n.overlayTakeABreath,
       };
 
-  String get _subtitle {
+  String _subtitle(AppLocalizations l10n) {
     if (widget.sectionName != null) return widget.sectionName!;
     if (widget.blockedDomain != null) return widget.blockedDomain!;
     if (widget.profileTitle != null) {
-      return 'Paused by \u201C${widget.profileTitle}\u201D';
+      return l10n.overlayPausedBy(widget.profileTitle!);
     }
     return widget.appLabel;
   }
@@ -76,6 +77,7 @@ class _BlockOverlayScreenState extends ConsumerState<BlockOverlayScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final bg = widget.config.backgroundColor;
     final gradient = LinearGradient(
       begin: Alignment.topCenter,
@@ -106,7 +108,7 @@ class _BlockOverlayScreenState extends ConsumerState<BlockOverlayScreen> {
                 ),
                 const SizedBox(height: 22),
                 Text(
-                  _title,
+                  _title(l10n),
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                         color: KoruColors.textPrimary,
                         fontWeight: FontWeight.w800,
@@ -116,7 +118,7 @@ class _BlockOverlayScreenState extends ConsumerState<BlockOverlayScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  _subtitle,
+                  _subtitle(l10n),
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: KoruColors.textPrimary.withValues(alpha: 0.72),
                       ),
@@ -131,7 +133,7 @@ class _BlockOverlayScreenState extends ConsumerState<BlockOverlayScreen> {
                     style: FilledButton.styleFrom(
                       minimumSize: const Size(double.infinity, 54),
                     ),
-                    child: Text("Don't open ${widget.appLabel}"),
+                    child: Text(l10n.overlayDontOpenApp(widget.appLabel)),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -141,7 +143,7 @@ class _BlockOverlayScreenState extends ConsumerState<BlockOverlayScreen> {
                   fillColor: KoruColors.primary.withValues(alpha: 0.22),
                   textColor: KoruColors.primary,
                   backgroundColor: Colors.white.withValues(alpha: 0.06),
-                  finishedText: 'Open ${widget.appLabel}',
+                  finishedText: l10n.overlayOpenApp(widget.appLabel),
                   onFinished: () =>
                       setState(() => _countdownFinished = true),
                   onTap: _countdownFinished && widget.config.allowBypassAfterCountdown
@@ -150,7 +152,7 @@ class _BlockOverlayScreenState extends ConsumerState<BlockOverlayScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Tap the timer to pause it',
+                  l10n.overlayTapTimerToPause,
                   style: TextStyle(
                     color: KoruColors.textPrimary.withValues(alpha: 0.45),
                     fontSize: 12,

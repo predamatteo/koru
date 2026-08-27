@@ -6,6 +6,7 @@ import '../../../core/constants/hive_keys.dart';
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/di/providers.dart';
 import '../../../core/router/app_router.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import 'pages/launcher_page.dart';
 import 'pages/permissions_page.dart';
 import 'pages/presets_page.dart';
@@ -71,14 +72,18 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 width: double.infinity,
                 child: FilledButton(
                   onPressed: _next,
-                  child: Text(_page == 3 ? 'Enter Koru' : 'Continue'),
+                  child: Text(
+                    _page == 3
+                        ? AppLocalizations.of(context).onboardingEnterKoru
+                        : AppLocalizations.of(context).commonContinue,
+                  ),
                 ),
               ),
             ),
             if (_page < 3)
               TextButton(
                 onPressed: _finish,
-                child: const Text('Skip for now'),
+                child: Text(AppLocalizations.of(context).onboardingSkipForNow),
               ),
             const SizedBox(height: 12),
           ],

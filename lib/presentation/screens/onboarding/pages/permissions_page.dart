@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../../platform/permission_channel.dart';
 
 class PermissionsPage extends ConsumerStatefulWidget {
@@ -53,57 +54,61 @@ class _PermissionsPageState extends ConsumerState<PermissionsPage>
   @override
   Widget build(BuildContext context) {
     final s = _status;
+    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.all(24),
       child: ListView(
         children: [
-          Text('Permissions', style: Theme.of(context).textTheme.headlineMedium),
+          Text(
+            l10n.permissionsTitle,
+            style: Theme.of(context).textTheme.headlineMedium,
+          ),
           const SizedBox(height: 8),
           Text(
-            'Koru only runs on your device. Nothing ever leaves it.',
+            l10n.permissionsIntro,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: KoruColors.textSecondary,
                 ),
           ),
           const SizedBox(height: 24),
           _PermTile(
-            title: 'Accessibility',
-            subtitle: 'Detect when you open a distracting app.',
+            title: l10n.permAccessibility,
+            subtitle: l10n.permAccessibilitySubtitle,
             granted: s?.accessibility ?? false,
             required: true,
             onGrant: () => _channel.openAccessibilitySettings(),
           ),
           _PermTile(
-            title: 'Usage access',
-            subtitle: 'Read time spent per app.',
+            title: l10n.permUsageAccess,
+            subtitle: l10n.permUsageAccessSubtitle,
             granted: s?.usageStats ?? false,
             required: true,
             onGrant: () => _channel.openUsageStatsSettings(),
           ),
           _PermTile(
-            title: 'Display over other apps',
-            subtitle: 'Show the mindful overlay.',
+            title: l10n.permOverlay,
+            subtitle: l10n.permOverlaySubtitle,
             granted: s?.overlay ?? false,
             required: true,
             onGrant: () => _channel.openOverlaySettings(),
           ),
           _PermTile(
-            title: 'Battery optimization',
-            subtitle: 'Keep the blocking engine alive in background.',
+            title: l10n.permBattery,
+            subtitle: l10n.permBatterySubtitle,
             granted: s?.batteryOptimizationIgnored ?? false,
             required: false,
             onGrant: () => _channel.requestDisableBatteryOptimization(),
           ),
           _PermTile(
-            title: 'Notifications',
-            subtitle: 'Let Koru warn you when blocking needs attention.',
+            title: l10n.permNotifications,
+            subtitle: l10n.permNotificationsSubtitle,
             granted: s?.notifications ?? false,
             required: false,
             onGrant: _grantNotifications,
           ),
           _PermTile(
-            title: 'Notification listener',
-            subtitle: 'Filter notifications from blocked apps.',
+            title: l10n.permNotificationListener,
+            subtitle: l10n.permNotificationListenerSubtitle,
             granted: s?.notificationListener ?? false,
             required: false,
             onGrant: () => _channel.openNotificationListenerSettings(),
@@ -151,7 +156,7 @@ class _PermTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(7),
               ),
               child: Text(
-                'Required',
+                AppLocalizations.of(context).permRequiredBadge,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: KoruColors.onSecondaryContainer,
                       fontWeight: FontWeight.w700,
@@ -164,7 +169,10 @@ class _PermTile extends StatelessWidget {
       subtitle: Text(subtitle),
       trailing: granted
           ? const SizedBox.shrink()
-          : TextButton(onPressed: onGrant, child: const Text('Grant')),
+          : TextButton(
+              onPressed: onGrant,
+              child: Text(AppLocalizations.of(context).permGrant),
+            ),
     );
   }
 }

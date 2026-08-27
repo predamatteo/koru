@@ -1,4 +1,5 @@
 import '../../domain/entities/unlock_challenge.dart';
+import '../../l10n/generated/app_localizations.dart';
 import '../../platform/strict_mode_channel.dart';
 
 /// Da dove arriva una sfida e chi ne certifica la soluzione.
@@ -68,9 +69,17 @@ class StrictModeUnlockChallengeSource implements UnlockChallengeSource {
   StrictModeUnlockChallengeSource({
     required this.channel,
     required this.targetMask,
+    required this.l10n,
   });
 
   final StrictModeChannel channel;
+
+  /// Le stringhe tradotte servono qui e non nel dialog perché [ChallengeBlocked]
+  /// trasporta un messaggio **già scritto per l'utente**: è questa sorgente a
+  /// sapere *perché* la sfida non è disponibile. Arriva dal chiamante — che ha
+  /// un `BuildContext` — invece di essere letta qui, così la classe resta
+  /// testabile senza montare un widget.
+  final AppLocalizations l10n;
 
   /// La mask a cui si vuole arrivare. Il nativo ci calibra sopra la difficoltà
   /// (uscire del tutto costa più che allentare un bit) e ci vincola il token.
@@ -93,14 +102,13 @@ class StrictModeUnlockChallengeSource implements UnlockChallengeSource {
         ),
       ),
       StrictUnlockCooldown(:final remainingMs) => ChallengeBlocked(
-        'Troppi tentativi falliti di fila. Riprova fra '
-        '${_seconds(remainingMs)}.',
+        l10n.challengeCooldown(_seconds(remainingMs)),
       ),
       // Include NOT_A_DOWNGRADE (la mask non spegne nulla) e gli errori di
       // lettura della mask: in entrambi i casi non si procede. Fail-secure:
       // se non riusciamo a farci autorizzare, lo strict mode resta com'è.
-      StrictUnlockUnavailable() => const ChallengeBlocked(
-        'Non è stato possibile avviare la verifica. Riprova fra un momento.',
+      StrictUnlockUnavailable() => ChallengeBlocked(
+        l10n.challengeStartFailed,
       ),
     };
   }

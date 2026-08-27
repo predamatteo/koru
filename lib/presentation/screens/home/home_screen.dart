@@ -6,6 +6,7 @@ import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
 import '../../../core/diagnostics/black_box.dart';
 import '../../../data/models/profile_model.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../providers/active_profile_provider.dart';
 import '../../providers/app_list_provider.dart';
 import '../../providers/events_refresher.dart';
@@ -52,7 +53,7 @@ class HomeScreen extends ConsumerWidget {
     ref.watch(blockingEventsRefresherProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Koru')),
+      appBar: AppBar(title: Text(AppLocalizations.of(context).appName)),
       body: KoruPullToRefresh(
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -79,16 +80,17 @@ class HomeScreen extends ConsumerWidget {
 class _GreetingCard extends StatelessWidget {
   const _GreetingCard();
 
-  String _greeting() {
+  String _greeting(AppLocalizations l10n) {
     final h = DateTime.now().hour;
-    if (h < 5) return 'Still awake?';
-    if (h < 12) return 'Good morning.';
-    if (h < 18) return 'Good afternoon.';
-    return 'Good evening.';
+    if (h < 5) return l10n.homeGreetingNight;
+    if (h < 12) return l10n.homeGreetingMorning;
+    if (h < 18) return l10n.homeGreetingAfternoon;
+    return l10n.homeGreetingEvening;
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       decoration: BoxDecoration(
         color: KoruColors.surface,
@@ -99,7 +101,7 @@ class _GreetingCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            _greeting(),
+            _greeting(l10n),
             style: const TextStyle(
               fontSize: 30,
               fontWeight: FontWeight.w800,
@@ -110,7 +112,7 @@ class _GreetingCard extends StatelessWidget {
           ),
           const SizedBox(height: 9),
           Text(
-            'Take a breath. What do you want to focus on today?',
+            l10n.homeGreetingSubtitle,
             style: const TextStyle(
               fontSize: 14.5,
               height: 1.4,
@@ -136,19 +138,19 @@ class _ActiveProfileCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasActive = activeProfiles.isNotEmpty;
     final hasAny = totalProfiles > 0;
+    final l10n = AppLocalizations.of(context);
 
     final String eyebrow;
     final String title;
     if (hasActive) {
-      eyebrow = 'Active right now';
+      eyebrow = l10n.homeActiveRightNow;
       title = activeProfiles.map((p) => p.title).join(' · ');
     } else if (hasAny) {
-      eyebrow = 'No profile active now';
-      title =
-          '$totalProfiles ${totalProfiles == 1 ? 'profile' : 'profiles'} configured';
+      eyebrow = l10n.homeNoProfileActiveNow;
+      title = l10n.homeProfilesConfigured(totalProfiles);
     } else {
-      eyebrow = 'No profiles yet';
-      title = 'Create one to get started';
+      eyebrow = l10n.profilesEmptyTitle;
+      title = l10n.homeCreateOneToStart;
     }
 
     final primaryActive = activeProfiles.isNotEmpty
@@ -256,7 +258,7 @@ class _TodayStatsRow extends ConsumerWidget {
             child: _MiniStat(
               icon: Icons.shield,
               iconColor: KoruColors.primary,
-              label: 'Blocks',
+              label: AppLocalizations.of(context).homeBlocksLabel,
               value: '$blocksToday',
               // Il dettaglio di questo numero vive già in Statistiche (donut
               // Blocked/Skipped + breakdown per-app): senza il tap resterebbe

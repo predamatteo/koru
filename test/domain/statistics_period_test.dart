@@ -1,5 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koru/domain/entities/statistics_period.dart';
+import 'package:koru/presentation/l10n/model_labels.dart';
+
+import '../_helpers/l10n_test_utils.dart';
+
+final _en = enL10n;
 
 void main() {
   group('StatisticsPeriod metadata', () {
@@ -9,8 +14,8 @@ void main() {
     });
 
     test('label exposes the user-facing string', () {
-      expect(StatisticsPeriod.today.label, 'Today');
-      expect(StatisticsPeriod.week.label, 'This week');
+      expect(StatisticsPeriod.today.label(_en), 'Today');
+      expect(StatisticsPeriod.week.label(_en), 'This week');
     });
 
     test('there are exactly 2 periods', () {

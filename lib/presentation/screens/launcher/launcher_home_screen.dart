@@ -11,6 +11,7 @@ import '../../../core/diagnostics/black_box.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/launcher_motion.dart';
 import '../../../core/theme/launcher_phase.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../../platform/permission_channel.dart';
 import '../../providers/app_list_provider.dart';
 import '../../providers/launcher_shortcuts_provider.dart';
@@ -454,16 +455,16 @@ class _LauncherHomeScreenState extends ConsumerState<LauncherHomeScreen>
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const LauncherShortcutButton(
+            LauncherShortcutButton(
               slot: LauncherShortcutSlot.left,
               icon: Icons.phone_outlined,
-              semanticLabel: 'Phone',
+              semanticLabel: AppLocalizations.of(context).launcherPhone,
             ),
             _AllAppsHandle(phase: phase, open: _open, onTap: _openAllApps),
-            const LauncherShortcutButton(
+            LauncherShortcutButton(
               slot: LauncherShortcutSlot.right,
               icon: Icons.camera_alt_outlined,
-              semanticLabel: 'Camera',
+              semanticLabel: AppLocalizations.of(context).launcherCamera,
             ),
           ],
         ),
@@ -602,8 +603,9 @@ class _AllAppsHandle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final labelStyle = Theme.of(context).textTheme.labelMedium;
+    final l10n = AppLocalizations.of(context);
     return Semantics(
-      label: 'All apps',
+      label: l10n.allAppsTitle,
       button: true,
       child: InkWell(
         onTap: onTap,
@@ -626,7 +628,7 @@ class _AllAppsHandle extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    'All apps',
+                    l10n.allAppsTitle,
                     style: labelStyle?.copyWith(
                       color: phase.accent
                           .withValues(alpha: (0.55 + 0.45 * p).clamp(0.0, 1.0)),
@@ -734,9 +736,9 @@ class _RecentsShortcut extends ConsumerWidget {
     if (!context.mounted) return;
     ref.invalidate(openAppsCountProvider);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Open apps counter reset'),
-        duration: Duration(seconds: 2),
+      SnackBar(
+        content: Text(AppLocalizations.of(context).launcherOpenAppsReset),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -757,7 +759,7 @@ class _KoruMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: 'Koru dashboard',
+      label: AppLocalizations.of(context).launcherKoruDashboard,
       button: true,
       child: Material(
         color: phase.accentContainer,

@@ -6,7 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
 import '../../../domain/entities/statistics_period.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../../platform/blocking_channel.dart';
+import '../../l10n/model_labels.dart';
 import '../../providers/app_list_provider.dart';
 import '../../providers/screen_time_provider.dart';
 import '../../providers/statistics_providers.dart';
@@ -30,7 +32,7 @@ class StatisticsScreen extends ConsumerWidget {
     final isWeek = ref.watch(selectedPeriodProvider) == StatisticsPeriod.week;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Stats'),
+        title: Text(AppLocalizations.of(context).tabStats),
         elevation: 0,
         scrolledUnderElevation: 0,
       ),
@@ -143,6 +145,7 @@ class _DayNavigator extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final offset = ref.watch(selectedDayOffsetProvider);
     void go(int delta) =>
         ref.read(selectedDayOffsetProvider.notifier).state = offset + delta;
@@ -157,7 +160,7 @@ class _DayNavigator extends ConsumerWidget {
         children: [
           _NavArrow(
             icon: Icons.chevron_left,
-            tooltip: 'Previous day',
+            tooltip: l10n.statsPreviousDay,
             onTap: offset < StatisticsPeriod.maxDaysBack
                 ? () => go(1)
                 : null,
@@ -166,7 +169,7 @@ class _DayNavigator extends ConsumerWidget {
             child: AnimatedSwitcher(
               duration: _kMorph,
               child: Text(
-                _dayLabel(_dayStartMsBack(offset)),
+                _dayLabel(_dayStartMsBack(offset), l10n),
                 key: ValueKey(offset),
                 textAlign: TextAlign.center,
                 style: const TextStyle(
@@ -179,7 +182,7 @@ class _DayNavigator extends ConsumerWidget {
           ),
           _NavArrow(
             icon: Icons.chevron_right,
-            tooltip: 'Next day',
+            tooltip: l10n.statsNextDay,
             onTap: offset > 0 ? () => go(-1) : null,
           ),
           // Via di ritorno diretta: da sei giorni indietro servirebbero sei
@@ -214,16 +217,20 @@ class _TodayButton extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.today_outlined, size: 15, color: KoruColors.primary),
-              SizedBox(width: 5),
+              const Icon(
+                Icons.today_outlined,
+                size: 15,
+                color: KoruColors.primary,
+              ),
+              const SizedBox(width: 5),
               Text(
-                'Today',
-                style: TextStyle(
+                AppLocalizations.of(context).statsPeriodToday,
+                style: const TextStyle(
                   color: KoruColors.primary,
                   fontSize: 12.5,
                   fontWeight: FontWeight.w600,
@@ -277,7 +284,7 @@ class _PeriodSwitcher extends ConsumerWidget {
           for (final p in StatisticsPeriod.values)
             Expanded(
               child: _PeriodPill(
-                label: p.label,
+                label: p.label(AppLocalizations.of(context)),
                 selected: p == period,
                 onTap: () {
                   ref.read(selectedPeriodProvider.notifier).state = p;
@@ -354,7 +361,7 @@ class _ScreenTimeCard extends ConsumerWidget {
     if (selDay != null) {
       now = selDay.totalMs;
       subtitle = Text(
-        _dayLabel(selDay.dayStartMs),
+        _dayLabel(selDay.dayStartMs, AppLocalizations.of(context)),
         key: ValueKey('day-${selDay.dayStartMs}'),
         style: const TextStyle(color: KoruColors.textSecondary, fontSize: 13),
       );
@@ -373,7 +380,10 @@ class _ScreenTimeCard extends ConsumerWidget {
     return _Card(
       child: Column(
         children: [
-          const _SectionLabel('Screen time', center: true),
+          _SectionLabel(
+            AppLocalizations.of(context).statsScreenTime,
+            center: true,
+          ),
           const SizedBox(height: 12),
           FittedBox(
             fit: BoxFit.scaleDown,
@@ -415,15 +425,12 @@ class _DeltaText extends StatelessWidget {
   /// sarebbe una bugia piccola ma continua.
   final bool shifted;
 
-  String _periodRef() => switch (period) {
-    StatisticsPeriod.today => shifted ? 'the day before' : 'yesterday',
-    StatisticsPeriod.week => 'last week',
-  };
-
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final periodRef = period.previousRef(l10n, shifted: shifted);
     if (previous == 0) {
-      final label = 'no data from ${_periodRef()}';
+      final label = l10n.statsNoDataFrom(periodRef);
       return Text(
         label,
         // Chiave = testo: sta dentro un AnimatedSwitcher, e con una chiave
@@ -438,7 +445,7 @@ class _DeltaText extends StatelessWidget {
     final increased = pct > 0;
     final color = increased ? KoruColors.danger : KoruColors.success;
     final sign = increased ? '+' : '';
-    final label = '$sign$pct% from ${_periodRef()}';
+    final label = l10n.statsDeltaFrom('$sign$pct', periodRef);
     return Text(
       label,
       key: ValueKey(label),
@@ -459,9 +466,11 @@ class _WeeklyUsageChart extends ConsumerWidget {
     final days = weekAsync.valueOrNull ?? const <DailyUsage>[];
 
     final selDay = _findDay(days, selected);
+    final l10n = AppLocalizations.of(context);
     final caption = selDay != null
-        ? '${_dayLabel(selDay.dayStartMs)} · ${_fmtDurationMs(selDay.totalMs)}'
-        : 'Tap a day to see its apps';
+        ? '${_dayLabel(selDay.dayStartMs, l10n)} · '
+            '${_fmtDurationMs(selDay.totalMs)}'
+        : l10n.statsTapADay;
 
     return _Card(
       child: Column(
@@ -469,7 +478,7 @@ class _WeeklyUsageChart extends ConsumerWidget {
         children: [
           Row(
             children: [
-              const Expanded(child: _SectionLabel('Daily breakdown')),
+              Expanded(child: _SectionLabel(l10n.statsDailyBreakdown)),
               if (selected != null)
                 _ResetDayButton(
                   onTap: () =>
@@ -491,7 +500,9 @@ class _WeeklyUsageChart extends ConsumerWidget {
             child: days.isEmpty
                 ? Center(
                     child: Text(
-                      weekAsync.isLoading ? 'Loading…' : 'No usage recorded',
+                      weekAsync.isLoading
+                          ? l10n.commonLoading
+                          : l10n.statsNoUsageRecorded,
                       style: const TextStyle(
                         color: KoruColors.textSecondary,
                         fontSize: 13,
@@ -524,16 +535,16 @@ class _ResetDayButton extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
-      child: const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.close, size: 13, color: KoruColors.primary),
-            SizedBox(width: 4),
+            const Icon(Icons.close, size: 13, color: KoruColors.primary),
+            const SizedBox(width: 4),
             Text(
-              'Whole week',
-              style: TextStyle(
+              AppLocalizations.of(context).statsWholeWeek,
+              style: const TextStyle(
                 color: KoruColors.primary,
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
@@ -562,6 +573,7 @@ class _DayBars extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final maxMs = days.fold<int>(0, (m, d) => math.max(m, d.totalMs));
     final anySelected = selectedMs != null;
     return Row(
@@ -584,7 +596,7 @@ class _DayBars extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    _weekdayInitial(d.dayStartMs),
+                    _weekdayInitial(d.dayStartMs, l10n),
                     style: TextStyle(
                       color: _labelColor(d),
                       fontSize: 12,
@@ -656,6 +668,7 @@ class _TopAppsCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final period = ref.watch(selectedPeriodProvider);
     final selDay = period == StatisticsPeriod.week
         ? ref.watch(selectedDayUsageProvider)
@@ -681,11 +694,11 @@ class _TopAppsCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _SectionLabel('Top apps'),
+          _SectionLabel(l10n.statsTopApps),
           if (selDay != null) ...[
             const SizedBox(height: 4),
             Text(
-              _dayLabel(selDay.dayStartMs),
+              _dayLabel(selDay.dayStartMs, l10n),
               style: const TextStyle(
                 color: KoruColors.textSecondary,
                 fontSize: 12,
@@ -708,8 +721,8 @@ class _TopAppsCard extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       child: Text(
                         selDay != null
-                            ? 'No usage recorded for this day.'
-                            : 'No foreground usage recorded for this period.',
+                            ? l10n.statsNoUsageThisDay
+                            : l10n.statsNoUsageThisPeriod,
                         style: const TextStyle(
                           color: KoruColors.textSecondary,
                           fontSize: 13,
@@ -821,6 +834,7 @@ class _InterventionsCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final triggered = ref.watch(blockTriggeredCountProvider).valueOrNull ?? 0;
     final skipped = ref.watch(blockSkippedCountProvider).valueOrNull ?? 0;
     final respected = (triggered - skipped).clamp(0, 1 << 30);
@@ -852,20 +866,24 @@ class _InterventionsCard extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const _SectionLabel('Interventions'),
+                _SectionLabel(l10n.statsInterventions),
                 const SizedBox(height: 12),
                 _LegendRow(
                   color: KoruColors.success,
                   label: total == 0
-                      ? 'No blocks yet'
-                      : '${(respected * 100 / total).round()}% respected',
+                      ? l10n.statsNoBlocksYet
+                      : l10n.statsPercentRespected(
+                          (respected * 100 / total).round(),
+                        ),
                 ),
                 const SizedBox(height: 6),
                 _LegendRow(
                   color: KoruColors.danger,
                   label: total == 0
                       ? '—'
-                      : '${(skipped * 100 / total).round()}% skipped',
+                      : l10n.statsPercentSkipped(
+                          (skipped * 100 / total).round(),
+                        ),
                 ),
               ],
             ),
@@ -1005,6 +1023,13 @@ class _SectionLabel extends StatelessWidget {
 
 // ─── Formatting helpers ─────────────────────────────────────────────────────
 
+/// `9000000` → `2h 30m`.
+///
+/// **Non localizzata di proposito**, per due motivi che tirano nella stessa
+/// direzione: `h`/`m` sono le stesse abbreviazioni in entrambe le lingue, e
+/// questa funzione ha un contratto di parità 1:1 con `UsageWidgetModel` sul
+/// lato Kotlin (vedi CLAUDE.md) — che le stringhe le risolve da `res/values*`
+/// e non saprebbe seguire un cambio di forma fatto qui.
 String _fmtDurationMs(int ms) {
   final totalMinutes = (ms / 60000).round();
   final h = totalMinutes ~/ 60;
@@ -1014,16 +1039,13 @@ String _fmtDurationMs(int ms) {
   return '${h}h ${m}m';
 }
 
-const _weekdayInitials = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-const _weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const _monthNames = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-];
-
-String _weekdayInitial(int dayStartMs) {
+/// Iniziale del giorno per le colonne del grafico settimanale. Deriva
+/// dall'abbreviazione tradotta invece di avere una tabella propria: in
+/// italiano le iniziali sono L M M G V S D, e due tabelle da tradurre sono una
+/// di troppo.
+String _weekdayInitial(int dayStartMs, AppLocalizations l10n) {
   final wd = DateTime.fromMillisecondsSinceEpoch(dayStartMs).weekday; // 1..7
-  return _weekdayInitials[wd - 1];
+  return l10n.weekdayShortLabel(wd).substring(0, 1).toUpperCase();
 }
 
 /// Mezzanotte locale di [daysBack] giorni fa. Costruita per campi di calendario
@@ -1043,15 +1065,16 @@ bool _isToday(int dayStartMs) {
 /// Etichetta amichevole per un giorno: "Today" / "Yesterday" o
 /// "Wed 14 May". Il diff è arrotondato sulle ore per non sbagliare di un
 /// giorno a cavallo dei cambi di ora legale.
-String _dayLabel(int dayStartMs) {
+String _dayLabel(int dayStartMs, AppLocalizations l10n) {
   final d = DateTime.fromMillisecondsSinceEpoch(dayStartMs);
   final n = DateTime.now();
   final today = DateTime(n.year, n.month, n.day);
   final that = DateTime(d.year, d.month, d.day);
   final diff = (today.difference(that).inHours / 24).round();
-  if (diff == 0) return 'Today';
-  if (diff == 1) return 'Yesterday';
-  return '${_weekdayNames[d.weekday - 1]} ${d.day} ${_monthNames[d.month - 1]}';
+  if (diff == 0) return l10n.statsPeriodToday;
+  if (diff == 1) return l10n.statsYesterday;
+  return '${l10n.weekdayShortLabel(d.weekday)} ${d.day} '
+      '${l10n.monthShortLabel(d.month)}';
 }
 
 DailyUsage? _findDay(List<DailyUsage> days, int? ms) {

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/koru_colors.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../../platform/blocking_channel.dart';
 import '../../../providers/app_limits_provider.dart';
 import '../../../providers/app_list_provider.dart';
@@ -107,7 +108,7 @@ class _TodayLimitsCardState extends ConsumerState<TodayLimitsCard> {
                     size: 18, color: KoruColors.textSecondary),
                 const SizedBox(width: 8),
                 Text(
-                  "TODAY'S LIMITS",
+                  AppLocalizations.of(context).todayLimitsHeader.toUpperCase(),
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: KoruColors.textSecondary,
                         letterSpacing: 2,
@@ -122,7 +123,7 @@ class _TodayLimitsCardState extends ConsumerState<TodayLimitsCard> {
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   onPressed: () => context.push('/settings/app-limits'),
-                  child: const Text('Edit'),
+                  child: Text(AppLocalizations.of(context).commonEdit),
                 ),
               ],
             ),
@@ -167,7 +168,8 @@ class _NoLimitsCard extends StatelessWidget {
                       size: 18, color: KoruColors.textSecondary),
                   const SizedBox(width: 8),
                   Text(
-                    "TODAY'S LIMITS",
+                    AppLocalizations.of(context).todayLimitsHeader
+                        .toUpperCase(),
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           color: KoruColors.textSecondary,
                           letterSpacing: 2,
@@ -177,19 +179,18 @@ class _NoLimitsCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 10),
-              const Text(
-                'No daily limits yet',
-                style: TextStyle(
+              Text(
+                AppLocalizations.of(context).todayLimitsEmptyTitle,
+                style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
                   color: KoruColors.textPrimary,
                 ),
               ),
               const SizedBox(height: 4),
-              const Text(
-                'Cap how long you can spend in an app each day. '
-                'Koru steps in when you reach it.',
-                style: TextStyle(
+              Text(
+                AppLocalizations.of(context).todayLimitsEmptyBody,
+                style: const TextStyle(
                   fontSize: 13,
                   height: 1.35,
                   color: KoruColors.textSecondary,
@@ -201,7 +202,7 @@ class _NoLimitsCard extends StatelessWidget {
                 child: FilledButton.tonalIcon(
                   onPressed: () => context.push('/settings/app-limits'),
                   icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Set a limit'),
+                  label: Text(AppLocalizations.of(context).todayLimitsSetOne),
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     minimumSize: const Size(0, 36),
@@ -270,7 +271,9 @@ class _LimitRow extends ConsumerWidget {
                 ),
               ),
               Text(
-                '$used / $limitMinutes min',
+                AppLocalizations.of(
+                  context,
+                ).todayLimitsUsedOfCap(used, limitMinutes),
                 style: TextStyle(
                   fontSize: 12,
                   color: exceeded

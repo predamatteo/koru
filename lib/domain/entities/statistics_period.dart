@@ -1,11 +1,14 @@
 enum StatisticsPeriod {
-  today('Today', 1),
-  week('This week', 7);
+  today(1),
+  week(7);
 
-  const StatisticsPeriod(this.label, this.daysBack);
+  const StatisticsPeriod(this.daysBack);
 
-  final String label;
   final int daysBack;
+
+  // L'etichetta mostrata nel selettore è testo tradotto e non sta qui: questo
+  // file è `domain/` e non importa Flutter. Vedi `StatisticsPeriodL10n.label`
+  // in `presentation/l10n/model_labels.dart`.
 
   /// Quanti giorni si può tornare indietro con la navigazione delle
   /// Statistiche.

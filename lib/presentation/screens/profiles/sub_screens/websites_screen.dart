@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/constants/layout.dart';
 import '../../../../data/database/app_database.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../providers/profile_providers.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
 import '../../../widgets/unlock_challenge_dialog.dart';
@@ -74,7 +75,7 @@ class _WebsitesScreenState extends ConsumerState<WebsitesScreen> {
     return requireUnlockChallenge(
       context,
       ref,
-      action: 'togliere un sito da un profilo acceso',
+      action: AppLocalizations.of(context).websitesActionRemove,
     );
   }
 
@@ -86,9 +87,10 @@ class _WebsitesScreenState extends ConsumerState<WebsitesScreen> {
   @override
   Widget build(BuildContext context) {
     final profileAsync = ref.watch(profileByIdProvider(widget.profileId));
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Websites')),
+      appBar: AppBar(title: Text(l10n.profileEditorSectionWebsites)),
       body: KoruPullToRefresh(
         onRefresh: () async =>
             ref.invalidate(profileByIdProvider(widget.profileId)),
@@ -107,8 +109,7 @@ class _WebsitesScreenState extends ConsumerState<WebsitesScreen> {
               ),
               children: [
                 Text(
-                  'Block domains inside the browser URL bar. Works across Chrome, '
-                  'Firefox, Brave, Samsung and other supported browsers.',
+                  l10n.websitesIntro,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: KoruColors.textSecondary,
                     height: 1.4,
@@ -126,21 +127,21 @@ class _WebsitesScreenState extends ConsumerState<WebsitesScreen> {
                           controller: _domainController,
                           textInputAction: TextInputAction.done,
                           onSubmitted: (_) => _add(),
-                          decoration: const InputDecoration(
-                            labelText: 'Domain',
-                            hintText: 'e.g. instagram.com',
-                            prefixIcon: Icon(Icons.language),
+                          decoration: InputDecoration(
+                            labelText: l10n.websitesDomainLabel,
+                            hintText: l10n.websitesDomainHint,
+                            prefixIcon: const Icon(Icons.language),
                           ),
                         ),
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           value: _anywhereInUrl,
                           onChanged: (v) => setState(() => _anywhereInUrl = v),
-                          title: const Text('Match anywhere in URL'),
+                          title: Text(l10n.websitesMatchAnywhere),
                           subtitle: Text(
                             _anywhereInUrl
-                                ? 'Blocks any URL that contains the text'
-                                : 'Exact domain match (with subdomains)',
+                                ? l10n.websitesMatchAnywhereOn
+                                : l10n.websitesMatchAnywhereOff,
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ),
@@ -148,7 +149,7 @@ class _WebsitesScreenState extends ConsumerState<WebsitesScreen> {
                         FilledButton.icon(
                           onPressed: _add,
                           icon: const Icon(Icons.add),
-                          label: const Text('Add'),
+                          label: Text(l10n.commonAdd),
                         ),
                       ],
                     ),
@@ -159,7 +160,7 @@ class _WebsitesScreenState extends ConsumerState<WebsitesScreen> {
                   Padding(
                     padding: const EdgeInsets.all(24),
                     child: Text(
-                      'No websites blocked yet.',
+                      l10n.websitesEmpty,
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: KoruColors.textSecondary,
@@ -191,8 +192,8 @@ class _WebsitesScreenState extends ConsumerState<WebsitesScreen> {
                         title: Text(rule.name),
                         subtitle: Text(
                           rule.isAnywhereInUrl
-                              ? 'Anywhere in URL'
-                              : 'Domain match',
+                              ? l10n.websitesRuleAnywhere
+                              : l10n.websitesRuleDomain,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: KoruColors.textSecondary),
                         ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:koru/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koru/core/router/app_router.dart';
@@ -17,7 +18,10 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: h.container,
-          child: const MaterialApp(
+          child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
             home: Scaffold(
               body: AchievementUnlockListener(
                 child: Text('child-content'),
@@ -45,6 +49,9 @@ void main() {
         UncontrolledProviderScope(
           container: h.container,
           child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
             navigatorKey: rootNavigatorKey,
             home: const Scaffold(
               body: AchievementUnlockListener(
@@ -60,8 +67,6 @@ void main() {
       final controller = h.container.read(newUnlocksControllerProvider);
       controller.emit(const Achievement(
         id: 'setup_first_profile',
-        title: 'First profile',
-        description: 'Create your first blocking profile.',
         iconKey: 'add_circle_outline',
         category: AchievementCategory.setup,
         target: 1,
@@ -89,6 +94,9 @@ void main() {
         UncontrolledProviderScope(
           container: h.container,
           child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
             navigatorKey: rootNavigatorKey,
             home: const Scaffold(
               body: AchievementUnlockListener(

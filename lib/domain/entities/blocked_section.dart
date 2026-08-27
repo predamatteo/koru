@@ -3,16 +3,20 @@ import 'dart:convert';
 /// Sezioni in-app bloccabili. Enum values devono matchare con
 /// [DetectedSection] lato native (Kotlin).
 enum BlockedSection {
-  instagramReels('INSTAGRAM_REELS', 'Instagram Reels', 'com.instagram.android'),
-  instagramStories('INSTAGRAM_STORIES', 'Instagram Stories', 'com.instagram.android'),
-  instagramExplore('INSTAGRAM_EXPLORE', 'Instagram Explore', 'com.instagram.android'),
-  youtubeShorts('YOUTUBE_SHORTS', 'YouTube Shorts', 'com.google.android.youtube');
+  instagramReels('INSTAGRAM_REELS', 'com.instagram.android'),
+  instagramStories('INSTAGRAM_STORIES', 'com.instagram.android'),
+  instagramExplore('INSTAGRAM_EXPLORE', 'com.instagram.android'),
+  youtubeShorts('YOUTUBE_SHORTS', 'com.google.android.youtube');
 
-  const BlockedSection(this.wireId, this.displayName, this.packageName);
+  const BlockedSection(this.wireId, this.packageName);
 
   final String wireId;
-  final String displayName;
   final String packageName;
+
+  // Il nome mostrato all'utente non sta qui: "Stories"/"Explore" hanno un nome
+  // proprio in ogni lingua (in italiano Instagram li chiama "Storie" e
+  // "Esplora"), quindi sono testo tradotto. Vedi `sectionShortName` /
+  // `sectionFullName` in `presentation/l10n/model_labels.dart`.
 
   static BlockedSection? fromWireId(String id) {
     for (final s in BlockedSection.values) {
