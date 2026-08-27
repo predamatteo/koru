@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/constants/layout.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../../platform/blocking_channel.dart';
 import '../../../providers/app_limits_provider.dart';
 import '../../../providers/app_list_provider.dart';
@@ -106,7 +107,7 @@ class _AppLimitsScreenState extends ConsumerState<AppLimitsScreen> {
       final ok = await requireLimitUnlockChallenge(
         context,
         ref,
-        action: 'allentare il limite di $label',
+        action: AppLocalizations.of(context).appLimitsActionLoosen(label),
       );
       if (!ok) return;
     }
@@ -151,9 +152,11 @@ class _AppLimitsScreenState extends ConsumerState<AppLimitsScreen> {
     final usageMs =
         ref.watch(todayUsageMsByPackageProvider).valueOrNull ?? const {};
 
+    final l10n = AppLocalizations.of(context);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('App daily limits'),
+        title: Text(l10n.appLimitsTitle),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(64),
           child: Padding(
@@ -163,7 +166,7 @@ class _AppLimitsScreenState extends ConsumerState<AppLimitsScreen> {
               onChanged: _onQueryChanged,
               decoration: InputDecoration(
                 isDense: true,
-                hintText: 'Search apps',
+                hintText: l10n.commonSearchApps,
                 prefixIcon: const Icon(
                   Icons.search,
                   color: KoruColors.textSecondary,
@@ -246,12 +249,11 @@ class _Intro extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: Text(
-        'Sorted by how long you used them today. Tap an app to set a daily '
-        'minutes cap.',
-        style: TextStyle(
+        AppLocalizations.of(context).appLimitsIntro,
+        style: const TextStyle(
           color: KoruColors.textSecondary,
           height: 1.4,
           fontSize: 13,
@@ -328,6 +330,7 @@ class _AppLimitRow extends StatelessWidget {
     final barColor = exceeded
         ? KoruColors.danger
         : (progress > 0.8 ? KoruColors.secondary : KoruColors.primary);
+    final l10n = AppLocalizations.of(context);
 
     return InkWell(
       onTap: onTap,
@@ -372,8 +375,8 @@ class _AppLimitRow extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     hasLimit
-                        ? '$usedMinutes / $limitMinutes min today'
-                        : _usageLabel(usedMinutes),
+                        ? l10n.appLimitsUsedOfCap(usedMinutes, limitMinutes)
+                        : _usageLabel(usedMinutes, l10n),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -412,7 +415,7 @@ class _AppLimitRow extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      '$limitMinutes m',
+                      l10n.appLimitsBadgeMinutes(limitMinutes),
                       style: const TextStyle(
                         color: KoruColors.primary,
                         fontSize: 12,
@@ -430,15 +433,17 @@ class _AppLimitRow extends StatelessWidget {
     );
   }
 
-  /// Sottotitolo delle app senza limite. A zero minuti dice "Not used today"
-  /// invece di "0 min today": è la stessa informazione, ma non sembra un dato
+  /// Sottotitolo delle app senza limite. A zero minuti dice "Non usata oggi"
+  /// invece di "0 min oggi": è la stessa informazione, ma non sembra un dato
   /// mancante.
-  static String _usageLabel(int minutes) {
-    if (minutes <= 0) return 'Not used today';
-    if (minutes < 60) return '$minutes min today';
+  static String _usageLabel(int minutes, AppLocalizations l10n) {
+    if (minutes <= 0) return l10n.appLimitsNotUsedToday;
+    if (minutes < 60) return l10n.appLimitsMinutesToday(minutes);
     final h = minutes ~/ 60;
     final m = minutes % 60;
-    return m == 0 ? '${h}h today' : '${h}h ${m}m today';
+    return m == 0
+        ? l10n.appLimitsHoursToday(h)
+        : l10n.appLimitsHoursMinutesToday(h, m);
   }
 }
 
@@ -486,6 +491,7 @@ class _LimitPickerDialogState extends State<_LimitPickerDialog> {
   Widget build(BuildContext context) {
     final value = _minutes.round();
     final isExisting = (widget.initial?.minutes ?? 0) > 0;
+    final l10n = AppLocalizations.of(context);
 
     return Dialog(
       backgroundColor: KoruColors.surface,
@@ -511,9 +517,9 @@ class _LimitPickerDialogState extends State<_LimitPickerDialog> {
                 ),
               ),
               const SizedBox(height: 2),
-              const Text(
-                'DAILY CAP',
-                style: TextStyle(
+              Text(
+                l10n.appLimitsDailyCap.toUpperCase(),
+                style: const TextStyle(
                   fontSize: 10.5,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.6,
@@ -538,9 +544,9 @@ class _LimitPickerDialogState extends State<_LimitPickerDialog> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  const Text(
-                    'min / day',
-                    style: TextStyle(
+                  Text(
+                    l10n.appLimitsMinPerDay,
+                    style: const TextStyle(
                       fontSize: 14,
                       color: KoruColors.textSecondary,
                     ),
@@ -561,7 +567,7 @@ class _LimitPickerDialogState extends State<_LimitPickerDialog> {
                 children: [
                   for (final p in _presets)
                     ChoiceChip(
-                      label: Text('${p}m'),
+                      label: Text(l10n.appLimitsPresetMinutes(p)),
                       selected: value == p,
                       onSelected: (_) =>
                           setState(() => _minutes = p.toDouble()),
@@ -571,21 +577,20 @@ class _LimitPickerDialogState extends State<_LimitPickerDialog> {
               const SizedBox(height: 18),
               _OptionTile(
                 icon: Icons.lock_outline,
-                title: 'Strict daily limit',
+                title: l10n.appLimitsStrictTitle,
                 subtitle: _strict
-                    ? 'Hard cap. No "Open anyway" once reached.'
-                    : 'Bypass allowed, gets harder each time today.',
+                    ? l10n.appLimitsStrictOn
+                    : l10n.appLimitsStrictOff,
                 value: _strict,
                 onChanged: (v) => setState(() => _strict = v),
               ),
               const SizedBox(height: 8),
               _OptionTile(
                 icon: Icons.extension_outlined,
-                title: 'Blocco per le sfide',
+                title: l10n.appLimitsChallengeLockTitle,
                 subtitle: _challengeLock
-                    ? 'Serve la sfida a memoria per allentare il limite, e '
-                        'anche per aprire l\'app a cap raggiunto.'
-                    : 'Nessuna sfida: il limite si cambia in un tap.',
+                    ? l10n.appLimitsChallengeLockOn
+                    : l10n.appLimitsChallengeLockOff,
                 value: _challengeLock,
                 onChanged: (v) => setState(() => _challengeLock = v),
               ),
@@ -600,17 +605,17 @@ class _LimitPickerDialogState extends State<_LimitPickerDialog> {
                       style: TextButton.styleFrom(
                         foregroundColor: KoruColors.danger,
                       ),
-                      child: const Text('Remove'),
+                      child: Text(l10n.commonRemove),
                     ),
                   const Spacer(),
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
+                    child: Text(l10n.commonCancel),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
                     onPressed: () => Navigator.of(context).pop(_result),
-                    child: const Text('Save'),
+                    child: Text(l10n.commonSave),
                   ),
                 ],
               ),

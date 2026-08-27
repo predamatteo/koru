@@ -27,6 +27,7 @@ import '../../presentation/screens/settings/sub_screens/app_personalization_scre
 import '../../presentation/screens/settings/sub_screens/backdoor_codes_screen.dart';
 import '../../presentation/screens/settings/sub_screens/notification_filter_screen.dart';
 import '../../presentation/screens/settings/sub_screens/font_screen.dart';
+import '../../presentation/screens/settings/sub_screens/language_screen.dart';
 import '../../presentation/screens/settings/sub_screens/launcher_settings_screen.dart';
 import '../../presentation/screens/settings/sub_screens/permissions_screen.dart';
 import '../../presentation/screens/settings/sub_screens/strict_mode_screen.dart';
@@ -325,6 +326,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     path: 'font',
                     parentNavigatorKey: rootNavigatorKey,
                     builder: (context, state) => const FontScreen(),
+                  ),
+                  GoRoute(
+                    path: 'language',
+                    parentNavigatorKey: rootNavigatorKey,
+                    builder: (context, state) => const LanguageScreen(),
                   ),
                   GoRoute(
                     path: 'launcher',

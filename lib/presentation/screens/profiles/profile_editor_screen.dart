@@ -10,6 +10,8 @@ import '../../../core/constants/profile_types.dart';
 import '../../../core/di/providers.dart';
 import '../../../data/database/app_database.dart';
 import '../../../domain/entities/blocked_section.dart';
+import '../../../l10n/generated/app_localizations.dart';
+import '../../l10n/model_labels.dart';
 import '../../providers/achievements_provider.dart';
 import '../../providers/profile_providers.dart';
 import '../../widgets/koru_pull_to_refresh.dart';
@@ -165,9 +167,9 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
     if (ssid == null || ssid.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
-              'Could not read current SSID. Ensure WiFi is on and location permission is granted.',
+              AppLocalizations.of(context).profileEditorWifiSsidReadFailed,
             ),
           ),
         );
@@ -185,23 +187,26 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
 
   Future<void> _addManualWifi() async {
     final controller = TextEditingController();
+    final l10n = AppLocalizations.of(context);
     final result = await showDialog<String?>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Add WiFi SSID'),
+        title: Text(l10n.profileEditorAddWifiTitle),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(hintText: 'e.g. Home_WiFi'),
+          decoration: InputDecoration(
+            hintText: l10n.profileEditorAddWifiHint,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(null),
-            child: const Text('Cancel'),
+            child: Text(l10n.commonCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text('Add'),
+            child: Text(l10n.commonAdd),
           ),
         ],
       ),
@@ -280,9 +285,11 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
   Future<void> _save() async {
     final title = _titleController.text.trim();
     if (title.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Name the profile first')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context).profileEditorNameFirst),
+        ),
+      );
       return;
     }
     final repo = ref.read(profileRepositoryProvider);
@@ -364,10 +371,13 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
   Future<void> _deleteProfile() async {
     if (_isEnabled) {
       final name = _titleController.text.trim();
+      final l10n = AppLocalizations.of(context);
       final granted = await requireUnlockChallenge(
         context,
         ref,
-        action: name.isEmpty ? 'cancellare il profilo' : 'cancellare «$name»',
+        action: name.isEmpty
+            ? l10n.profileEditorActionDeleteGeneric
+            : l10n.profileEditorActionDeleteNamed(name),
       );
       if (!granted) return;
     }
@@ -446,9 +456,9 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Pick an icon',
-                style: TextStyle(
+              Text(
+                AppLocalizations.of(ctx).profileEditorPickIcon,
+                style: const TextStyle(
                   color: KoruColors.textPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -489,6 +499,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
     if (!widget.isNew && !_loaded) {
       _loadExisting(widget.profileId!);
     }
+    final l10n = AppLocalizations.of(context);
 
     // Listen reattivo a profilesProvider (StreamProvider, reattivo ai
     // cambi DB via Drift): quando una sub-screen salva (blocked apps,
@@ -522,9 +533,9 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
       appBar: AppBar(
         title: Text(
           widget.isNew
-              ? 'New profile'
+              ? l10n.profileEditorNewTitle
               : _titleController.text.isEmpty
-              ? 'Edit profile'
+              ? l10n.profileEditorEditTitle
               : _titleController.text,
         ),
         elevation: 0,
@@ -538,9 +549,9 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
           TextButton(
             onPressed: _save,
             style: TextButton.styleFrom(foregroundColor: KoruColors.primary),
-            child: const Text(
-              'Save',
-              style: TextStyle(fontWeight: FontWeight.w600),
+            child: Text(
+              l10n.commonSave,
+              style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -560,7 +571,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
             const SizedBox(height: 24),
 
             // ── Schedule ────────────────────────────────────────────────
-            const _Label('Schedule'),
+            _Label(l10n.profileEditorSectionSchedule),
             const SizedBox(height: 10),
             _Card(
               child: Column(
@@ -583,7 +594,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                       children: [
                         Expanded(
                           child: _TimeField(
-                            label: 'Start',
+                            label: l10n.profileEditorStart,
                             time: _slots[i].from,
                             onTap: _allDay ? null : () => _pickTime(i, true),
                           ),
@@ -598,7 +609,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                         ),
                         Expanded(
                           child: _TimeField(
-                            label: 'End',
+                            label: l10n.profileEditorEnd,
                             time: _slots[i].to,
                             onTap: _allDay ? null : () => _pickTime(i, false),
                           ),
@@ -614,7 +625,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                               color: KoruColors.textSecondary,
                             ),
                             onPressed: () => _removeSlot(i),
-                            tooltip: 'Remove time slot',
+                            tooltip: l10n.profileEditorRemoveTimeSlot,
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints.tightFor(
                               width: 40,
@@ -633,7 +644,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                       child: TextButton.icon(
                         onPressed: _addSlot,
                         icon: const Icon(Icons.add, size: 18),
-                        label: const Text('Add time slot'),
+                        label: Text(l10n.profileEditorAddTimeSlot),
                         style: TextButton.styleFrom(
                           foregroundColor: KoruColors.primary,
                           padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -647,7 +658,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
             const SizedBox(height: 24),
 
             // ── Blocked apps ───────────────────────────────────────────
-            const _Label('Blocked apps'),
+            _Label(l10n.profileEditorSectionBlockedApps),
             const SizedBox(height: 10),
             _Card(
               child: Row(
@@ -670,10 +681,10 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                     ),
                   ),
                   const SizedBox(width: 14),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Apps selected',
-                      style: TextStyle(
+                      l10n.profileEditorAppsSelected,
+                      style: const TextStyle(
                         color: KoruColors.textPrimary,
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
@@ -689,20 +700,20 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                         : () => context.push(
                             '/profiles/${widget.profileId}/apps',
                           ),
-                    child: const Text(
-                      'Configure',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                    child: Text(
+                      l10n.profileEditorConfigure,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),
                 ],
               ),
             ),
             if (widget.isNew)
-              const Padding(
-                padding: EdgeInsets.fromLTRB(4, 6, 4, 0),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
                 child: Text(
-                  'Save the profile first to pick apps.',
-                  style: TextStyle(
+                  l10n.profileEditorSaveFirst,
+                  style: const TextStyle(
                     color: KoruColors.textSecondary,
                     fontSize: 12,
                   ),
@@ -711,7 +722,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
             const SizedBox(height: 24),
 
             // ── In-app content ─────────────────────────────────────────
-            const _Label('In-app content'),
+            _Label(l10n.profileEditorSectionInAppContent),
             const SizedBox(height: 10),
             _Card(
               padded: false,
@@ -748,7 +759,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
             const SizedBox(height: 24),
 
             // ── Websites ───────────────────────────────────────────────
-            const _Label('Websites'),
+            _Label(l10n.profileEditorSectionWebsites),
             const SizedBox(height: 10),
             _Card(
               child: InkWell(
@@ -766,10 +777,10 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                           : KoruColors.primary,
                     ),
                     const SizedBox(width: 14),
-                    const Expanded(
+                    Expanded(
                       child: Text(
-                        'Blocked domains',
-                        style: TextStyle(
+                        l10n.profileEditorBlockedDomains,
+                        style: const TextStyle(
                           color: KoruColors.textPrimary,
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
@@ -787,7 +798,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
             const SizedBox(height: 24),
 
             // ── WiFi ───────────────────────────────────────────────────
-            const _Label('Only on Wi-Fi'),
+            _Label(l10n.profileEditorSectionOnlyOnWifi),
             const SizedBox(height: 10),
             _Card(
               child: Column(
@@ -795,8 +806,8 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                 children: [
                   Text(
                     _wifiSsids.isEmpty
-                        ? 'No filter. Profile activates regardless of network.'
-                        : 'Profile active only on:',
+                        ? l10n.profileEditorWifiNoFilter
+                        : l10n.profileEditorWifiActiveOnlyOn,
                     style: const TextStyle(
                       color: KoruColors.textSecondary,
                       fontSize: 13,
@@ -845,7 +856,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                         child: OutlinedButton.icon(
                           onPressed: _addCurrentWifi,
                           icon: const Icon(Icons.my_location, size: 18),
-                          label: const Text('Add current'),
+                          label: Text(l10n.profileEditorAddCurrentWifi),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: KoruColors.primary,
                             side: const BorderSide(color: KoruColors.primary),
@@ -857,7 +868,7 @@ class _ProfileEditorScreenState extends ConsumerState<ProfileEditorScreen> {
                         child: OutlinedButton.icon(
                           onPressed: _addManualWifi,
                           icon: const Icon(Icons.add, size: 18),
-                          label: const Text('Add by name'),
+                          label: Text(l10n.profileEditorAddWifiByName),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: KoruColors.primary,
                             side: const BorderSide(color: KoruColors.primary),
@@ -960,9 +971,9 @@ class _IdentityCard extends StatelessWidget {
                 fontSize: 17,
                 fontWeight: FontWeight.w600,
               ),
-              decoration: const InputDecoration(
-                hintText: 'Profile name',
-                hintStyle: TextStyle(color: KoruColors.textSecondary),
+              decoration: InputDecoration(
+                hintText: AppLocalizations.of(context).profileEditorNameHint,
+                hintStyle: const TextStyle(color: KoruColors.textSecondary),
                 border: InputBorder.none,
                 isCollapsed: true,
               ),
@@ -979,16 +990,22 @@ class _DayCircles extends StatelessWidget {
   final int dayFlags;
   final ValueChanged<int> onToggle;
 
-  static const _letters = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-
+  /// L'iniziale viene dall'abbreviazione tradotta del giorno, non da una
+  /// lista fissa: in inglese sono M T W T F S S, in italiano L M M G V S D.
+  /// Una tabella di iniziali separata sarebbe un secondo posto da tradurre e
+  /// da tenere allineato a `dayShortLabel`.
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         for (var i = 0; i < DayFlags.ordered.length; i++)
           _DayCircle(
-            letter: _letters[i],
+            letter: l10n
+                .dayShortLabel(DayFlags.ordered[i])
+                .substring(0, 1)
+                .toUpperCase(),
             selected: DayFlags.hasDay(dayFlags, DayFlags.ordered[i]),
             onTap: () => onToggle(DayFlags.ordered[i]),
           ),
@@ -1044,22 +1061,22 @@ class _AllDayRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const Expanded(
+        Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'All day',
-                style: TextStyle(
+                AppLocalizations.of(context).profileEditorAllDayTitle,
+                style: const TextStyle(
                   color: KoruColors.textPrimary,
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
                 ),
               ),
-              SizedBox(height: 2),
+              const SizedBox(height: 2),
               Text(
-                'Active around the clock, 00:00 → 00:00',
-                style: TextStyle(
+                AppLocalizations.of(context).profileEditorAllDaySubtitle,
+                style: const TextStyle(
                   color: KoruColors.textSecondary,
                   fontSize: 12,
                 ),
@@ -1172,7 +1189,7 @@ class _SectionSwitchRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  section.displayName,
+                  section.fullName(AppLocalizations.of(context)),
                   style: TextStyle(
                     color: impliedByFullBlock
                         ? KoruColors.textSecondary
@@ -1184,7 +1201,7 @@ class _SectionSwitchRow extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
-                      'App fully blocked',
+                      AppLocalizations.of(context).inAppContentAppFullyBlocked,
                       style: TextStyle(
                         color: KoruColors.textSecondary.withAlpha(180),
                         fontSize: 11,

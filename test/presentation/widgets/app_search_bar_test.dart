@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:koru/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koru/core/theme/launcher_phase.dart';
@@ -38,7 +39,10 @@ void main() {
         ProviderScope(
           child: Builder(builder: (context) {
             container = ProviderScope.containerOf(context);
-            return const MaterialApp(
+            return MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
               home: Scaffold(body: _bar),
             );
           }),
@@ -74,7 +78,10 @@ void main() {
         ProviderScope(
           child: Builder(builder: (context) {
             container = ProviderScope.containerOf(context);
-            return const MaterialApp(
+            return MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
               home: Scaffold(body: _bar),
             );
           }),
@@ -103,7 +110,10 @@ void main() {
         ProviderScope(
           child: Builder(builder: (context) {
             container = ProviderScope.containerOf(context);
-            return const MaterialApp(
+            return MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
               home: Scaffold(body: _bar),
             );
           }),

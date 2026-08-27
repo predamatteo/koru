@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/font_catalog.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../providers/theme_provider.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
 
@@ -11,9 +12,10 @@ class FontScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final current = ref.watch(fontPreferenceProvider);
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Font')),
+      appBar: AppBar(title: Text(l10n.fontTitle)),
       body: KoruPullToRefresh(
         child: RadioGroup<KoruFont>(
           groupValue: current,
@@ -31,7 +33,7 @@ class FontScreen extends ConsumerWidget {
                     style: TextStyle(fontFamily: font.family),
                   ),
                   subtitle: Text(
-                    'The quick brown fox jumps over the lazy dog',
+                    l10n.fontPreviewPangram,
                     style: TextStyle(fontFamily: font.family),
                   ),
                 ),

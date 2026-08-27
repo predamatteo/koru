@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/constants/layout.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../providers/app_list_provider.dart';
 import '../../../providers/app_personalization_provider.dart';
 import '../../../widgets/app_icon.dart';
@@ -36,6 +37,7 @@ class _AppPersonalizationScreenState
     String? currentCustom,
   ) async {
     final controller = TextEditingController(text: currentCustom ?? '');
+    final l10n = AppLocalizations.of(context);
     final result = await showDialog<String?>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -43,24 +45,24 @@ class _AppPersonalizationScreenState
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Custom name',
-            hintText: 'Leave empty to reset',
+          decoration: InputDecoration(
+            labelText: l10n.personalizationCustomName,
+            hintText: l10n.personalizationCustomNameHint,
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(null),
-            child: const Text('Cancel'),
+            child: Text(l10n.commonCancel),
           ),
           if (currentCustom != null)
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(''),
-              child: const Text('Reset'),
+              child: Text(l10n.commonReset),
             ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(controller.text),
-            child: const Text('Save'),
+            child: Text(l10n.commonSave),
           ),
         ],
       ),
@@ -79,31 +81,29 @@ class _AppPersonalizationScreenState
     // renderebbe una app nascosta irrecuperabile.
     final apps = ref.watch(pickerAppsProvider);
     final personalization = ref.watch(appPersonalizationProvider);
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('App personalization'),
+        title: Text(l10n.settingsAppPersonalization),
         actions: [
           IconButton(
-            tooltip: 'Reset all',
+            tooltip: l10n.personalizationResetAll,
             icon: const Icon(Icons.restart_alt),
             onPressed: () async {
               final ok = await showDialog<bool>(
                 context: context,
                 builder: (ctx) => AlertDialog(
-                  title: const Text('Reset personalization?'),
-                  content: const Text(
-                    'All custom names will be removed and all hidden apps '
-                    'will become visible again.',
-                  ),
+                  title: Text(l10n.personalizationResetDialogTitle),
+                  content: Text(l10n.personalizationResetDialogBody),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.of(ctx).pop(false),
-                      child: const Text('Cancel'),
+                      child: Text(l10n.commonCancel),
                     ),
                     FilledButton(
                       onPressed: () => Navigator.of(ctx).pop(true),
-                      child: const Text('Reset'),
+                      child: Text(l10n.commonReset),
                     ),
                   ],
                 ),
@@ -123,7 +123,7 @@ class _AppPersonalizationScreenState
               onChanged: (v) => setState(() => _query = v),
               decoration: InputDecoration(
                 isDense: true,
-                hintText: 'Search apps',
+                hintText: l10n.commonSearchApps,
                 prefixIcon: const Icon(
                   Icons.search,
                   color: KoruColors.textSecondary,
@@ -172,12 +172,11 @@ class _AppPersonalizationScreenState
               itemCount: sorted.length + 1,
               itemBuilder: (context, i) {
                 if (i == 0) {
-                  return const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                     child: Text(
-                      'Long-press an app to rename. Toggle the eye to hide '
-                      'it from the launcher drawer (the app stays installed).',
-                      style: TextStyle(
+                      l10n.personalizationIntro,
+                      style: const TextStyle(
                         color: KoruColors.textSecondary,
                         height: 1.4,
                         fontSize: 13,
@@ -206,7 +205,9 @@ class _AppPersonalizationScreenState
                     ),
                   ),
                   subtitle: Text(
-                    custom != null ? 'was: ${app.label}' : app.packageName,
+                    custom != null
+                        ? l10n.personalizationWasNamed(app.label)
+                        : app.packageName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(

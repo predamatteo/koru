@@ -3,7 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/koru_colors.dart';
+import '../../../core/constants/koru_locale.dart';
 import '../../../core/constants/layout.dart';
+import '../../../l10n/generated/app_localizations.dart';
+import '../../providers/locale_provider.dart';
 // Monochrome rimosso dalle Impostazioni: vedi la tile commentata nella sezione
 // Appearance, la classe `_SwitchTile` in fondo al file e il filtro in `app.dart`.
 // import '../../providers/monochrome_provider.dart';
@@ -15,9 +18,11 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // final monochrome = ref.watch(monochromeProvider);
+    final l10n = AppLocalizations.of(context);
+    final locale = ref.watch(localePreferenceProvider);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Settings'),
+        title: Text(l10n.tabSettings),
         elevation: 0,
         scrolledUnderElevation: 0,
       ),
@@ -58,64 +63,76 @@ class SettingsScreen extends ConsumerWidget {
             // ),
             // const SizedBox(height: 24),
             _Section(
-              label: 'Launcher',
+              label: l10n.settingsSectionAppearance,
+              children: [
+                _Tile(
+                  icon: Icons.translate_outlined,
+                  title: l10n.languageTitle,
+                  value: _localeLabel(locale, l10n),
+                  onTap: () => context.push('/settings/language'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            _Section(
+              label: l10n.settingsSectionLauncher,
               children: [
                 _Tile(
                   icon: Icons.home_outlined,
-                  title: 'Set as default',
+                  title: l10n.settingsSetAsDefault,
                   onTap: () => context.push('/settings/launcher'),
                 ),
                 _Tile(
                   icon: Icons.apps_outlined,
-                  title: 'App personalization',
+                  title: l10n.settingsAppPersonalization,
                   onTap: () => context.push('/settings/app-personalization'),
                 ),
               ],
             ),
             const SizedBox(height: 24),
             _Section(
-              label: 'Discipline',
+              label: l10n.settingsSectionDiscipline,
               children: [
                 _Tile(
                   icon: Icons.shield_outlined,
-                  title: 'Strict mode',
+                  title: l10n.strictModeTitle,
                   onTap: () => context.push('/settings/strict-mode'),
                 ),
                 _Tile(
                   icon: Icons.psychology_outlined,
-                  title: 'Sfida di sblocco',
+                  title: l10n.unlockChallengeTitle,
                   onTap: () => context.push('/settings/unlock-challenge'),
                 ),
                 _Tile(
                   icon: Icons.hourglass_bottom_outlined,
-                  title: 'App daily limits',
+                  title: l10n.appLimitsTitle,
                   onTap: () => context.push('/settings/app-limits'),
                 ),
                 _Tile(
                   icon: Icons.notifications_off_outlined,
-                  title: 'Notification filter',
+                  title: l10n.notificationFilterTitle,
                   onTap: () => context.push('/settings/notification-filter'),
                 ),
               ],
             ),
             const SizedBox(height: 24),
             _Section(
-              label: 'Permissions',
+              label: l10n.settingsSectionPermissions,
               children: [
                 _Tile(
                   icon: Icons.verified_user_outlined,
-                  title: 'Permissions',
+                  title: l10n.permissionsTitle,
                   onTap: () => context.push('/settings/permissions'),
                 ),
               ],
             ),
             const SizedBox(height: 24),
             _Section(
-              label: 'About',
+              label: l10n.settingsSectionAbout,
               children: [
                 _Tile(
                   icon: Icons.info_outline,
-                  title: 'About Koru',
+                  title: l10n.aboutTitle,
                   onTap: () => context.push('/settings/about'),
                 ),
               ],
@@ -127,11 +144,11 @@ class SettingsScreen extends ConsumerWidget {
             // percorribile. Tenerla accanto a Strict mode la rimetterebbe sulla
             // strada di chi sta solo cercando di allentare qualcosa.
             _Section(
-              label: 'Emergenza',
+              label: l10n.settingsSectionEmergency,
               children: [
                 _Tile(
                   icon: Icons.medical_services_outlined,
-                  title: 'Sblocco d\'emergenza',
+                  title: l10n.backdoorTitle,
                   onTap: () => context.push('/settings/backdoor'),
                 ),
               ],
@@ -141,6 +158,15 @@ class SettingsScreen extends ConsumerWidget {
       ),
     );
   }
+
+  /// Endonimi per le lingue (vedi `LanguageScreen._label`): la tile deve dire
+  /// la stessa cosa che l'utente ha scelto nel picker.
+  String _localeLabel(KoruLocale locale, AppLocalizations l10n) =>
+      switch (locale) {
+        KoruLocale.system => l10n.languageSystemDefault,
+        KoruLocale.italian => 'Italiano',
+        KoruLocale.english => 'English',
+      };
 }
 
 /// Section container: uppercase accent label + grouped card con i tile.
@@ -196,10 +222,19 @@ class _Section extends StatelessWidget {
 
 /// Tile standard: icona leading verde, titolo, opzionale valore + chevron.
 class _Tile extends StatelessWidget {
-  const _Tile({required this.icon, required this.title, required this.onTap});
+  const _Tile({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+    this.value,
+  });
 
   final IconData icon;
   final String title;
+
+  /// Valore corrente mostrato prima del chevron (es. la lingua scelta).
+  /// `null` ⇒ la tile è solo un link, come tutte le altre.
+  final String? value;
   final VoidCallback onTap;
 
   @override
@@ -221,6 +256,20 @@ class _Tile extends StatelessWidget {
                 ),
               ),
             ),
+            if (value != null) ...[
+              Flexible(
+                child: Text(
+                  value!,
+                  textAlign: TextAlign.end,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: KoruColors.textSecondary.withAlpha(200),
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
             Icon(
               Icons.chevron_right,
               size: 18,

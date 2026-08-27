@@ -24,21 +24,12 @@ abstract class DayFlags {
     sunday,
   ];
 
-  static const Map<int, String> shortLabels = {
-    monday: 'Mon',
-    tuesday: 'Tue',
-    wednesday: 'Wed',
-    thursday: 'Thu',
-    friday: 'Fri',
-    saturday: 'Sat',
-    sunday: 'Sun',
-  };
+  // Le abbreviazioni dei giorni sono testo tradotto e stanno negli ARB:
+  // `AppLocalizations.dayShortLabel` / `activeDayLabels` in
+  // `presentation/l10n/model_labels.dart`. Qui restano solo i bit.
 
   static bool hasDay(int flags, int day) => flags & day != 0;
   static int toggleDay(int flags, int day) => flags ^ day;
-
-  static List<String> activeLabels(int flags) =>
-      ordered.where((d) => hasDay(flags, d)).map((d) => shortLabels[d]!).toList(growable: false);
 
   /// Dart weekday (1=Mon..7=Sun) → DayFlags bit.
   static int fromDartWeekday(int dartWeekday) {

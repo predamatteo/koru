@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/hive_keys.dart';
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 
 class LauncherPage extends ConsumerWidget {
   const LauncherPage({super.key});
@@ -33,13 +34,12 @@ class LauncherPage extends ConsumerWidget {
         children: [
           const Icon(Icons.home_outlined, size: 64, color: KoruColors.primary),
           const SizedBox(height: 24),
-          Text('Use Koru as your launcher',
+          Text(AppLocalizations.of(context).onboardingLauncherTitle,
               style: Theme.of(context).textTheme.headlineMedium,
               textAlign: TextAlign.center),
           const SizedBox(height: 12),
           Text(
-            'Set Koru as your default home screen for the full minimalist '
-            'experience. You can always change this later in Settings.',
+            AppLocalizations.of(context).onboardingLauncherBody,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: KoruColors.textSecondary,
@@ -48,11 +48,11 @@ class LauncherPage extends ConsumerWidget {
           const SizedBox(height: 32),
           OutlinedButton(
             onPressed: () => _setAsDefaultLauncher(ref),
-            child: const Text('Set Koru as default launcher'),
+            child: Text(AppLocalizations.of(context).onboardingLauncherCta),
           ),
           const SizedBox(height: 8),
           Text(
-            'Or skip — Koru works great either way.',
+            AppLocalizations.of(context).onboardingLauncherSkipHint,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: KoruColors.textSecondary,
                 ),

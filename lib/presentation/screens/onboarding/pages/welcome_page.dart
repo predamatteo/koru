@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/constants/koru_colors.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 
 class WelcomePage extends StatelessWidget {
   const WelcomePage({super.key});
@@ -21,7 +22,7 @@ class WelcomePage extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           Text(
-            'A Maori symbol of inner growth.',
+            AppLocalizations.of(context).onboardingWelcomeTagline,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: KoruColors.textSecondary,
@@ -29,8 +30,7 @@ class WelcomePage extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            'Koru is a minimalist launcher and a mindful blocker. '
-            'It helps you take back your attention — one breath at a time.',
+            AppLocalizations.of(context).onboardingWelcomeBody,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium,
           ),

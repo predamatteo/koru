@@ -1,5 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koru/core/constants/day_flags.dart';
+import 'package:koru/presentation/l10n/model_labels.dart';
+
+import '../../_helpers/l10n_test_utils.dart';
+
+final _en = enL10n;
 
 void main() {
   group('DayFlags bit values', () {
@@ -92,37 +97,46 @@ void main() {
     });
   });
 
-  group('DayFlags.activeLabels', () {
+  group('AppLocalizations.activeDayLabels', () {
     test('weekdays → Mon..Fri', () {
       expect(
-        DayFlags.activeLabels(DayFlags.weekdays),
+        _en.activeDayLabels(DayFlags.weekdays),
         ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
       );
     });
 
     test('weekend → Sat, Sun', () {
-      expect(DayFlags.activeLabels(DayFlags.weekend), ['Sat', 'Sun']);
+      expect(_en.activeDayLabels(DayFlags.weekend), ['Sat', 'Sun']);
     });
 
     test('empty flags → empty list', () {
-      expect(DayFlags.activeLabels(0), <String>[]);
+      expect(_en.activeDayLabels(0), <String>[]);
     });
 
     test('monday | wednesday | friday → Mon, Wed, Fri (ordered)', () {
       final flags = DayFlags.monday | DayFlags.wednesday | DayFlags.friday;
-      expect(DayFlags.activeLabels(flags), ['Mon', 'Wed', 'Fri']);
+      expect(_en.activeDayLabels(flags), ['Mon', 'Wed', 'Fri']);
     });
 
     test('allDays → all 7 short labels in week order', () {
       expect(
-        DayFlags.activeLabels(DayFlags.allDays),
+        _en.activeDayLabels(DayFlags.allDays),
         ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
       );
     });
 
     test('returns a fixed-length (non-growable) list', () {
-      final labels = DayFlags.activeLabels(DayFlags.weekend);
+      final labels = _en.activeDayLabels(DayFlags.weekend);
       expect(() => labels.add('Foo'), throwsUnsupportedError);
+    });
+
+    // Le abbreviazioni sono tradotte: se qualcuno reintroducesse una tabella
+    // inglese hardcoded, questo test la vedrebbe.
+    test('italian short labels differ from english', () {
+      expect(
+        itL10n.activeDayLabels(DayFlags.weekdays),
+        ['Lun', 'Mar', 'Mer', 'Gio', 'Ven'],
+      );
     });
   });
 
@@ -148,7 +162,7 @@ void main() {
     });
   });
 
-  group('DayFlags.ordered & shortLabels', () {
+  group('DayFlags.ordered & short labels', () {
     test('ordered lists every day exactly once in Mon..Sun order', () {
       expect(DayFlags.ordered, <int>[
         DayFlags.monday,
@@ -161,9 +175,10 @@ void main() {
       ]);
     });
 
-    test('shortLabels covers every ordered day', () {
+    test('every ordered day has a short label in both locales', () {
       for (final bit in DayFlags.ordered) {
-        expect(DayFlags.shortLabels[bit], isNotNull);
+        expect(_en.dayShortLabel(bit), isNotEmpty);
+        expect(itL10n.dayShortLabel(bit), isNotEmpty);
       }
     });
   });

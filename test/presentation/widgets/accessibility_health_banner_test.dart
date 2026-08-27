@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:koru/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koru/presentation/providers/accessibility_health_provider.dart';
@@ -21,7 +22,10 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: h.container,
-          child: const MaterialApp(
+          child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
             home: Scaffold(body: AccessibilityHealthBanner()),
           ),
         ),
@@ -46,7 +50,10 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: h.container,
-          child: const MaterialApp(
+          child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
             home: Scaffold(body: AccessibilityHealthBanner()),
           ),
         ),
@@ -73,7 +80,10 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: h.container,
-          child: const MaterialApp(
+          child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
             home: Scaffold(body: AccessibilityHealthBanner()),
           ),
         ),
@@ -101,7 +111,10 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: h.container,
-          child: const MaterialApp(
+          child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
             home: Scaffold(body: AccessibilityHealthBanner()),
           ),
         ),
@@ -129,7 +142,10 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: h.container,
-          child: const MaterialApp(
+          child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
             home: Scaffold(body: AccessibilityHealthBanner()),
           ),
         ),

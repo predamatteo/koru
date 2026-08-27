@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../domain/entities/countdown_state.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 
 /// Custom animated countdown button that fills left-to-right.
 ///
@@ -96,7 +97,7 @@ class _CountdownButtonWidgetState extends State<CountdownButtonWidget>
 
   String get _displayText => switch (_phase) {
         CountdownPhase.finished => widget.finishedText,
-        CountdownPhase.paused => 'Paused',
+        CountdownPhase.paused => AppLocalizations.of(context).overlayPaused,
         _ => '$_remainingSeconds',
       };
 
@@ -114,7 +115,9 @@ class _CountdownButtonWidgetState extends State<CountdownButtonWidget>
       button: true,
       label: _phase == CountdownPhase.finished
           ? widget.finishedText
-          : 'Countdown: $_remainingSeconds seconds remaining',
+          : AppLocalizations.of(
+              context,
+            ).overlayCountdownSemantics(_remainingSeconds),
       child: GestureDetector(
         onTap: _handleTap,
         child: AnimatedBuilder(

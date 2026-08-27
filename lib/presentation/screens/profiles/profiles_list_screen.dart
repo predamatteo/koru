@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
 import '../../../data/models/profile_model.dart';
+import '../../../l10n/generated/app_localizations.dart';
+import '../../l10n/model_labels.dart';
 import '../../providers/profile_providers.dart';
 import '../../widgets/koru_pull_to_refresh.dart';
 import '../../widgets/unlock_challenge_dialog.dart';
@@ -15,9 +17,10 @@ class ProfilesListScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profilesAsync = ref.watch(profilesProvider);
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Profiles'),
+        title: Text(l10n.tabProfiles),
         elevation: 0,
         scrolledUnderElevation: 0,
         actions: [
@@ -26,7 +29,7 @@ class ProfilesListScreen extends ConsumerWidget {
             child: FilledButton.icon(
               onPressed: () => context.push('/profiles/new'),
               icon: const Icon(Icons.add, size: 20),
-              label: const Text('New'),
+              label: Text(l10n.profilesNew),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 minimumSize: const Size(0, 40),
@@ -79,24 +82,25 @@ class _ProfileCard extends ConsumerWidget {
     bool enabled,
   ) async {
     if (!enabled && profile.isEnabled) {
+      final l10n = AppLocalizations.of(context);
       final granted = await requireUnlockChallenge(
         context,
         ref,
-        action: 'spegnere «${profile.displayTitle}»',
+        action: l10n.profilesActionTurnOff(profile.displayTitleL10n(l10n)),
       );
       if (!granted) return;
     }
     await ref.read(profileRepositoryProvider).toggleProfile(profile.id, enabled);
   }
 
-  String _buildSubtitle() {
-    final parts = <String>[profile.dayFlagsLabel];
+  String _buildSubtitle(AppLocalizations l10n) {
+    final parts = <String>[profile.dayFlagsLabel(l10n)];
     if (profile.hasTimeCondition && profile.intervals.isNotEmpty) {
       parts.add(
         profile.intervals
             // from == to e' la fascia 24h, non una finestra a lunghezza zero.
             .map((iv) => iv.fromMinutes == iv.toMinutes
-                ? 'All day'
+                ? l10n.profilesAllDay
                 : '${_fmt(iv.fromMinutes)}\u2013${_fmt(iv.toMinutes)}')
             .join(', '),
       );
@@ -113,6 +117,7 @@ class _ProfileCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final appsCount = profile.apps.length;
+    final l10n = AppLocalizations.of(context);
     return Container(
       decoration: BoxDecoration(
         color: KoruColors.surface,
@@ -135,7 +140,7 @@ class _ProfileCard extends ConsumerWidget {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        profile.displayTitle,
+                        profile.displayTitleL10n(l10n),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -158,7 +163,7 @@ class _ProfileCard extends ConsumerWidget {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    _buildSubtitle(),
+                    _buildSubtitle(l10n),
                     style: const TextStyle(
                       color: KoruColors.textSecondary,
                       fontSize: 13,
@@ -176,7 +181,7 @@ class _ProfileCard extends ConsumerWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        '$appsCount APPS BLOCKED',
+                        l10n.profilesAppsBlocked(appsCount).toUpperCase(),
                         style: TextStyle(
                           color: KoruColors.textSecondary.withAlpha(200),
                           fontSize: 11,
@@ -193,9 +198,9 @@ class _ProfileCard extends ConsumerWidget {
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
                       onPressed: () => context.push('/profiles/${profile.id}'),
-                      child: const Text(
-                        'Edit',
-                        style: TextStyle(fontWeight: FontWeight.w600),
+                      child: Text(
+                        l10n.commonEdit,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ),
                   ],
@@ -249,13 +254,12 @@ class _EmptyProfilesHint extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'No profiles yet',
+              AppLocalizations.of(context).profilesEmptyTitle,
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
             Text(
-              'Tap + to create your first profile and pick when and which '
-              'apps to block.',
+              AppLocalizations.of(context).profilesEmptyBody,
               textAlign: TextAlign.center,
               style: Theme.of(
                 context,

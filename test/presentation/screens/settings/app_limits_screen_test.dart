@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:koru/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koru/platform/blocking_channel.dart';
@@ -8,6 +9,8 @@ import 'package:koru/presentation/screens/settings/sub_screens/app_limits_screen
 import 'package:mocktail/mocktail.dart';
 
 import '../../../_helpers/provider_test_utils.dart';
+
+import '../../../_helpers/l10n_test_utils.dart';
 
 InstalledAppInfo _app(String pkg, String label) =>
     InstalledAppInfo(packageName: pkg, label: label);
@@ -67,7 +70,10 @@ TestHarness _harness({
 
 Widget _wrap(ProviderContainer container) => UncontrolledProviderScope(
       container: container,
-      child: const MaterialApp(home: AppLimitsScreen()),
+      child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,home: AppLimitsScreen()),
     );
 
 /// Pump espliciti: la schermata tiene vivi provider che riprogrammano lavoro,
@@ -215,7 +221,7 @@ void main() {
       await tester.tap(find.text('Save'));
       await _settle(tester);
 
-      expect(find.textContaining('ricostruire una sequenza'), findsNothing);
+      expect(find.text(enL10n.challengeIntroTitle), findsNothing);
       expect(_StubAppLimitsNotifier.saved['com.a']?.minutes, 15);
     });
 
@@ -238,7 +244,7 @@ void main() {
       await tester.tap(find.text('Save'));
       await _settle(tester);
 
-      expect(find.textContaining('ricostruire una sequenza'), findsOneWidget);
+      expect(find.text(enL10n.challengeIntroTitle), findsOneWidget);
       // Non salvato: la sfida non è ancora stata superata.
       expect(_StubAppLimitsNotifier.saved, isEmpty);
     });
@@ -265,7 +271,7 @@ void main() {
       await tester.tap(find.text('Save'));
       await _settle(tester);
 
-      expect(find.textContaining('ricostruire una sequenza'), findsNothing);
+      expect(find.text(enL10n.challengeIntroTitle), findsNothing);
       expect(_StubAppLimitsNotifier.saved['com.a']?.minutes, 120);
     });
 
@@ -280,7 +286,7 @@ void main() {
       await tester.tap(find.text('Save'));
       await _settle(tester);
 
-      expect(find.textContaining('ricostruire una sequenza'), findsNothing);
+      expect(find.text(enL10n.challengeIntroTitle), findsNothing);
       expect(_StubAppLimitsNotifier.saved['com.a']?.minutes, 30);
     });
 
@@ -301,12 +307,12 @@ void main() {
       await _settle(tester);
       await openDialogFor(tester, 'Alpha');
 
-      await tester.tap(find.text('Blocco per le sfide'));
+      await tester.tap(find.text(enL10n.appLimitsChallengeLockTitle));
       await _settle(tester);
       await tester.tap(find.text('Save'));
       await _settle(tester);
 
-      expect(find.textContaining('ricostruire una sequenza'), findsOneWidget);
+      expect(find.text(enL10n.challengeIntroTitle), findsOneWidget);
       expect(_StubAppLimitsNotifier.saved, isEmpty);
     });
 
@@ -326,7 +332,7 @@ void main() {
       await tester.tap(find.text('Remove'));
       await _settle(tester);
 
-      expect(find.textContaining('ricostruire una sequenza'), findsOneWidget);
+      expect(find.text(enL10n.challengeIntroTitle), findsOneWidget);
       expect(_StubAppLimitsNotifier.saved, isEmpty);
     });
   });

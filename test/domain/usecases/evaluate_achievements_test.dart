@@ -229,8 +229,6 @@ void main() {
     test('unknown achievement id returns 0', () {
       const fake = Achievement(
         id: 'totally_made_up_id',
-        title: 'Fake',
-        description: 'Fake',
         iconKey: 'help_outline',
         category: AchievementCategory.setup,
         target: 10,

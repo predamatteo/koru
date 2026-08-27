@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/di/providers.dart';
 import '../../core/router/app_router.dart';
+import '../../l10n/generated/app_localizations.dart';
 import '../widgets/unlock_challenge_dialog.dart';
 import 'app_list_provider.dart';
 import 'global_refresh.dart';
@@ -181,7 +182,7 @@ Future<void> runUsageLimitChallenge(Ref ref, String packageName) async {
     // `requireLimitUnlockChallenge` vuole un WidgetRef: qui siamo in un
     // provider, quindi passiamo dal wrapper che ne espone solo `read`.
     _RefAsWidgetRef(ref),
-    action: 'aprire $label oltre il limite di oggi',
+    action: AppLocalizations.of(ctx).usageLimitActionOpenBeyond(label),
   );
   if (!passed) return;
 

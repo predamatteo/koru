@@ -36,7 +36,18 @@ device, and if so update it in place instead of doing a fresh install** — a pl
 `adb install` of an already-present app fails with `INSTALL_FAILED_ALREADY_EXISTS`,
 and a clean reinstall wipes the Drift DB / Hive settings and forces re-granting the
 AccessibilityService + overlay + device-admin permissions every time. `adb install -r`
-replaces the app **keeping its data and granted permissions**.
+replaces the app **keeping its data**.
+
+**It does not keep everything, though — and the exception is the one that matters.**
+Measured on a Pixel 10 Pro (Android 17) after `adb install -r`: the Drift DB, the
+Hive boxes, `SYSTEM_ALERT_WINDOW`, `GET_USAGE_STATS`, `POST_NOTIFICATIONS` and the
+device-admin registration all survive, but the **AccessibilityService is revoked**
+(`settings get secure enabled_accessibility_services` → `null`). Android drops the
+binding for any reinstalled app that declares one. So after every update the
+blocking engine is OFF until it is re-enabled — the in-app banner ("Koru blocking
+is OFF" / "Il blocco di Koru è SPENTO") says so, and its CTA is the fastest way
+back. Re-enable it *before* concluding that an enforcement path is broken on
+device: a dead a11y service looks exactly like a blocking bug.
 
 ```powershell
 # PowerShell — build, then update-in-place if installed, else fresh install
@@ -284,6 +295,55 @@ bottom-nav shell and is only shown when Koru is invoked via the HOME intent
 (`/home`, `/profiles`, `/stats`, `/settings`) live inside the shell.
 System-gesture overrides for the launcher are scoped to its route via `RouteAware` —
 never enabled at widget mount. Route names are centralized in `KoruRoutes`.
+
+### Localization (en + it)
+
+Koru is bilingual, and — like the DB — the interesting part is that **two
+runtimes have to agree**. Flutter resolves from `lib/l10n/*.arb`; the native
+side (block overlay, foreground-service notification, home widget) resolves
+from `res/values/` and `res/values-it/` and knows nothing about Hive.
+
+The language is picked in Settings › Appearance › Language. Hive
+(`HiveKeys.localeCode`) is the single source of truth:
+
+1. `localePreferenceProvider` reads it and feeds `MaterialApp.locale`
+   (`KoruLocale.system` ⇒ `null` ⇒ follow the system);
+2. it also mirrors the choice into Android's **per-app locale**
+   (`LocaleManager.setApplicationLocales`, API 33+) so `res/values*` resolves
+   the same way. `localeNativeSyncProvider` re-asserts it once at startup,
+   because that is *system* state and can drift (the user can change it from
+   Android Settings, a restore brings back Hive but not system settings).
+
+On API 28–32 `LocaleManager` does not exist: the Flutter UI still switches, the
+native side stays on the system locale. Declared degradation, not a bug.
+
+Four things bite here:
+
+1. **Four lists must agree**: `app_en.arb`, `app_it.arb`, `KoruLocale`, and
+   `res/xml/locales_config.xml`. A tag missing from `locales_config.xml` is
+   *silently discarded* by `LocaleManager` — the picker would offer a language
+   Android refuses to apply. `test/l10n/arb_parity_test.dart` is the guardrail;
+   keep it green.
+2. **`domain/`, `data/` and `core/` must not hold display strings.** They don't
+   import Flutter, so they cannot reach `AppLocalizations`, and a hardcoded
+   English string there is one no language can override. The model→string
+   mappings live in `presentation/l10n/model_labels.dart` (profiles, day flags,
+   achievements, blocked sections, statistics periods). Same rule that already
+   applied to `Achievement.iconKey`.
+3. **`_fmtDurationMs` in `statistics_screen.dart` is deliberately NOT
+   localized** — `h`/`m` read the same in both languages, and it has a 1:1
+   parity contract with `UsageWidgetModel` on the Kotlin side, which resolves
+   its strings from `res/values*` and cannot follow a change made here.
+4. **A widget test that builds its own `MaterialApp` must pass
+   `AppLocalizations.localizationsDelegates`**, otherwise
+   `AppLocalizations.of(context)` is null and every translated widget dies on a
+   null-check. Prefer `pumpKoruWidget` from `test/_helpers/widget_test_utils.dart`,
+   which already does it. Assert against `enL10n.<key>`
+   (`test/_helpers/l10n_test_utils.dart`), not literals: a reworded translation
+   should not turn the suite red.
+
+Adding a string: put it in `app_en.arb` (the template) **and** `app_it.arb`,
+run `flutter gen-l10n`, then use `AppLocalizations.of(context).yourKey`.
 
 ## Conventions
 

@@ -138,19 +138,11 @@ enum UnlockChallengeLevel {
     UnlockChallengeLevel.stubborn => const Duration(seconds: 3),
   };
 
-  /// Etichetta breve per la UI delle impostazioni.
-  String get label => switch (this) {
-    UnlockChallengeLevel.gentle => 'Leggera',
-    UnlockChallengeLevel.standard => 'Media',
-    UnlockChallengeLevel.stubborn => 'Testarda',
-  };
-
-  String get description => switch (this) {
-    UnlockChallengeLevel.gentle => '3 simboli, 5 secondi per memorizzarli.',
-    UnlockChallengeLevel.standard => '4 simboli, 4 secondi, più distrattori.',
-    UnlockChallengeLevel.stubborn =>
-      '5 simboli, 3 secondi, griglia piena di sosia.',
-  };
+  // Etichetta e descrizione per la UI NON stanno qui: sono testo tradotto e
+  // questo file è `domain/` (nessun import Flutter, quindi nessun accesso a
+  // `AppLocalizations`). Vivono in
+  // `presentation/screens/settings/sub_screens/unlock_challenge_screen.dart`
+  // come estensione su questo enum.
 
   /// Livello di chi non ha mai toccato l'impostazione: chi installa Koru la
   /// installa per mettersi dei limiti, quindi si parte da un attrito vero e lo

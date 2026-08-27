@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/constants/layout.dart';
 import '../../../../core/di/providers.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../providers/app_list_provider.dart';
 import '../../../providers/notification_filter_provider.dart';
 import '../../../widgets/app_icon.dart';
@@ -61,13 +62,14 @@ class _NotificationFilterScreenState
     final apps = ref.watch(pickerAppsProvider);
     final silencedAsync = ref.watch(notificationFilterProvider);
     final silenced = silencedAsync.valueOrNull ?? const <String>{};
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Notification filter'),
+        title: Text(l10n.notificationFilterTitle),
         actions: [
           IconButton(
-            tooltip: 'Reset',
+            tooltip: l10n.commonReset,
             icon: const Icon(Icons.restart_alt),
             onPressed: silenced.isEmpty
                 ? null
@@ -87,7 +89,7 @@ class _NotificationFilterScreenState
               onChanged: (v) => setState(() => _query = v),
               decoration: InputDecoration(
                 isDense: true,
-                hintText: 'Search apps',
+                hintText: l10n.commonSearchApps,
                 prefixIcon: const Icon(
                   Icons.search,
                   color: KoruColors.textSecondary,
@@ -132,12 +134,11 @@ class _NotificationFilterScreenState
               itemBuilder: (context, i) {
                 if (i == 0) {
                   if (granted) {
-                    return const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                       child: Text(
-                        'Notifications from the apps you silence will be '
-                        'dismissed before reaching the status bar.',
-                        style: TextStyle(
+                        l10n.notificationFilterIntro,
+                        style: const TextStyle(
                           color: KoruColors.textSecondary,
                           height: 1.4,
                           fontSize: 13,
@@ -153,9 +154,9 @@ class _NotificationFilterScreenState
                         Icons.warning_amber_outlined,
                         color: KoruColors.danger,
                       ),
-                      title: const Text('Notification access required'),
-                      subtitle: const Text(
-                        'Enable Koru in Notification access to make silencing effective.',
+                      title: Text(l10n.notificationFilterAccessRequired),
+                      subtitle: Text(
+                        l10n.notificationFilterAccessRequiredSubtitle,
                       ),
                       trailing: TextButton(
                         onPressed: () async {
@@ -164,7 +165,7 @@ class _NotificationFilterScreenState
                               .blocking
                               .openNotificationAccessSettings();
                         },
-                        child: const Text('Open'),
+                        child: Text(l10n.commonOpen),
                       ),
                     ),
                   );

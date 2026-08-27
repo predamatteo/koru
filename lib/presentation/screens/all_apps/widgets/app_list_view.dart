@@ -8,6 +8,7 @@ import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
 import '../../../../core/theme/launcher_phase.dart';
 import '../../../../data/database/app_database.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../../platform/blocking_channel.dart';
 import '../../../providers/app_list_provider.dart';
 import '../../../providers/favorites_provider.dart';
@@ -204,7 +205,7 @@ class _EmptyResults extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
         child: Text(
-          'No matching apps',
+          AppLocalizations.of(context).allAppsNoMatch,
           style: Theme.of(context)
               .textTheme
               .bodyMedium
@@ -231,14 +232,17 @@ Future<void> showAppContextMenu({
   required BlockingChannel blocking,
   int? currentFolderId,
 }) {
+  final l10n = AppLocalizations.of(context);
   return showStyledSheet(
     context: context,
     title: app.label,
-    subtitle: 'App options',
+    subtitle: l10n.appMenuOptions,
     builder: (ctx) => [
       SheetActionTile(
         icon: isFavorite ? Icons.star_border : Icons.star,
-        label: isFavorite ? 'Remove from favorites' : 'Add to favorites',
+        label: isFavorite
+            ? l10n.appMenuRemoveFavorite
+            : l10n.appMenuAddFavorite,
         accent: KoruColors.primary,
         onTap: () async {
           final messenger = ScaffoldMessenger.maybeOf(context);
@@ -257,8 +261,8 @@ Future<void> showAppContextMenu({
               SnackBar(
                 content: Text(
                   isFavorite
-                      ? 'Removed ${app.label} from favorites'
-                      : 'Added ${app.label} to favorites',
+                      ? l10n.appMenuRemovedFavoriteToast(app.label)
+                      : l10n.appMenuAddedFavoriteToast(app.label),
                 ),
                 duration: const Duration(seconds: 2),
               ),
@@ -266,7 +270,7 @@ Future<void> showAppContextMenu({
           } catch (e) {
             messenger?.showSnackBar(
               SnackBar(
-                content: Text('Favorites update failed: $e'),
+                content: Text(l10n.appMenuFavoritesFailed('$e')),
                 duration: const Duration(seconds: 3),
               ),
             );
@@ -275,7 +279,7 @@ Future<void> showAppContextMenu({
       ),
       SheetActionTile(
         icon: Icons.drive_file_move_outline,
-        label: 'Move to folder…',
+        label: l10n.appMenuMoveToFolder,
         onTap: () {
           Navigator.pop(ctx);
           showMoveToFolderSheet(
@@ -291,7 +295,7 @@ Future<void> showAppContextMenu({
       if (currentFolderId != null)
         SheetActionTile(
           icon: Icons.folder_off_outlined,
-          label: 'Remove from folder',
+          label: l10n.appMenuRemoveFromFolder,
           onTap: () async {
             final messenger = ScaffoldMessenger.maybeOf(context);
             Navigator.pop(ctx);
@@ -299,7 +303,7 @@ Future<void> showAppContextMenu({
             messenger?.hideCurrentSnackBar();
             messenger?.showSnackBar(
               SnackBar(
-                content: Text('Moved ${app.label} back to home'),
+                content: Text(l10n.appMenuMovedBackHome(app.label)),
                 duration: const Duration(seconds: 2),
               ),
             );
@@ -307,7 +311,7 @@ Future<void> showAppContextMenu({
         ),
       SheetActionTile(
         icon: Icons.info_outline,
-        label: 'App info',
+        label: l10n.appMenuAppInfo,
         onTap: () {
           Navigator.pop(ctx);
           blocking.openAppInfo(app.packageName);
@@ -316,7 +320,7 @@ Future<void> showAppContextMenu({
       const _SheetDivider(),
       SheetActionTile(
         icon: Icons.delete_outline,
-        label: 'Uninstall',
+        label: l10n.appMenuUninstall,
         danger: true,
         onTap: () async {
           final messenger = ScaffoldMessenger.maybeOf(context);
@@ -338,8 +342,10 @@ Future<void> showAppContextMenu({
               messenger.showSnackBar(
                 SnackBar(
                   content: Text(
-                    'Impossibile disinstallare ${app.label}: '
-                    '${e.message ?? e.code}',
+                    l10n.appMenuUninstallFailed(
+                      app.label,
+                      e.message ?? e.code,
+                    ),
                   ),
                   duration: const Duration(seconds: 4),
                 ),
@@ -360,16 +366,12 @@ Future<void> _showUninstallBlockedDialog(BuildContext context) {
   return showDialog<void>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Strict mode active'),
-      content: const Text(
-        'Uninstalling apps is blocked while strict mode protects '
-        'uninstalling. Disable that option in Strict mode settings to '
-        'uninstall apps.',
-      ),
+      title: Text(AppLocalizations.of(context).appMenuStrictDialogTitle),
+      content: Text(AppLocalizations.of(context).appMenuStrictDialogBody),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx),
-          child: const Text('OK'),
+          child: Text(AppLocalizations.of(context).commonOk),
         ),
       ],
     ),
@@ -389,10 +391,11 @@ Future<void> showMoveToFolderSheet({
 }) {
   final targets =
       folders.where((f) => f.id != currentFolderId).toList(growable: false);
+  final l10n = AppLocalizations.of(context);
   return showStyledSheet(
     context: context,
-    title: 'Move "${app.label}"',
-    subtitle: 'Choose a destination folder',
+    title: l10n.folderMoveTitle(app.label),
+    subtitle: l10n.folderMoveSubtitle,
     builder: (ctx) => [
       for (final f in targets)
         SheetActionTile(
@@ -405,7 +408,7 @@ Future<void> showMoveToFolderSheet({
         ),
       SheetActionTile(
         icon: Icons.create_new_folder_outlined,
-        label: 'New folder…',
+        label: l10n.folderNew,
         accent: KoruColors.primary,
         onTap: () async {
           Navigator.pop(ctx);
@@ -661,23 +664,29 @@ class _FolderNameDialogState extends State<_FolderNameDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.initial == null ? 'New folder' : 'Rename folder'),
+      title: Text(
+        widget.initial == null
+            ? AppLocalizations.of(context).folderNewTitle
+            : AppLocalizations.of(context).favoritesRenameFolder,
+      ),
       content: TextField(
         controller: _controller,
         autofocus: true,
         textCapitalization: TextCapitalization.words,
         maxLength: 40,
-        decoration: const InputDecoration(hintText: 'Folder name'),
+        decoration: InputDecoration(
+          hintText: AppLocalizations.of(context).folderNameHint,
+        ),
         onSubmitted: (_) => _submit(),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text(AppLocalizations.of(context).commonCancel),
         ),
         TextButton(
           onPressed: _submit,
-          child: const Text('OK'),
+          child: Text(AppLocalizations.of(context).commonOk),
         ),
       ],
     );

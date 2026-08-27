@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/koru_colors.dart';
 import '../../core/router/app_router.dart';
+import '../../l10n/generated/app_localizations.dart';
+import '../l10n/model_labels.dart';
 import '../providers/achievements_provider.dart';
 import '../screens/statistics/widgets/achievement_style.dart';
 
@@ -21,6 +23,7 @@ class AchievementUnlockListener extends ConsumerWidget {
       if (a == null) return;
       final ctx = rootNavigatorKey.currentContext;
       if (ctx == null || !ctx.mounted) return;
+      final l10n = AppLocalizations.of(ctx);
       ScaffoldMessenger.maybeOf(ctx)?.showSnackBar(
         SnackBar(
           behavior: SnackBarBehavior.floating,
@@ -36,9 +39,9 @@ class AchievementUnlockListener extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(
-                      'Achievement unlocked',
-                      style: TextStyle(
+                    Text(
+                      l10n.achievementUnlockedToast,
+                      style: const TextStyle(
                         color: KoruColors.textSecondary,
                         fontSize: 11,
                         letterSpacing: 1.2,
@@ -46,7 +49,7 @@ class AchievementUnlockListener extends ConsumerWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      a.title,
+                      a.title(l10n),
                       style: const TextStyle(
                         color: KoruColors.textPrimary,
                         fontSize: 14,

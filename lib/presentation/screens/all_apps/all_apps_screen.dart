@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/theme/launcher_phase.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../../platform/blocking_channel.dart';
 import '../../providers/app_list_provider.dart';
 import '../../widgets/koru_pull_to_refresh.dart';
@@ -252,7 +253,8 @@ class _DrawerHeader extends StatelessWidget {
           children: [
             MinuteTickBuilder(
               builder: (context, now) => Text(
-                '${_timeFormat.format(now)} · $totalApps apps',
+                '${_timeFormat.format(now)} · '
+                '${AppLocalizations.of(context).allAppsCount(totalApps)}',
                 style: theme.textTheme.labelLarge
                     ?.copyWith(color: KoruColors.textSecondary),
               ),
@@ -260,7 +262,7 @@ class _DrawerHeader extends StatelessWidget {
             TextButton(
               onPressed: () => Navigator.maybePop(context),
               style: TextButton.styleFrom(foregroundColor: phase.accent),
-              child: const Text('Close'),
+              child: Text(AppLocalizations.of(context).commonClose),
             ),
           ],
         ),

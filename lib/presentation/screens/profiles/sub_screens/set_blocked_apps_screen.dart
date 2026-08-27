@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/constants/profile_types.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../../platform/blocking_channel.dart';
 import '../../../providers/app_list_provider.dart';
 import '../../../providers/profile_providers.dart';
@@ -109,7 +110,7 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
       final granted = await requireUnlockChallenge(
         context,
         ref,
-        action: 'togliere protezione a un profilo acceso',
+        action: AppLocalizations.of(context).blockedAppsActionWeaken,
       );
       if (!granted) return;
       if (!mounted) return;
@@ -167,7 +168,10 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
   /// Durante una ricerca i suggerimenti sono disattivati: chi digita sta
   /// cercando un'app precisa, e vedersi in testa tre risultati che non
   /// c'entrano con la query sarebbe solo rumore.
-  List<_PickerRow> _rows(List<InstalledAppInfo> filtered) {
+  List<_PickerRow> _rows(
+    List<InstalledAppInfo> filtered,
+    AppLocalizations l10n,
+  ) {
     final suggested = _query.trim().isEmpty
         ? (_suggested ?? const <String>[])
         : const <String>[];
@@ -184,9 +188,9 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
     }
     final pinnedPackages = {for (final a in pinned) a.packageName};
     return [
-      const _PickerRow.header('Most used this week'),
+      _PickerRow.header(l10n.blockedAppsMostUsedThisWeek),
       for (final a in pinned) _PickerRow.app(a),
-      const _PickerRow.header('All apps'),
+      _PickerRow.header(l10n.allAppsTitle),
       for (final a in filtered)
         if (!pinnedPackages.contains(a.packageName)) _PickerRow.app(a),
     ];
@@ -199,11 +203,12 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
     // Koru); `appsAsync` resta solo per gli stati loading/error.
     final apps = ref.watch(pickerAppsProvider);
     final weekly = ref.watch(weeklyTopAppsProvider).valueOrNull;
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Select apps'),
-        actions: [TextButton(onPressed: _save, child: const Text('Save'))],
+        title: Text(l10n.blockedAppsSelectApps),
+        actions: [TextButton(onPressed: _save, child: Text(l10n.commonSave))],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(64),
           child: Padding(
@@ -213,7 +218,7 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
               onChanged: (v) => setState(() => _query = v),
               decoration: InputDecoration(
                 isDense: true,
-                hintText: 'Search apps',
+                hintText: l10n.commonSearchApps,
                 prefixIcon: const Icon(
                   Icons.search,
                   color: KoruColors.textSecondary,
@@ -254,14 +259,14 @@ class _SetBlockedAppsScreenState extends ConsumerState<SetBlockedAppsScreen> {
             if (filtered.isEmpty) {
               return Center(
                 child: Text(
-                  'No apps matching "$_query"',
+                  l10n.blockedAppsNoMatch(_query),
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: KoruColors.textSecondary,
                   ),
                 ),
               );
             }
-            final rows = _rows(filtered);
+            final rows = _rows(filtered, l10n);
             return ListView.builder(
               physics: const AlwaysScrollableScrollPhysics(),
               itemCount: rows.length,

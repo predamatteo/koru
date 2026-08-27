@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/koru_colors.dart';
 import '../../domain/entities/unlock_challenge.dart';
+import '../../l10n/generated/app_localizations.dart';
 import '../../platform/strict_mode_channel.dart';
 import '../providers/unlock_challenge_provider.dart';
 import 'unlock_challenge_glyphs.dart';
@@ -82,6 +83,7 @@ Future<String?> requireStrictUnlockChallenge(
   final source = StrictModeUnlockChallengeSource(
     channel: channel,
     targetMask: targetMask,
+    l10n: AppLocalizations.of(context),
   );
   final passed = await _showChallenge(
     context,
@@ -255,8 +257,7 @@ class _UnlockChallengeDialogState extends State<UnlockChallengeDialog>
     // no: per lo strict mode significa sfida scaduta lato nativo, o cooldown
     // scattato nel frattempo. Non è colpa dell'utente, quindi lo diciamo.
     setState(() {
-      _blockedMessage =
-          'La verifica è scaduta prima che finissi. Puoi ricominciare.';
+      _blockedMessage = AppLocalizations.of(context).challengeExpiredMidway;
       _phase = _Phase.blocked;
     });
   }
@@ -293,9 +294,9 @@ class _UnlockChallengeDialogState extends State<UnlockChallengeDialog>
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
-                    _failedAttempts == 1
-                        ? 'Un tentativo andato storto. Nessuna fretta.'
-                        : '$_failedAttempts tentativi andati storti. Nessuna fretta.',
+                    AppLocalizations.of(
+                      context,
+                    ).challengeFailedAttempts(_failedAttempts),
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: KoruColors.textSecondary,
@@ -309,7 +310,7 @@ class _UnlockChallengeDialogState extends State<UnlockChallengeDialog>
                   foregroundColor: KoruColors.textSecondary,
                   minimumSize: const Size(0, 48),
                 ),
-                child: const Text('Lascia stare'),
+                child: Text(AppLocalizations.of(context).challengeGiveUp),
               ),
             ],
           ),
@@ -352,18 +353,19 @@ class _UnlockChallengeDialogState extends State<UnlockChallengeDialog>
   }
 
   Widget _header(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final (title, subtitle) = switch (_phase) {
-      _Phase.intro => ('Un momento', 'Prima di indebolire la protezione.'),
-      _Phase.loading => ('Un momento', ''),
+      _Phase.intro => (l10n.challengeIntroTitle, l10n.challengeIntroSubtitle),
+      _Phase.loading => (l10n.challengeIntroTitle, ''),
       _Phase.memorize => (
-        'Memorizza',
-        'Questi simboli, in questo ordine. Poi spariscono.',
+        l10n.challengeMemorizeTitle,
+        l10n.challengeMemorizeSubtitle,
       ),
       _Phase.recall => (
-        'Ricostruisci',
-        'Toccali nell\'ordine di prima. Attenzione ai sosia.',
+        l10n.challengeRecallTitle,
+        l10n.challengeRecallSubtitle,
       ),
-      _Phase.blocked => ('Non adesso', ''),
+      _Phase.blocked => (l10n.challengeBlockedTitle, ''),
     };
     return Column(
       children: [
@@ -420,7 +422,7 @@ class _IntroPane extends StatelessWidget {
         ),
         const SizedBox(height: 28),
         Text(
-          'Per $action devi prima ricostruire una sequenza di simboli.',
+          AppLocalizations.of(context).challengeIntroBody(action),
           textAlign: TextAlign.center,
           style: const TextStyle(
             color: KoruColors.textPrimary,
@@ -429,11 +431,10 @@ class _IntroPane extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
-        const Text(
-          'Te li mostriamo per qualche secondo, poi li ritrovi in una griglia '
-          'piena di simboli quasi identici.',
+        Text(
+          AppLocalizations.of(context).challengeIntroHint,
           textAlign: TextAlign.center,
-          style: TextStyle(
+          style: const TextStyle(
             color: KoruColors.textSecondary,
             fontSize: 13,
             height: 1.45,
@@ -447,7 +448,7 @@ class _IntroPane extends StatelessWidget {
             backgroundColor: KoruColors.primary,
             foregroundColor: KoruColors.onPrimary,
           ),
-          child: const Text('Mostrami la sequenza'),
+          child: Text(AppLocalizations.of(context).challengeShowSequence),
         ),
       ],
     );
@@ -498,7 +499,7 @@ class _BlockedPane extends StatelessWidget {
             foregroundColor: KoruColors.primary,
             side: const BorderSide(color: KoruColors.outline),
           ),
-          child: const Text('Riprova'),
+          child: Text(AppLocalizations.of(context).commonRetry),
         ),
       ],
     );

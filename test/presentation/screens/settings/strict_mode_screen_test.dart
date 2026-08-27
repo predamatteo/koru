@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:koru/l10n/generated/app_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koru/presentation/screens/settings/sub_screens/strict_mode_screen.dart';
 import 'package:koru/presentation/widgets/unlock_challenge_dialog.dart';
+
+import '../../../_helpers/l10n_test_utils.dart';
 
 /// Lo spegnimento dello strict mode passa dalla **sfida a memoria**, non più
 /// dal backdoor code (che resta solo per l'emergency unblock).
@@ -90,7 +93,14 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
-      const ProviderScope(child: MaterialApp(home: StrictModeScreen())),
+      ProviderScope(
+        child: MaterialApp(
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const StrictModeScreen(),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
   }
@@ -114,13 +124,13 @@ void main() {
     tester,
   ) async {
     await pumpScreen(tester);
-    expect(find.text('Strict mode is ON'), findsOneWidget);
+    expect(find.text(enL10n.strictModeStatusOn), findsOneWidget);
 
     await tester.tap(find.byType(Switch).first);
     await tester.pumpAndSettle();
 
     expect(find.byType(UnlockChallengeDialog), findsOneWidget);
-    expect(find.text('Mostrami la sequenza'), findsOneWidget);
+    expect(find.text(enL10n.challengeShowSequence), findsOneWidget);
     // Il vecchio gate non deve più comparire su questo percorso.
     expect(find.text('Conferma con backdoor code'), findsNothing);
   });
@@ -140,7 +150,7 @@ void main() {
         reason: 'la sfida deve aprirsi al giro $i',
       );
 
-      await tester.tap(find.widgetWithText(TextButton, 'Lascia stare'));
+      await tester.tap(find.widgetWithText(TextButton, enL10n.challengeGiveUp));
       await tester.pumpAndSettle();
 
       expect(
@@ -158,7 +168,7 @@ void main() {
     // Annullare non deve mai spegnere la protezione.
     expect(mask, 14);
     expect(usedToken, isNull);
-    expect(find.text('Strict mode is ON'), findsOneWidget);
+    expect(find.text(enL10n.strictModeStatusOn), findsOneWidget);
   });
 
   testWidgets('risolvere la sfida spegne lo strict mode col token del nativo', (
@@ -168,7 +178,7 @@ void main() {
 
     await tester.tap(find.byType(Switch).first);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Mostrami la sequenza'));
+    await tester.tap(find.text(enL10n.challengeShowSequence));
     await tester.pump();
     await tester.pump();
 
@@ -189,7 +199,7 @@ void main() {
     // E il token che ha emesso è finito nella chiamata che abbassa la mask.
     expect(usedToken, token);
     expect(mask, 0);
-    expect(find.text('Strict mode is OFF'), findsOneWidget);
+    expect(find.text(enL10n.strictModeStatusOff), findsOneWidget);
   });
 
   testWidgets('spegnere un singolo bit chiede la mask parziale, non zero', (
@@ -202,7 +212,7 @@ void main() {
     // calibrare la difficoltà e per vincolare il token.
     await tester.tap(find.byType(SwitchListTile).first);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Mostrami la sequenza'));
+    await tester.tap(find.text(enL10n.challengeShowSequence));
     await tester.pump();
     await tester.pump();
 

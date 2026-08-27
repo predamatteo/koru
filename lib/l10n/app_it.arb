@@ -1,18 +1,601 @@
 {
   "@@locale": "it",
+
   "appName": "Koru",
   "appTagline": "Un launcher minimalista e un blocker mindful per riprendersi l'attenzione.",
   "onboardingWelcomeTitle": "Benvenuto in Koru",
   "onboardingWelcomeSubtitle": "Koru è un simbolo di crescita interiore. Riprenditi il controllo della tua attenzione, un respiro alla volta.",
+
   "tabHome": "Home",
   "tabProfiles": "Profili",
   "tabStats": "Statistiche",
   "tabSettings": "Impostazioni",
+
   "commonCancel": "Annulla",
   "commonConfirm": "Conferma",
   "commonContinue": "Continua",
   "commonBack": "Indietro",
   "commonSave": "Salva",
   "commonDelete": "Elimina",
-  "commonEdit": "Modifica"
+  "commonEdit": "Modifica",
+  "commonOk": "OK",
+  "commonEnable": "Attiva",
+  "commonDisable": "Disattiva",
+  "commonAdd": "Aggiungi",
+  "commonRemove": "Rimuovi",
+  "commonDone": "Fatto",
+  "commonClose": "Chiudi",
+  "commonRetry": "Riprova",
+  "commonSearch": "Cerca",
+  "commonAll": "Tutte",
+  "commonNone": "Nessuna",
+  "commonOpen": "Apri",
+  "commonReset": "Reimposta",
+  "commonSearchApps": "Cerca app",
+
+  "languageTitle": "Lingua",
+  "languageSystemDefault": "Predefinita di sistema",
+  "languageNativeNote": "Vale anche per l'overlay di blocco, le notifiche e il widget in home. Da Android 13 in poi la scelta si rispecchia in Impostazioni Android › App › Koru › Lingua.",
+
+  "settingsSectionAppearance": "Aspetto",
+  "settingsSectionLauncher": "Launcher",
+  "settingsSectionDiscipline": "Disciplina",
+  "settingsSectionPermissions": "Permessi",
+  "settingsSectionAbout": "Informazioni",
+  "settingsSectionEmergency": "Emergenza",
+  "settingsSetAsDefault": "Imposta come predefinito",
+  "settingsAppPersonalization": "Personalizzazione app",
+
+  "permissionsTitle": "Permessi",
+  "aboutTitle": "Informazioni su Koru",
+  "backdoorTitle": "Sblocco d'emergenza",
+  "appLimitsTitle": "Limiti giornalieri app",
+  "notificationFilterTitle": "Filtro notifiche",
+  "unlockChallengeTitle": "Sfida di sblocco",
+
+  "strictModeTitle": "Modalità rigida",
+  "strictModeStatusOn": "Modalità rigida ATTIVA",
+  "strictModeStatusOff": "Modalità rigida SPENTA",
+  "strictModeDescriptionOn": "Impostazioni, Recenti e Disinstallazione sono bloccate. Per allentare o spegnere serve ricostruire una sequenza di simboli — il codice d'emergenza resta solo per le emergenze.",
+  "strictModeDescriptionOff": "Attiva per bloccare Impostazioni, Recenti e Disinstallazione. Richiede l'amministratore dispositivo.",
+  "strictModeWhatToLock": "Cosa bloccare",
+  "strictModeBlockSettings": "Blocca Impostazioni",
+  "strictModeBlockSettingsSubtitle": "Impedisce di aprire le Impostazioni di Android.",
+  "strictModeBlockRecents": "Blocca App recenti",
+  "strictModeBlockRecentsSubtitle": "Impedisce di aprire la vista App recenti.",
+  "strictModeBlockUninstall": "Blocca disinstallazione",
+  "strictModeBlockUninstallSubtitle": "Impedisce di disinstallare Koru.",
+  "strictModeDeviceAdmin": "Amministratore dispositivo",
+  "strictModeDeviceAdminActive": "Amministratore dispositivo attivo",
+  "strictModeDeviceAdminRequired": "Serve l'amministratore dispositivo",
+  "strictModeDeviceAdminActiveSubtitle": "Koru ha i permessi che le servono.",
+  "strictModeDeviceAdminRequiredSubtitle": "A Koru serve l'amministratore dispositivo per applicare la modalità rigida.",
+  "strictModeVerificationExpired": "La verifica è scaduta. Riprova.",
+  "strictModeApplyFailed": "Non è stato possibile applicare la modifica.",
+  "strictModeActionRemoveRestriction": "togliere questa restrizione",
+  "strictModeActionTurnOff": "spegnere la modalità rigida",
+  "strictModeActiveDialogTitle": "Modalità rigida attiva",
+  "strictModeActiveDialogBody": "Per disabilitare l'amministratore dispositivo devi prima spegnere la modalità rigida dall'interruttore qui sopra.",
+
+  "aboutKoruBody": "Il koru è la fronda che si apre di una felce argentata, simbolo sacro maori di vita nuova e crescita interiore. Ci ricorda che la concentrazione non è una costrizione — è un tornare a sé stessi.",
+  "aboutPrivacyTitle": "Privacy",
+  "aboutPrivacyBody": "Tutto quello che fa Koru succede sul tuo dispositivo. Niente account, niente pubblicità, niente tracciamento. Mai.",
+
+  "unlockChallengeActiveFriction": "Attrito attivo: {level}",
+  "@unlockChallengeActiveFriction": {
+    "placeholders": {
+      "level": {
+        "type": "String",
+        "example": "media"
+      }
+    }
+  },
+  "unlockChallengeExplainer": "Spegnere un profilo, cancellarlo o togliergli app richiede prima di memorizzare una breve sequenza di simboli e di ricostruirla in una griglia piena di sosia.\n\nServe a mettere qualche secondo di lucidità fra l'impulso e il tap. Attivare una protezione resta sempre immediato.\n\nSi sceglie quanto attrito, non se averlo: una sfida che si spegne con un tap è proprio il tap che vorresti fermare.",
+  "unlockChallengeHowMuchFriction": "Quanto attrito",
+  "unlockChallengeLevelGentle": "Leggera",
+  "unlockChallengeLevelStandard": "Media",
+  "unlockChallengeLevelStubborn": "Testarda",
+  "unlockChallengeLevelGentleDesc": "3 simboli, 5 secondi per memorizzarli.",
+  "unlockChallengeLevelStandardDesc": "4 simboli, 4 secondi, più distrattori.",
+  "unlockChallengeLevelStubbornDesc": "5 simboli, 3 secondi, griglia piena di sosia.",
+  "unlockChallengeTryNow": "Provala adesso",
+  "unlockChallengeTryNowNote": "Una prova a vuoto: non disattiva niente.",
+  "unlockChallengeActionPreview": "provare la sfida",
+  "unlockChallengePreviewPassed": "Superata. È esattamente questo che ti verrà chiesto.",
+  "unlockChallengePreviewCancelled": "Prova annullata.",
+
+  "permissionsIntro": "Koru gira solo sul tuo dispositivo. Non esce mai niente.",
+  "permRequiredBadge": "Necessario",
+  "permGrant": "Concedi",
+  "permAccessibility": "Accessibilità",
+  "permAccessibilitySubtitle": "Accorgersi quando apri un'app che distrae.",
+  "permUsageAccess": "Accesso all'utilizzo",
+  "permUsageAccessSubtitle": "Leggere il tempo speso per app.",
+  "permOverlay": "Mostra sopra le altre app",
+  "permOverlaySubtitle": "Mostrare l'overlay di blocco.",
+  "permBattery": "Ottimizzazione batteria",
+  "permBatterySubtitle": "Tenere vivo il motore di blocco in background.",
+  "permNotifications": "Notifiche",
+  "permNotificationsSubtitle": "Farti avvisare da Koru quando il blocco ha bisogno di attenzione.",
+  "permNotificationListener": "Lettore di notifiche",
+  "permNotificationListenerSubtitle": "Filtrare le notifiche delle app bloccate (Fase 2).",
+
+  "appLimitsIntro": "In ordine di quanto le hai usate oggi. Tocca un'app per impostare un tetto giornaliero in minuti.",
+  "appLimitsNotUsedToday": "Non usata oggi",
+  "appLimitsMinutesToday": "{minutes} min oggi",
+  "@appLimitsMinutesToday": {
+    "placeholders": { "minutes": { "type": "int" } }
+  },
+  "appLimitsHoursToday": "{hours}h oggi",
+  "@appLimitsHoursToday": {
+    "placeholders": { "hours": { "type": "int" } }
+  },
+  "appLimitsHoursMinutesToday": "{hours}h {minutes}m oggi",
+  "@appLimitsHoursMinutesToday": {
+    "placeholders": { "hours": { "type": "int" }, "minutes": { "type": "int" } }
+  },
+  "appLimitsUsedOfCap": "{used} / {cap} min oggi",
+  "@appLimitsUsedOfCap": {
+    "placeholders": { "used": { "type": "int" }, "cap": { "type": "int" } }
+  },
+  "appLimitsBadgeMinutes": "{minutes} m",
+  "@appLimitsBadgeMinutes": {
+    "placeholders": { "minutes": { "type": "int" } }
+  },
+  "appLimitsPresetMinutes": "{minutes}m",
+  "@appLimitsPresetMinutes": {
+    "placeholders": { "minutes": { "type": "int" } }
+  },
+  "appLimitsDailyCap": "Tetto giornaliero",
+  "appLimitsMinPerDay": "min / giorno",
+  "appLimitsStrictTitle": "Limite giornaliero rigido",
+  "appLimitsStrictOn": "Tetto invalicabile. Niente \"Apri lo stesso\" una volta raggiunto.",
+  "appLimitsStrictOff": "Bypass consentito, ma sempre più difficile durante la giornata.",
+  "appLimitsChallengeLockTitle": "Blocco con sfida",
+  "appLimitsChallengeLockOn": "Serve la sfida a memoria per allentare il limite, e anche per aprire l'app a tetto raggiunto.",
+  "appLimitsChallengeLockOff": "Nessuna sfida: il limite si cambia in un tap.",
+  "appLimitsActionLoosen": "allentare il limite di {app}",
+  "@appLimitsActionLoosen": {
+    "placeholders": { "app": { "type": "String", "example": "Instagram" } }
+  },
+
+  "notificationFilterIntro": "Le notifiche delle app che silenzi vengono scartate prima di arrivare nella barra di stato.",
+  "notificationFilterAccessRequired": "Serve l'accesso alle notifiche",
+  "notificationFilterAccessRequiredSubtitle": "Attiva Koru in Accesso alle notifiche perché il silenziamento funzioni.",
+
+  "backdoorCurrentWeeklyCode": "Il tuo codice settimanale",
+  "backdoorCodeExplainer": "Copia il codice in un posto sicuro. Ruota ogni settimana, è generato in modo casuale sul tuo dispositivo, funziona offline, e ogni codice è monouso: appena lo usi per sbloccare la modalità rigida viene sostituito da uno nuovo.",
+  "backdoorCodeUnavailable": "Codice temporaneamente non disponibile",
+  "backdoorCodeUnavailableBody": "Lo spazio sicuro del dispositivo (Keystore) non è raggiungibile in questo momento, quindi non possiamo generare il codice settimanale. Riprova tra poco o riavvia il dispositivo.",
+  "backdoorUnblockSection": "Sblocco d'emergenza",
+  "backdoorEnterCode": "Inserisci il codice",
+  "backdoorUnlockButton": "Sblocca",
+  "backdoorAttemptsLeft": "{count} tentativi rimanenti prima del blocco",
+  "@backdoorAttemptsLeft": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "backdoorResultValid": "Codice valido — modalità rigida disattivata. Il codice è stato consumato; ne sarà generato uno nuovo.",
+  "backdoorResultInvalid": "Codice non valido.",
+  "backdoorResultReplay": "Codice già usato. Aspetta la rotazione settimanale per riceverne uno nuovo.",
+  "backdoorLockoutMinutes": "Blocco: {minutes} minuti rimanenti.",
+  "@backdoorLockoutMinutes": {
+    "placeholders": { "minutes": { "type": "int" } }
+  },
+  "backdoorLockoutHours": "Blocco: {hours} ore rimanenti.",
+  "@backdoorLockoutHours": {
+    "placeholders": { "hours": { "type": "int" } }
+  },
+  "backdoorLockoutDays": "Blocco: {days} giorni rimanenti.",
+  "@backdoorLockoutDays": {
+    "placeholders": { "days": { "type": "int" } }
+  },
+  "backdoorError": "Errore: {message}",
+  "@backdoorError": {
+    "placeholders": { "message": { "type": "String" } }
+  },
+
+  "launcherIsDefault": "Koru è il tuo launcher predefinito",
+  "launcherIsNotDefault": "Koru non è il tuo launcher predefinito",
+  "launcherMakeSelectable": "Rendi Koru selezionabile come launcher",
+  "launcherMakeSelectableSubtitle": "Abilita l'attività HOME. Devi comunque scegliere Koru nel selettore di sistema.",
+  "launcherOpenSystemPicker": "Apri il selettore launcher di sistema",
+  "launcherSwipeGestures": "Gesti di swipe",
+  "launcherSwipeGesturesSubtitle": "Lo swipe verso l'alto apre sempre Tutte le app. Assegna un'azione agli swipe verso sinistra e destra sulla home. Le app che distraggono (bloccate o limitate) non sono selezionabili.",
+  "launcherSwipeLeft": "Swipe a sinistra",
+  "launcherSwipeRight": "Swipe a destra",
+  "launcherSwipeAppSearch": "Cerca app",
+  "launcherSwipeGenericApp": "App",
+
+  "fontTitle": "Carattere",
+  "fontPreviewPangram": "Quel vituperabile xenofobo zelante assaggia il whisky ed esclama: alleluja!",
+
+  "personalizationIntro": "Tieni premuto su un'app per rinominarla. Tocca l'occhio per nasconderla dal drawer del launcher (l'app resta installata).",
+  "personalizationCustomName": "Nome personalizzato",
+  "personalizationCustomNameHint": "Lascia vuoto per reimpostare",
+  "personalizationResetAll": "Reimposta tutto",
+  "personalizationResetDialogTitle": "Reimpostare la personalizzazione?",
+  "personalizationResetDialogBody": "Tutti i nomi personalizzati verranno rimossi e tutte le app nascoste torneranno visibili.",
+  "personalizationWasNamed": "era: {label}",
+  "@personalizationWasNamed": {
+    "placeholders": { "label": { "type": "String", "example": "Instagram" } }
+  },
+
+  "allAppsTitle": "Tutte le app",
+
+  "dayMon": "Lun",
+  "dayTue": "Mar",
+  "dayWed": "Mer",
+  "dayThu": "Gio",
+  "dayFri": "Ven",
+  "daySat": "Sab",
+  "daySun": "Dom",
+  "dayEveryDay": "Ogni giorno",
+  "dayWeekdays": "Giorni feriali",
+  "dayWeekend": "Weekend",
+
+  "profileUntitled": "Senza nome",
+  "profileModeAllowlist": "Lista consentiti",
+  "profileModeBlocklist": "Lista bloccati",
+  "profileAppsCount": "{count} app",
+  "@profileAppsCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "profileSitesCount": "{count} siti",
+  "@profileSitesCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "profilesNew": "Nuovo",
+  "profilesAllDay": "Tutto il giorno",
+  "profilesAppsBlocked": "{count} app bloccate",
+  "@profilesAppsBlocked": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "profilesActionTurnOff": "spegnere «{title}»",
+  "@profilesActionTurnOff": {
+    "placeholders": { "title": { "type": "String", "example": "Lavoro profondo" } }
+  },
+  "profilesEmptyTitle": "Ancora nessun profilo",
+  "profilesEmptyBody": "Tocca + per creare il tuo primo profilo e scegliere quando e quali app bloccare.",
+
+  "profileEditorNewTitle": "Nuovo profilo",
+  "profileEditorEditTitle": "Modifica profilo",
+  "profileEditorNameHint": "Nome del profilo",
+  "profileEditorNameFirst": "Dai prima un nome al profilo",
+  "profileEditorPickIcon": "Scegli un'icona",
+  "profileEditorActionDeleteGeneric": "cancellare il profilo",
+  "profileEditorActionDeleteNamed": "cancellare «{title}»",
+  "@profileEditorActionDeleteNamed": {
+    "placeholders": { "title": { "type": "String", "example": "Lavoro profondo" } }
+  },
+  "profileEditorSectionSchedule": "Orari",
+  "profileEditorStart": "Inizio",
+  "profileEditorEnd": "Fine",
+  "profileEditorRemoveTimeSlot": "Rimuovi fascia oraria",
+  "profileEditorAddTimeSlot": "Aggiungi fascia oraria",
+  "profileEditorAllDayTitle": "Tutto il giorno",
+  "profileEditorAllDaySubtitle": "Attivo 24 ore su 24, 00:00 → 00:00",
+  "profileEditorSectionBlockedApps": "App bloccate",
+  "profileEditorAppsSelected": "App selezionate",
+  "profileEditorConfigure": "Configura",
+  "profileEditorSaveFirst": "Salva prima il profilo per scegliere le app.",
+  "profileEditorSectionInAppContent": "Contenuti nelle app",
+  "profileEditorSectionWebsites": "Siti web",
+  "profileEditorBlockedDomains": "Domini bloccati",
+  "profileEditorSectionOnlyOnWifi": "Solo su Wi-Fi",
+  "profileEditorWifiNoFilter": "Nessun filtro. Il profilo si attiva su qualsiasi rete.",
+  "profileEditorWifiActiveOnlyOn": "Profilo attivo solo su:",
+  "profileEditorAddCurrentWifi": "Aggiungi corrente",
+  "profileEditorAddWifiByName": "Aggiungi per nome",
+  "profileEditorAddWifiTitle": "Aggiungi SSID Wi-Fi",
+  "profileEditorAddWifiHint": "es. Casa_WiFi",
+  "profileEditorWifiSsidReadFailed": "Non è stato possibile leggere l'SSID corrente. Verifica che il Wi-Fi sia acceso e che il permesso di posizione sia concesso.",
+
+  "websitesIntro": "Blocca i domini letti dalla barra degli indirizzi del browser. Funziona su Chrome, Firefox, Brave, Samsung e gli altri browser supportati.",
+  "websitesDomainLabel": "Dominio",
+  "websitesDomainHint": "es. instagram.com",
+  "websitesMatchAnywhere": "Cerca ovunque nell'URL",
+  "websitesMatchAnywhereOn": "Blocca qualsiasi URL che contiene il testo",
+  "websitesMatchAnywhereOff": "Dominio esatto (sottodomini inclusi)",
+  "websitesEmpty": "Nessun sito bloccato per ora.",
+  "websitesRuleAnywhere": "Ovunque nell'URL",
+  "websitesRuleDomain": "Dominio esatto",
+  "websitesActionRemove": "togliere un sito da un profilo acceso",
+
+  "blockedAppsSelectApps": "Scegli le app",
+  "blockedAppsMostUsedThisWeek": "Più usate questa settimana",
+  "blockedAppsNoMatch": "Nessuna app corrisponde a \"{query}\"",
+  "@blockedAppsNoMatch": {
+    "placeholders": { "query": { "type": "String", "example": "insta" } }
+  },
+  "blockedAppsActionWeaken": "togliere protezione a un profilo acceso",
+
+  "sectionInstagramReels": "Reels",
+  "sectionInstagramStories": "Storie",
+  "sectionInstagramExplore": "Esplora",
+  "sectionYoutubeShorts": "Shorts",
+  "inAppContentIntro": "Blocca sezioni specifiche dentro un'app. Se l'app intera è già nella lista bloccati di questo profilo, le sezioni sono ridondanti e restano disattivate.",
+  "inAppContentFullyBlocked": "Bloccata del tutto",
+  "inAppContentAppFullyBlocked": "App bloccata del tutto",
+  "inAppContentSectionDisabled": "Blocco per sezione disattivato: in questo profilo l'app è bloccata del tutto.",
+
+  "overlayDesignerTitle": "Overlay · {app}",
+  "@overlayDesignerTitle": {
+    "placeholders": { "app": { "type": "String", "example": "Instagram" } }
+  },
+  "overlayDesignerBackground": "Sfondo",
+  "overlayDesignerMessage": "Messaggio",
+  "overlayDesignerTitleField": "Titolo (facoltativo)",
+  "overlayDesignerSubtitleField": "Sottotitolo (facoltativo)",
+  "overlayDesignerCountdown": "Conto alla rovescia",
+  "overlayDesignerSeconds": "{seconds}s",
+  "@overlayDesignerSeconds": {
+    "placeholders": { "seconds": { "type": "int" } }
+  },
+  "overlayDesignerAllowOpen": "Consenti l'apertura dopo il conto alla rovescia",
+  "overlayDesignerAllowOpenSubtitle": "Mostra il pulsante \"Apri lo stesso\" alla fine del conto alla rovescia.",
+
+  "commonViewAll": "Vedi tutti",
+  "achievementsTitle": "Obiettivi",
+  "achievementsUnlockedOf": "/ {total} sbloccati",
+  "@achievementsUnlockedOf": {
+    "placeholders": { "total": { "type": "int" } }
+  },
+  "achievementCategoryDiscipline": "Disciplina",
+  "achievementCategorySetup": "Configurazione",
+  "achievementCleanWeekTitle": "Settimana pulita",
+  "achievementCleanWeekDesc": "Sette giorni senza superare nessun limite giornaliero.",
+  "achievementIntentions50Title": "Scelta consapevole",
+  "achievementIntentions50Desc": "Dichiara un'intenzione 50 volte sull'overlay di blocco.",
+  "achievementHonestBlock100Title": "Blocco onesto",
+  "achievementHonestBlock100Desc": "Rispetta un blocco (senza bypass) 100 volte.",
+  "achievementFirstProfileTitle": "Primo profilo",
+  "achievementFirstProfileDesc": "Crea il tuo primo profilo di blocco.",
+  "achievementCuratedTitle": "Su misura",
+  "achievementCuratedDesc": "Imposta limiti giornalieri su 3 o più app.",
+  "achievementLockdownTitle": "Serrata",
+  "achievementLockdownDesc": "Attiva la modalità rigida almeno una volta.",
+  "achievementCustomizedTitle": "Personalizzato",
+  "achievementCustomizedDesc": "Personalizza l'overlay di almeno un'app.",
+  "achievementUnlockedToast": "Obiettivo sbloccato",
+
+  "commonLoading": "Caricamento…",
+  "monthJan": "Gen",
+  "monthFeb": "Feb",
+  "monthMar": "Mar",
+  "monthApr": "Apr",
+  "monthMay": "Mag",
+  "monthJun": "Giu",
+  "monthJul": "Lug",
+  "monthAug": "Ago",
+  "monthSep": "Set",
+  "monthOct": "Ott",
+  "monthNov": "Nov",
+  "monthDec": "Dic",
+
+  "statsPeriodToday": "Oggi",
+  "statsPeriodWeek": "Questa settimana",
+  "statsYesterday": "Ieri",
+  "statsPreviousDay": "Giorno precedente",
+  "statsNextDay": "Giorno successivo",
+  "statsWholeWeek": "Tutta la settimana",
+  "statsScreenTime": "Tempo di utilizzo",
+  "statsDailyBreakdown": "Dettaglio per giorno",
+  "statsTopApps": "App più usate",
+  "statsInterventions": "Interventi",
+  "statsTapADay": "Tocca un giorno per vederne le app",
+  "statsNoUsageRecorded": "Nessun utilizzo registrato",
+  "statsNoUsageThisDay": "Nessun utilizzo registrato per questo giorno.",
+  "statsNoUsageThisPeriod": "Nessun utilizzo in primo piano registrato in questo periodo.",
+  "statsNoBlocksYet": "Ancora nessun blocco",
+  "statsPercentRespected": "{percent}% rispettati",
+  "@statsPercentRespected": {
+    "placeholders": { "percent": { "type": "int" } }
+  },
+  "statsPercentSkipped": "{percent}% saltati",
+  "@statsPercentSkipped": {
+    "placeholders": { "percent": { "type": "int" } }
+  },
+  "statsRefYesterday": "ieri",
+  "statsRefDayBefore": "il giorno prima",
+  "statsRefLastWeek": "la settimana scorsa",
+  "statsNoDataFrom": "nessun dato da {period}",
+  "@statsNoDataFrom": {
+    "placeholders": { "period": { "type": "String", "example": "ieri" } }
+  },
+  "statsDeltaFrom": "{delta}% rispetto a {period}",
+  "@statsDeltaFrom": {
+    "placeholders": {
+      "delta": { "type": "String", "example": "+12" },
+      "period": { "type": "String", "example": "ieri" }
+    }
+  },
+
+  "homeGreetingNight": "Ancora sveglio?",
+  "homeGreetingMorning": "Buongiorno.",
+  "homeGreetingAfternoon": "Buon pomeriggio.",
+  "homeGreetingEvening": "Buonasera.",
+  "homeGreetingSubtitle": "Fai un respiro. Su cosa vuoi concentrarti oggi?",
+  "homeActiveRightNow": "Attivo adesso",
+  "homeNoProfileActiveNow": "Nessun profilo attivo adesso",
+  "homeCreateOneToStart": "Creane uno per iniziare",
+  "homeProfilesConfigured": "{count, plural, one{{count} profilo configurato} other{{count} profili configurati}}",
+  "@homeProfilesConfigured": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "homeBlocksLabel": "Blocchi",
+
+  "todayLimitsHeader": "Limiti di oggi",
+  "todayLimitsEmptyTitle": "Ancora nessun limite giornaliero",
+  "todayLimitsEmptyBody": "Metti un tetto al tempo che puoi passare in un'app ogni giorno. Koru interviene quando lo raggiungi.",
+  "todayLimitsSetOne": "Imposta un limite",
+  "todayLimitsUsedOfCap": "{used} / {cap} min",
+  "@todayLimitsUsedOfCap": {
+    "placeholders": { "used": { "type": "int" }, "cap": { "type": "int" } }
+  },
+
+  "a11yBannerTitle": "Il blocco di Koru è SPENTO",
+  "a11yBannerBody": "Il servizio di accessibilità è stato disattivato dal sistema. Limiti e profili non funzionano finché non lo riattivi.",
+  "a11yBannerAction": "Riattiva",
+
+  "favoritesFolderOptions": "Opzioni cartella",
+  "favoritesRenameFolder": "Rinomina cartella",
+  "favoritesDeleteFolder": "Elimina cartella",
+  "favoritesDeleteFolderSubtitle": "Le sue app tornano nella home",
+  "favoritesFolderDeleted": "Cartella \"{name}\" eliminata",
+  "@favoritesFolderDeleted": {
+    "placeholders": { "name": { "type": "String", "example": "Lavoro" } }
+  },
+  "favoritesEmptyFolder": "Cartella vuota",
+  "favoritesEmptyHint": "Tieni premuto su un'app nel drawer per aggiungerla qui.",
+
+  "allAppsCount": "{count, plural, one{{count} app} other{{count} app}}",
+  "@allAppsCount": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "allAppsClearSearch": "Cancella la ricerca",
+  "allAppsNoMatch": "Nessuna app corrispondente",
+
+  "appMenuOptions": "Opzioni app",
+  "appMenuAddFavorite": "Aggiungi ai preferiti",
+  "appMenuRemoveFavorite": "Togli dai preferiti",
+  "appMenuAddedFavoriteToast": "{app} aggiunta ai preferiti",
+  "@appMenuAddedFavoriteToast": {
+    "placeholders": { "app": { "type": "String", "example": "Maps" } }
+  },
+  "appMenuRemovedFavoriteToast": "{app} tolta dai preferiti",
+  "@appMenuRemovedFavoriteToast": {
+    "placeholders": { "app": { "type": "String", "example": "Maps" } }
+  },
+  "appMenuFavoritesFailed": "Aggiornamento dei preferiti fallito: {error}",
+  "@appMenuFavoritesFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "appMenuMoveToFolder": "Sposta in una cartella…",
+  "appMenuRemoveFromFolder": "Togli dalla cartella",
+  "appMenuMovedBackHome": "{app} riportata nella home",
+  "@appMenuMovedBackHome": {
+    "placeholders": { "app": { "type": "String", "example": "Maps" } }
+  },
+  "appMenuAppInfo": "Info app",
+  "appMenuUninstall": "Disinstalla",
+  "appMenuUninstallFailed": "Impossibile disinstallare {app}: {error}",
+  "@appMenuUninstallFailed": {
+    "placeholders": {
+      "app": { "type": "String", "example": "Maps" },
+      "error": { "type": "String" }
+    }
+  },
+  "appMenuStrictDialogTitle": "Modalità rigida attiva",
+  "appMenuStrictDialogBody": "La disinstallazione delle app è bloccata finché la modalità rigida protegge la disinstallazione. Disattiva quell'opzione nelle impostazioni della Modalità rigida per disinstallare le app.",
+
+  "folderMoveTitle": "Sposta \"{app}\"",
+  "@folderMoveTitle": {
+    "placeholders": { "app": { "type": "String", "example": "Maps" } }
+  },
+  "folderMoveSubtitle": "Scegli la cartella di destinazione",
+  "folderNew": "Nuova cartella…",
+  "folderNewTitle": "Nuova cartella",
+  "folderNameHint": "Nome della cartella",
+
+  "launcherPhone": "Telefono",
+  "launcherCamera": "Fotocamera",
+  "launcherKoruDashboard": "Dashboard Koru",
+  "launcherOpenAppsReset": "Contatore app aperte azzerato",
+  "launcherLeftShortcut": "Scorciatoia sinistra",
+  "launcherRightShortcut": "Scorciatoia destra",
+  "launcherResetToDefault": "Ripristina il valore predefinito",
+  "launcherShortcutReset": "Scorciatoia ripristinata al valore predefinito",
+
+  "challengeIntroTitle": "Un momento",
+  "challengeIntroSubtitle": "Prima di indebolire la protezione.",
+  "challengeIntroBody": "Per {action} devi prima ricostruire una sequenza di simboli.",
+  "@challengeIntroBody": {
+    "placeholders": {
+      "action": { "type": "String", "example": "spegnere «Sera senza social»" }
+    }
+  },
+  "challengeIntroHint": "Te li mostriamo per qualche secondo, poi li ritrovi in una griglia piena di simboli quasi identici.",
+  "challengeShowSequence": "Mostrami la sequenza",
+  "challengeMemorizeTitle": "Memorizza",
+  "challengeMemorizeSubtitle": "Questi simboli, in questo ordine. Poi spariscono.",
+  "challengeRecallTitle": "Ricostruisci",
+  "challengeRecallSubtitle": "Toccali nell'ordine di prima. Attenzione ai sosia.",
+  "challengeBlockedTitle": "Non adesso",
+  "challengeExpiredMidway": "La verifica è scaduta prima che finissi. Puoi ricominciare.",
+  "challengeFailedAttempts": "{count, plural, one{Un tentativo andato storto. Nessuna fretta.} other{{count} tentativi andati storti. Nessuna fretta.}}",
+  "@challengeFailedAttempts": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "challengeGiveUp": "Lascia stare",
+  "challengeCooldown": "Troppi tentativi falliti di fila. Riprova fra {time}.",
+  "@challengeCooldown": {
+    "placeholders": { "time": { "type": "String", "example": "30 secondi" } }
+  },
+  "challengeStartFailed": "Non è stato possibile avviare la verifica. Riprova fra un momento.",
+
+  "commonApply": "Applica",
+  "onboardingWelcomeTagline": "Un simbolo maori di crescita interiore.",
+  "onboardingWelcomeBody": "Koru è un launcher minimalista e un blocker mindful. Ti aiuta a riprenderti l'attenzione — un respiro alla volta.",
+  "onboardingLauncherTitle": "Usa Koru come launcher",
+  "onboardingLauncherBody": "Imposta Koru come schermata home predefinita per l'esperienza minimalista completa. Puoi sempre cambiare idea più avanti nelle Impostazioni.",
+  "onboardingLauncherCta": "Imposta Koru come launcher predefinito",
+  "onboardingLauncherSkipHint": "Oppure salta — Koru funziona bene in entrambi i casi.",
+  "onboardingPresetsTitle": "Avvio rapido",
+  "onboardingPresetsBody": "Tocca un preset per creare un profilo già pronto. Puoi modificarlo più avanti.",
+  "onboardingEnterKoru": "Entra in Koru",
+  "onboardingSkipForNow": "Salta per ora",
+
+  "overlayTakeABreath": "Fai un respiro",
+  "overlayFocusModeActive": "La modalità focus è attiva",
+  "overlaySectionBlocked": "Sezione bloccata",
+  "overlayWebsiteBlocked": "Sito bloccato",
+  "overlayPausedBy": "In pausa per “{profile}”",
+  "@overlayPausedBy": {
+    "placeholders": {
+      "profile": { "type": "String", "example": "Sera senza social" }
+    }
+  },
+  "overlayOpenApp": "Apri {app}",
+  "@overlayOpenApp": {
+    "placeholders": { "app": { "type": "String", "example": "Instagram" } }
+  },
+  "overlayDontOpenApp": "Non aprire {app}",
+  "@overlayDontOpenApp": {
+    "placeholders": { "app": { "type": "String", "example": "Instagram" } }
+  },
+  "overlayTapTimerToPause": "Tocca il timer per metterlo in pausa",
+  "overlayPaused": "In pausa",
+  "overlayCountdownSemantics": "Conto alla rovescia: {seconds} secondi rimanenti",
+  "@overlayCountdownSemantics": {
+    "placeholders": { "seconds": { "type": "int" } }
+  },
+
+  "usageLimitActionOpenBeyond": "aprire {app} oltre il limite di oggi",
+  "@usageLimitActionOpenBeyond": {
+    "placeholders": { "app": { "type": "String", "example": "Instagram" } }
+  },
+
+  "reelsScrolledToday": "Scrollati oggi",
+  "reelsUnit": "{count, plural, one{reel} other{reel}}",
+  "@reelsUnit": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "reelsNoneToday": "Nessuno oggi",
+  "reelsNoneTodayWithAverage": "Nessuno oggi — la tua media è {average}",
+  "@reelsNoneTodayWithAverage": {
+    "placeholders": { "average": { "type": "int" } }
+  },
+  "reelsFirstDays": "Primi giorni di rilevazione",
+  "reelsOnAverage": "Esattamente la tua media giornaliera ({average})",
+  "@reelsOnAverage": {
+    "placeholders": { "average": { "type": "int" } }
+  },
+  "reelsMoreThanAverage": "{delta} in più della tua media giornaliera ({average})",
+  "@reelsMoreThanAverage": {
+    "placeholders": { "delta": { "type": "int" }, "average": { "type": "int" } }
+  },
+  "reelsFewerThanAverage": "{delta} in meno della tua media giornaliera ({average})",
+  "@reelsFewerThanAverage": {
+    "placeholders": { "delta": { "type": "int" }, "average": { "type": "int" } }
+  }
 }

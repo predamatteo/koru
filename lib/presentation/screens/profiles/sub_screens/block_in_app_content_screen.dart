@@ -9,6 +9,8 @@ import '../../../../core/di/providers.dart';
 import '../../../../data/database/app_database.dart';
 import '../../../../data/models/profile_model.dart';
 import '../../../../domain/entities/blocked_section.dart';
+import '../../../../l10n/generated/app_localizations.dart';
+import '../../../l10n/model_labels.dart';
 import '../../../providers/profile_providers.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
 
@@ -114,11 +116,12 @@ class _BlockInAppContentScreenState
   Widget build(BuildContext context) {
     if (!_loaded) _hydrate();
     final profileAsync = ref.watch(profileByIdProvider(widget.profileId));
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('In-app content'),
-        actions: [TextButton(onPressed: _save, child: const Text('Save'))],
+        title: Text(l10n.profileEditorSectionInAppContent),
+        actions: [TextButton(onPressed: _save, child: Text(l10n.commonSave))],
       ),
       body: KoruPullToRefresh(
         child: profileAsync.when(
@@ -166,9 +169,7 @@ class _Hint extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Text(
-        'Block specific sections inside an app. If the whole app is '
-        'already on this profile\'s blocklist, sections are redundant and '
-        'disabled.',
+        AppLocalizations.of(context).inAppContentIntro,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
           color: KoruColors.textSecondary,
           height: 1.4,
@@ -193,19 +194,14 @@ class _AppGroup extends StatelessWidget {
   final Set<BlockedSection> selected;
   final void Function(BlockedSection, bool) onToggle;
 
-  String get _appLabel {
-    switch (packageName) {
-      case 'com.instagram.android':
-        return 'Instagram';
-      case 'com.google.android.youtube':
-        return 'YouTube';
-      default:
-        return packageName;
-    }
-  }
+  /// Il nome dell'app viene da [BlockedSectionL10n.appLabel] (marchio, non
+  /// tradotto) e vale per QUALSIASI sezione del gruppo: sono tutte dello
+  /// stesso package.
+  String get _appLabel => sections.first.appLabel;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
@@ -219,7 +215,7 @@ class _AppGroup extends StatelessWidget {
                 const SizedBox(width: 8),
                 if (isFullyBlocked)
                   Chip(
-                    label: const Text('Fully blocked'),
+                    label: Text(l10n.inAppContentFullyBlocked),
                     backgroundColor: KoruColors.primary.withValues(alpha: 0.2),
                     padding: EdgeInsets.zero,
                     labelStyle: const TextStyle(fontSize: 11),
@@ -228,7 +224,7 @@ class _AppGroup extends StatelessWidget {
             ),
           ),
           ...sections.map((s) {
-            final label = s.displayName.replaceFirst('$_appLabel ', '');
+            final label = s.shortName(l10n);
             // Se l'app è fully blocked, la sezione è implicitamente ON anche
             // se blockedSectionsJson è null/vuoto: il blocco totale copre
             // tutte le sezioni dell'app.
@@ -238,7 +234,7 @@ class _AppGroup extends StatelessWidget {
               title: Text(label),
               subtitle: isFullyBlocked
                   ? Text(
-                      'Section blocking disabled: app is fully blocked in this profile.',
+                      l10n.inAppContentSectionDisabled,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: KoruColors.textSecondary,
                       ),

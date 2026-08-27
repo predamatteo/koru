@@ -7,6 +7,7 @@ import 'l10n/generated/app_localizations.dart';
 import 'presentation/providers/achievement_evaluator.dart';
 import 'presentation/providers/events_refresher.dart';
 import 'presentation/providers/home_intent_listener.dart';
+import 'presentation/providers/locale_provider.dart';
 // Monochrome rimosso dalle Impostazioni: vedi il blocco commentato nel
 // `builder` qui sotto e la tile in `settings_screen.dart`.
 // import 'presentation/providers/monochrome_provider.dart';
@@ -20,6 +21,12 @@ class KoruApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
     final font = ref.watch(fontPreferenceProvider);
+    final locale = ref.watch(localePreferenceProvider);
+    // Riallinea il per-app locale di Android a Hive a ogni avvio: è uno stato
+    // di SISTEMA e può divergere (l'utente lo cambia da Impostazioni Android,
+    // un restore ripristina Hive ma non le impostazioni di sistema). Senza
+    // questo la UI Flutter e l'overlay nativo possono parlare lingue diverse.
+    ref.watch(localeNativeSyncProvider);
     // Active-in-root per tutta la durata dell'app: invalida stats/profiles
     // ogni volta che l'app torna in foreground (no eventi persi durante bg).
     ref.watch(appLifecycleInvalidatorProvider);
@@ -34,6 +41,8 @@ class KoruApp extends ConsumerWidget {
       theme: AppTheme.dark(fontFamily: font.family),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
+      // `null` su KoruLocale.system ⇒ Flutter risolve sul locale di sistema.
+      locale: locale.locale,
       routerConfig: router,
       builder: (context, child) {
         Widget content = AchievementUnlockListener(

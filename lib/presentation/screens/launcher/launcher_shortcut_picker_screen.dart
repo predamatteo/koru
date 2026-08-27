@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../providers/app_list_provider.dart';
 import '../../providers/launcher_shortcuts_provider.dart';
 import '../../widgets/app_icon.dart';
@@ -47,8 +48,8 @@ class _LauncherShortcutPickerScreenState
   }
 
   String _title() => widget.slot == LauncherShortcutSlot.left
-      ? 'Left shortcut'
-      : 'Right shortcut';
+      ? AppLocalizations.of(context).launcherLeftShortcut
+      : AppLocalizations.of(context).launcherRightShortcut;
 
   @override
   Widget build(BuildContext context) {
@@ -69,13 +70,17 @@ class _LauncherShortcutPickerScreenState
         title: Text(_title()),
         actions: [
           IconButton(
-            tooltip: 'Reset to default',
+            tooltip: AppLocalizations.of(context).launcherResetToDefault,
             icon: const Icon(Icons.restart_alt),
             onPressed: () async {
               await notifier.clear(widget.slot);
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Shortcut reset to default')),
+                  SnackBar(
+                    content: Text(
+                      AppLocalizations.of(context).launcherShortcutReset,
+                    ),
+                  ),
                 );
               }
             },
@@ -90,7 +95,7 @@ class _LauncherShortcutPickerScreenState
               onChanged: _onQueryChanged,
               decoration: InputDecoration(
                 isDense: true,
-                hintText: 'Search apps',
+                hintText: AppLocalizations.of(context).commonSearchApps,
                 prefixIcon: const Icon(Icons.search,
                     color: KoruColors.textSecondary),
                 filled: true,

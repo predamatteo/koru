@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../../platform/strict_mode_channel.dart';
 import '../../../providers/achievements_provider.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
@@ -68,9 +69,10 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
       setState(() => _mask = next);
     } on PlatformException catch (e) {
       if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
       final message = e.code == 'UNAUTHORIZED'
-          ? "La verifica è scaduta. Riprova."
-          : "Non è stato possibile applicare la modifica.";
+          ? l10n.strictModeVerificationExpired
+          : l10n.strictModeApplyFailed;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(message)));
@@ -83,7 +85,10 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
       // ALZARE la mask non richiede nulla: è la direzione fail-secure.
       return _applyMask(next);
     }
-    final token = await _requireChallenge(next, 'togliere questa restrizione');
+    final token = await _requireChallenge(
+      next,
+      AppLocalizations.of(context).strictModeActionRemoveRestriction,
+    );
     if (token == null) return; // annullato / non autorizzato
     await _applyMask(next, token: token);
   }
@@ -102,7 +107,10 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
       // L'uscita completa è l'azione più grave: il native lo sa (glielo dice
       // targetMask=0) e serve una sfida più lunga, con meno tempo per
       // guardarla.
-      final token = await _requireChallenge(0, 'spegnere lo strict mode');
+      final token = await _requireChallenge(
+        0,
+        AppLocalizations.of(context).strictModeActionTurnOff,
+      );
       if (token == null) return;
       await _applyMask(0, token: token);
     }
@@ -119,15 +127,12 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
         await showDialog<void>(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text('Strict mode attivo'),
-            content: const Text(
-              'Per disabilitare Device Admin devi prima spegnere lo strict '
-              'mode dall\'interruttore qui sopra.',
-            ),
+            title: Text(AppLocalizations.of(ctx).strictModeActiveDialogTitle),
+            content: Text(AppLocalizations.of(ctx).strictModeActiveDialogBody),
             actions: [
               FilledButton(
                 onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('OK'),
+                child: Text(AppLocalizations.of(ctx).commonOk),
               ),
             ],
           ),
@@ -139,6 +144,7 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
   @override
   Widget build(BuildContext context) {
     if (!_loaded) _hydrate();
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
       // Niente scorciatoia al backdoor code qui: da quando il downgrade passa
@@ -146,7 +152,7 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
       // si legge come "la via d'uscita normale, ma senza puzzle" — cioè
       // esattamente il contrario di quello che è. Lo sblocco d'emergenza vive
       // in fondo alle Impostazioni.
-      appBar: AppBar(title: const Text('Strict mode')),
+      appBar: AppBar(title: Text(l10n.strictModeTitle)),
       body: KoruPullToRefresh(
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -171,8 +177,8 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
                         Expanded(
                           child: Text(
                             _isEnabled
-                                ? 'Strict mode is ON'
-                                : 'Strict mode is OFF',
+                                ? l10n.strictModeStatusOn
+                                : l10n.strictModeStatusOff,
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
                         ),
@@ -182,11 +188,8 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
                     const SizedBox(height: 12),
                     Text(
                       _isEnabled
-                          ? 'Impostazioni, Recenti e Disinstallazione sono bloccate. '
-                                'Per allentare o spegnere serve ricostruire una sequenza di simboli — '
-                                'il backdoor code resta solo per le emergenze.'
-                          : 'Attiva per bloccare Impostazioni, Recenti e Disinstallazione. '
-                                'Richiede Device Admin.',
+                          ? l10n.strictModeDescriptionOn
+                          : l10n.strictModeDescriptionOff,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: KoruColors.textSecondary,
                         height: 1.4,
@@ -197,35 +200,33 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            _SectionTitle('What to lock'),
+            _SectionTitle(l10n.strictModeWhatToLock),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _mask & StrictModeOption.blockSettings != 0,
               onChanged: (v) =>
                   _toggleOption(StrictModeOption.blockSettings, v),
-              title: const Text('Block Settings'),
-              subtitle: const Text(
-                'Prevents opening the Android Settings app.',
-              ),
+              title: Text(l10n.strictModeBlockSettings),
+              subtitle: Text(l10n.strictModeBlockSettingsSubtitle),
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _mask & StrictModeOption.blockRecentApps != 0,
               onChanged: (v) =>
                   _toggleOption(StrictModeOption.blockRecentApps, v),
-              title: const Text('Block Recent apps'),
-              subtitle: const Text('Prevents opening the Recent apps view.'),
+              title: Text(l10n.strictModeBlockRecents),
+              subtitle: Text(l10n.strictModeBlockRecentsSubtitle),
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _mask & StrictModeOption.blockUninstalling != 0,
               onChanged: (v) =>
                   _toggleOption(StrictModeOption.blockUninstalling, v),
-              title: const Text('Block Uninstall'),
-              subtitle: const Text('Prevents uninstalling Koru.'),
+              title: Text(l10n.strictModeBlockUninstall),
+              subtitle: Text(l10n.strictModeBlockUninstallSubtitle),
             ),
             const SizedBox(height: 24),
-            _SectionTitle('Device Admin'),
+            _SectionTitle(l10n.strictModeDeviceAdmin),
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(
@@ -238,13 +239,13 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
               ),
               title: Text(
                 _deviceAdminActive
-                    ? 'Device Admin active'
-                    : 'Device Admin required',
+                    ? l10n.strictModeDeviceAdminActive
+                    : l10n.strictModeDeviceAdminRequired,
               ),
               subtitle: Text(
                 _deviceAdminActive
-                    ? 'Koru has the permissions it needs.'
-                    : 'Koru needs Device Admin to enforce Strict Mode.',
+                    ? l10n.strictModeDeviceAdminActiveSubtitle
+                    : l10n.strictModeDeviceAdminRequiredSubtitle,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: KoruColors.textSecondary,
                 ),
@@ -252,13 +253,13 @@ class _StrictModeScreenState extends ConsumerState<StrictModeScreen> {
               trailing: _deviceAdminActive
                   ? TextButton(
                       onPressed: _disableDeviceAdmin,
-                      child: const Text('Disable'),
+                      child: Text(l10n.commonDisable),
                     )
                   : FilledButton(
                       onPressed: () async {
                         await _channel.enableDeviceAdmin();
                       },
-                      child: const Text('Enable'),
+                      child: Text(l10n.commonEnable),
                     ),
             ),
           ],

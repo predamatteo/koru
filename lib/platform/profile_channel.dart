@@ -29,4 +29,12 @@ class ProfileChannel {
   /// lo persiste in uno store cross-process e lo applica all'overlay.
   Future<void> setActiveFontId(int fontId) =>
       _channel.invokeMethod<void>('setActiveFontId', {'fontId': fontId});
+
+  /// Propaga al native la lingua scelta in-app, come per-app locale di Android
+  /// (API 33+). Allinea alla UI Flutter tutto ciò che risolve stringhe da
+  /// `res/values*`: overlay di blocco, notifica del foreground service, widget
+  /// home. [languageTag] è un BCP-47 (`it`, `en`); stringa vuota = torna al
+  /// locale di sistema. No-op silenziosa su API < 33.
+  Future<void> setAppLocale(String languageTag) =>
+      _channel.invokeMethod<void>('setAppLocale', {'languageTag': languageTag});
 }
