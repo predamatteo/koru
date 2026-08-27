@@ -36,7 +36,18 @@ device, and if so update it in place instead of doing a fresh install** — a pl
 `adb install` of an already-present app fails with `INSTALL_FAILED_ALREADY_EXISTS`,
 and a clean reinstall wipes the Drift DB / Hive settings and forces re-granting the
 AccessibilityService + overlay + device-admin permissions every time. `adb install -r`
-replaces the app **keeping its data and granted permissions**.
+replaces the app **keeping its data**.
+
+**It does not keep everything, though — and the exception is the one that matters.**
+Measured on a Pixel 10 Pro (Android 17) after `adb install -r`: the Drift DB, the
+Hive boxes, `SYSTEM_ALERT_WINDOW`, `GET_USAGE_STATS`, `POST_NOTIFICATIONS` and the
+device-admin registration all survive, but the **AccessibilityService is revoked**
+(`settings get secure enabled_accessibility_services` → `null`). Android drops the
+binding for any reinstalled app that declares one. So after every update the
+blocking engine is OFF until it is re-enabled — the in-app banner ("Koru blocking
+is OFF" / "Il blocco di Koru è SPENTO") says so, and its CTA is the fastest way
+back. Re-enable it *before* concluding that an enforcement path is broken on
+device: a dead a11y service looks exactly like a blocking bug.
 
 ```powershell
 # PowerShell — build, then update-in-place if installed, else fresh install
