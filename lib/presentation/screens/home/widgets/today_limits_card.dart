@@ -108,7 +108,7 @@ class _TodayLimitsCardState extends ConsumerState<TodayLimitsCard> {
                     size: 18, color: KoruColors.textSecondary),
                 const SizedBox(width: 8),
                 Text(
-                  "TODAY'S LIMITS",
+                  AppLocalizations.of(context).todayLimitsHeader.toUpperCase(),
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: KoruColors.textSecondary,
                         letterSpacing: 2,
