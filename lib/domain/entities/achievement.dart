@@ -16,21 +16,18 @@ enum AchievementCategory {
 class Achievement {
   const Achievement({
     required this.id,
-    required this.title,
-    required this.description,
     required this.iconKey,
     required this.category,
     required this.target,
   });
 
   /// Id stabile (snake_case) — chiave primaria in DB, non tradurre.
+  ///
+  /// È anche la chiave con cui la presentation recupera titolo e descrizione
+  /// tradotti: `achievementTitle` / `achievementDescription` in
+  /// `presentation/l10n/model_labels.dart`. Stanno lì e non qui per lo stesso
+  /// motivo di [iconKey] — questo layer è puro e non vede Flutter.
   final String id;
-
-  /// Titolo mostrato in UI.
-  final String title;
-
-  /// Testo esteso (una frase, tono mindful).
-  final String description;
 
   /// Chiave stabile dell'icona (snake_case). La presentation la converte in
   /// `IconData` — vedi `achievementIcon` nel mapper di presentation. Tenere
@@ -57,24 +54,18 @@ const kAchievementCatalog = <Achievement>[
   // ── Discipline ─────────────────────────────────────────────────────────
   Achievement(
     id: 'clean_week',
-    title: 'Clean week',
-    description: 'Seven days without exceeding any daily limit.',
     iconKey: 'verified_outlined',
     category: AchievementCategory.discipline,
     target: 7,
   ),
   Achievement(
     id: 'intentions_50',
-    title: 'Mindful chooser',
-    description: 'Log an intention 50 times on the block overlay.',
     iconKey: 'psychology_outlined',
     category: AchievementCategory.discipline,
     target: 50,
   ),
   Achievement(
     id: 'honest_block_100',
-    title: 'Honest block',
-    description: 'Respect a block (no bypass) 100 times.',
     iconKey: 'shield_outlined',
     category: AchievementCategory.discipline,
     target: 100,
@@ -83,32 +74,24 @@ const kAchievementCatalog = <Achievement>[
   // ── Setup ──────────────────────────────────────────────────────────────
   Achievement(
     id: 'setup_first_profile',
-    title: 'First profile',
-    description: 'Create your first blocking profile.',
     iconKey: 'add_circle_outline',
     category: AchievementCategory.setup,
     target: 1,
   ),
   Achievement(
     id: 'setup_curated',
-    title: 'Curated',
-    description: 'Set daily limits on 3 or more apps.',
     iconKey: 'tune_outlined',
     category: AchievementCategory.setup,
     target: 3,
   ),
   Achievement(
     id: 'setup_lockdown',
-    title: 'Lockdown',
-    description: 'Enable strict mode at least once.',
     iconKey: 'lock_outline',
     category: AchievementCategory.setup,
     target: 1,
   ),
   Achievement(
     id: 'setup_customized',
-    title: 'Customized',
-    description: 'Personalize the overlay for at least one app.',
     iconKey: 'palette_outlined',
     category: AchievementCategory.setup,
     target: 1,

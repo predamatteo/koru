@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/koru_colors.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../../platform/blocking_channel.dart';
 import '../../../providers/reel_counts_provider.dart';
 
@@ -44,6 +45,7 @@ class ReelsScrolledCard extends ConsumerWidget {
     // "0 reels / None today", che è anche la verità più probabile.
     final counts =
         ref.watch(reelCountsTodayProvider).valueOrNull ?? ReelCounts.empty;
+    final l10n = AppLocalizations.of(context);
 
     final average = ref.watch(reelWeeklyAverageProvider);
     final sources = ReelSource.values
@@ -72,7 +74,7 @@ class ReelsScrolledCard extends ConsumerWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                'SCROLLED TODAY',
+                l10n.reelsScrolledToday.toUpperCase(),
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: KoruColors.textSecondary,
                       letterSpacing: 2,
@@ -98,7 +100,7 @@ class ReelsScrolledCard extends ConsumerWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                counts.total == 1 ? 'reel' : 'reels',
+                l10n.reelsUnit(counts.total),
                 style: const TextStyle(
                   fontSize: 15,
                   color: KoruColors.textSecondary,
@@ -112,8 +114,8 @@ class ReelsScrolledCard extends ConsumerWidget {
             const SizedBox(height: 6),
             Text(
               average != null && average > 0
-                  ? 'None today — your average is $average'
-                  : 'None today',
+                  ? l10n.reelsNoneTodayWithAverage(average)
+                  : l10n.reelsNoneToday,
               style: const TextStyle(
                 fontSize: 13,
                 color: KoruColors.textSecondary,
@@ -122,7 +124,7 @@ class ReelsScrolledCard extends ConsumerWidget {
           ] else if (average != null) ...[
             const SizedBox(height: 6),
             Text(
-              _comparisonLabel(counts.total, average),
+              _comparisonLabel(counts.total, average, l10n),
               style: const TextStyle(
                 fontSize: 13,
                 color: KoruColors.textSecondary,
@@ -147,12 +149,13 @@ class ReelsScrolledCard extends ConsumerWidget {
   ///
   /// Il caso "uguale" esiste apposta — arrotondare tutto a "sopra" o "sotto"
   /// darebbe un verdetto anche quando la differenza è un reel.
-  String _comparisonLabel(int today, int average) {
-    if (average <= 0) return 'First days of tracking';
+  String _comparisonLabel(int today, int average, AppLocalizations l10n) {
+    if (average <= 0) return l10n.reelsFirstDays;
     final delta = today - average;
-    if (delta == 0) return 'Right on your daily average ($average)';
-    final direction = delta > 0 ? 'more' : 'fewer';
-    return '${delta.abs()} $direction than your daily average ($average)';
+    if (delta == 0) return l10n.reelsOnAverage(average);
+    return delta > 0
+        ? l10n.reelsMoreThanAverage(delta.abs(), average)
+        : l10n.reelsFewerThanAverage(delta.abs(), average);
   }
 }
 

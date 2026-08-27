@@ -52,8 +52,6 @@ void main() {
       final controller = h.container.read(newUnlocksControllerProvider);
       const a = Achievement(
         id: 'setup_first_profile',
-        title: 'First profile',
-        description: 'desc',
         iconKey: 'add_circle_outline',
         category: AchievementCategory.setup,
         target: 1,
@@ -76,8 +74,6 @@ void main() {
 
       const a = Achievement(
         id: 'clean_week',
-        title: 'Clean week',
-        description: 'd',
         iconKey: 'verified_outlined',
         category: AchievementCategory.discipline,
         target: 7,
@@ -113,8 +109,6 @@ void main() {
 
       const a = Achievement(
         id: 'intentions_50',
-        title: 'Mindful chooser',
-        description: 'd',
         iconKey: 'psychology_outlined',
         category: AchievementCategory.discipline,
         target: 50,

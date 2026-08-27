@@ -22,10 +22,6 @@ class ProfileModel {
   int get id => data.id;
   String get title => data.title;
 
-  /// Titolo da mostrare all'utente: il titolo vero, o un segnaposto se il
-  /// profilo è stato salvato senza nome.
-  String get displayTitle => title.isEmpty ? 'Untitled' : title;
-
   String get emoji => data.emoji;
   String get colorHex => data.colorHex;
   bool get isEnabled => data.isEnabled;
@@ -39,37 +35,8 @@ class ProfileModel {
   bool get hasUsageLimit =>
       ProfileType.hasType(typeCombinations, ProfileType.usageLimit);
 
-  String get modeLabel =>
-      blockingMode == BlockingMode.allowlist ? 'Allowlist' : 'Blocklist';
-
-  String get dayFlagsLabel {
-    if (dayFlags == DayFlags.allDays) return 'Every day';
-    if (dayFlags == DayFlags.weekdays) return 'Weekdays';
-    if (dayFlags == DayFlags.weekend) return 'Weekend';
-    return DayFlags.activeLabels(dayFlags).join(', ');
-  }
-
-  String get subtitle {
-    final parts = <String>[];
-    parts.add(modeLabel);
-    parts.add('${apps.length} apps');
-    if (websites.isNotEmpty) parts.add('${websites.length} sites');
-    if (hasTimeCondition && intervals.isNotEmpty) {
-      parts.add(intervals
-          .map((iv) => iv.fromMinutes == iv.toMinutes
-              // from == to e' la fascia 24h (vedi ScheduleUtils.isNowInRange):
-              // stamparla come "00:00 - 00:00" leggerebbe come finestra vuota.
-              ? 'All day'
-              : '${_formatMinutes(iv.fromMinutes)} - ${_formatMinutes(iv.toMinutes)}')
-          .join(', '));
-    }
-    parts.add(dayFlagsLabel);
-    return parts.join(' \u00b7 ');
-  }
-
-  static String _formatMinutes(int minutes) {
-    final h = minutes ~/ 60;
-    final m = minutes % 60;
-    return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
-  }
+  // `displayTitle`, `modeLabel`, `dayFlagsLabel` e `subtitle` NON stanno qui:
+  // sono testo tradotto e questo file non importa Flutter, quindi non pu\u00f2
+  // leggere `AppLocalizations`. Vivono come estensione in
+  // `presentation/l10n/model_labels.dart`.
 }

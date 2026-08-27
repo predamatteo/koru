@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../providers/accessibility_health_provider.dart';
 
 /// Banner che appare in cima alla home quando il servizio di accessibilità
@@ -51,7 +52,7 @@ class AccessibilityHealthBanner extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Koru blocking is OFF',
+                        AppLocalizations.of(context).a11yBannerTitle,
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
                               color: KoruColors.textPrimary,
                               fontWeight: FontWeight.w600,
@@ -59,9 +60,7 @@ class AccessibilityHealthBanner extends ConsumerWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Accessibility service was disabled by the system. '
-                        'Limits, profiles and focus mode will not work until '
-                        'you re-enable it.',
+                        AppLocalizations.of(context).a11yBannerBody,
                         style:
                             Theme.of(context).textTheme.bodySmall?.copyWith(
                                   color: KoruColors.textSecondary,
@@ -81,7 +80,9 @@ class AccessibilityHealthBanner extends ConsumerWidget {
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
                           onPressed: () => _openSettings(ref),
-                          child: const Text('Re-enable'),
+                          child: Text(
+                            AppLocalizations.of(context).a11yBannerAction,
+                          ),
                         ),
                       ),
                     ],

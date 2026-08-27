@@ -5,6 +5,8 @@ import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
 import '../../../domain/entities/achievement.dart';
 import '../../../domain/usecases/evaluate_achievements.dart';
+import '../../../l10n/generated/app_localizations.dart';
+import '../../l10n/model_labels.dart';
 import '../../providers/achievements_provider.dart';
 import '../../widgets/koru_pull_to_refresh.dart';
 import 'widgets/achievement_style.dart';
@@ -20,9 +22,10 @@ class AchievementsScreen extends ConsumerWidget {
     final statsAsync = ref.watch(achievementStatsProvider);
 
     final unlocked = unlockedAsync.valueOrNull ?? const <String>{};
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Achievements')),
+      appBar: AppBar(title: Text(l10n.achievementsTitle)),
       body: KoruPullToRefresh(
         child: statsAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
@@ -51,7 +54,7 @@ class AchievementsScreen extends ConsumerWidget {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
                     child: Text(
-                      _categoryLabel(entry.key).toUpperCase(),
+                      entry.key.label(l10n).toUpperCase(),
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: KoruColors.textSecondary,
                         letterSpacing: 2,
@@ -75,11 +78,6 @@ class AchievementsScreen extends ConsumerWidget {
     );
   }
 }
-
-String _categoryLabel(AchievementCategory c) => switch (c) {
-  AchievementCategory.discipline => 'Discipline',
-  AchievementCategory.setup => 'Setup',
-};
 
 Color _tintFor(AchievementCategory c) => switch (c) {
   AchievementCategory.discipline => KoruColors.danger,
@@ -112,7 +110,7 @@ class _HeaderCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  ' / $totalCount unlocked',
+                  ' ${AppLocalizations.of(context).achievementsUnlockedOf(totalCount)}',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: KoruColors.textSecondary,
                   ),
@@ -188,7 +186,7 @@ class _AchievementTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    achievement.title,
+                    achievement.title(AppLocalizations.of(context)),
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
@@ -199,7 +197,7 @@ class _AchievementTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    achievement.description,
+                    achievement.description(AppLocalizations.of(context)),
                     style: const TextStyle(
                       fontSize: 12,
                       color: KoruColors.textSecondary,

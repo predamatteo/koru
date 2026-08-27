@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
 import '../../../../core/router/app_router.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../../platform/permission_channel.dart';
 import '../../../providers/app_list_provider.dart';
 import '../../../providers/launcher_swipe_actions_provider.dart';
@@ -64,8 +65,9 @@ class _LauncherSettingsScreenState extends ConsumerState<LauncherSettingsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Launcher')),
+      appBar: AppBar(title: Text(l10n.settingsSectionLauncher)),
       body: KoruPullToRefresh(
         onRefresh: _refresh,
         child: ListView(
@@ -91,8 +93,8 @@ class _LauncherSettingsScreenState extends ConsumerState<LauncherSettingsScreen>
                         Expanded(
                           child: Text(
                             _isDefault
-                                ? 'Koru is your default launcher'
-                                : 'Koru is not your default launcher',
+                                ? l10n.launcherIsDefault
+                                : l10n.launcherIsNotDefault,
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
                         ),
@@ -107,17 +109,14 @@ class _LauncherSettingsScreenState extends ConsumerState<LauncherSettingsScreen>
               contentPadding: EdgeInsets.zero,
               value: _modeEnabled,
               onChanged: _toggleMode,
-              title: const Text('Make Koru selectable as launcher'),
-              subtitle: const Text(
-                'Enables the HOME activity. You still need to pick Koru '
-                'in the system chooser.',
-              ),
+              title: Text(l10n.launcherMakeSelectable),
+              subtitle: Text(l10n.launcherMakeSelectableSubtitle),
             ),
             if (_modeEnabled) ...[
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 icon: const Icon(Icons.settings_outlined),
-                label: const Text('Open system launcher picker'),
+                label: Text(l10n.launcherOpenSystemPicker),
                 onPressed: () => _channel.openDefaultLauncherSettings(),
               ),
             ],
@@ -136,21 +135,22 @@ class _LauncherSettingsScreenState extends ConsumerState<LauncherSettingsScreen>
   Widget _buildSwipeSection() {
     final actions = ref.watch(launcherSwipeActionsProvider);
     final apps = ref.watch(installedAppsProvider).valueOrNull ?? const [];
+    final l10n = AppLocalizations.of(context);
 
     String labelFor(LauncherSwipeAction action) {
       switch (action.type) {
         case LauncherSwipeActionType.none:
-          return 'None';
+          return l10n.commonNone;
         case LauncherSwipeActionType.allApps:
-          return 'All apps';
+          return l10n.allAppsTitle;
         case LauncherSwipeActionType.appSearch:
-          return 'App search';
+          return l10n.launcherSwipeAppSearch;
         case LauncherSwipeActionType.openApp:
           final pkg = action.packageName;
           for (final a in apps) {
             if (a.packageName == pkg) return a.label;
           }
-          return pkg ?? 'App';
+          return pkg ?? l10n.launcherSwipeGenericApp;
       }
     }
 
@@ -172,20 +172,18 @@ class _LauncherSettingsScreenState extends ConsumerState<LauncherSettingsScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Swipe gestures',
+          l10n.launcherSwipeGestures,
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 4),
-        const Text(
-          'Swipe up always opens All apps. Assign an action to the left and '
-          'right home-screen swipes. Distracting apps (blocked or limited) '
-          'are not selectable.',
-          style: TextStyle(color: KoruColors.textSecondary),
+        Text(
+          l10n.launcherSwipeGesturesSubtitle,
+          style: const TextStyle(color: KoruColors.textSecondary),
         ),
         const SizedBox(height: 8),
-        tile('Swipe left', LauncherSwipeDirection.left,
+        tile(l10n.launcherSwipeLeft, LauncherSwipeDirection.left,
             Icons.keyboard_arrow_left),
-        tile('Swipe right', LauncherSwipeDirection.right,
+        tile(l10n.launcherSwipeRight, LauncherSwipeDirection.right,
             Icons.keyboard_arrow_right),
       ],
     );

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:koru/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koru/platform/blocking_channel.dart';
@@ -11,7 +12,10 @@ import '../../_helpers/provider_test_utils.dart';
 
 Widget _wrap(ProviderContainer container) => UncontrolledProviderScope(
       container: container,
-      child: const MaterialApp(
+      child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(body: ReelsScrolledCard()),
       ),
     );

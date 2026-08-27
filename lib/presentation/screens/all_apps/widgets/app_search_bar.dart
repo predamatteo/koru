@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/theme/launcher_phase.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../providers/app_list_provider.dart';
 
 /// Campo di ricerca del drawer — **in basso, sotto la lista, sopra la
@@ -126,7 +127,7 @@ class _AppSearchBarState extends ConsumerState<AppSearchBar> {
                 cursorColor: widget.phase.accent,
                 style: theme.textTheme.bodyLarge,
                 decoration: InputDecoration.collapsed(
-                  hintText: 'Search apps',
+                  hintText: AppLocalizations.of(context).commonSearchApps,
                   hintStyle: theme.textTheme.bodyLarge
                       ?.copyWith(color: KoruColors.textSecondary),
                 ),
@@ -145,7 +146,7 @@ class _AppSearchBarState extends ConsumerState<AppSearchBar> {
                   size: 20,
                   color: KoruColors.textSecondary,
                 ),
-                tooltip: 'Clear search',
+                tooltip: AppLocalizations.of(context).allAppsClearSearch,
                 onPressed: () {
                   _controller.clear();
                   _setQueryNow('');

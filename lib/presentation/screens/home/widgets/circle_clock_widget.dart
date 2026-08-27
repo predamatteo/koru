@@ -23,12 +23,19 @@ class CircleClockWidget extends ConsumerWidget {
   final LauncherPhase phase;
   final VoidCallback? onTap;
 
-  static final DateFormat _timeFormat = DateFormat.Hm();
-  static final DateFormat _dateFormat = DateFormat('EEE d MMM');
+  // I formatter si costruiscono nel build e non sono `static final`: un
+  // `DateFormat` cattura il locale al momento della creazione, quindi uno
+  // statico resterebbe congelato sulla lingua del primo avvio e la data
+  // continuerebbe a dire "Wed" con la UI in italiano. I simboli della lingua
+  // sono già caricati da `GlobalMaterialLocalizations` (vedi
+  // `AppLocalizations.localizationsDelegates`).
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final localeTag = Localizations.localeOf(context).toLanguageTag();
+    final timeFormat = DateFormat.Hm(localeTag);
+    final dateFormat = DateFormat('EEE d MMM', localeTag);
     final batteryLevel = ref.watch(batteryLevelProvider).valueOrNull;
     final isCharging = ref.watch(isChargingProvider).valueOrNull ?? false;
     final metaStyle = theme.textTheme.labelLarge?.copyWith(
@@ -49,7 +56,7 @@ class CircleClockWidget extends ConsumerWidget {
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
               child: Text(
-                _timeFormat.format(now),
+                timeFormat.format(now),
                 maxLines: 1,
                 style: theme.textTheme.displayLarge?.copyWith(
                   fontSize: 76,
@@ -64,7 +71,7 @@ class CircleClockWidget extends ConsumerWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(_dateFormat.format(now), style: metaStyle),
+                Text(dateFormat.format(now), style: metaStyle),
                 if (batteryLevel != null && batteryLevel >= 0) ...[
                   Text(' · ', style: metaStyle),
                   if (isCharging) ...[

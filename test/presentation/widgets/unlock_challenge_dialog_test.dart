@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:koru/l10n/generated/app_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koru/domain/entities/unlock_challenge.dart';
 import 'package:koru/presentation/widgets/unlock_challenge_dialog.dart';
 import 'package:koru/presentation/widgets/unlock_challenge_source.dart';
+
+import '../../_helpers/l10n_test_utils.dart';
 
 /// Copre il giro completo del gate: intro → memorizza → ricostruisci, sia
 /// quando l'utente ce la fa sia quando sbaglia o rinuncia.
@@ -29,6 +32,9 @@ void main() {
     var closed = false;
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: Builder(
           builder: (context) => Scaffold(
             body: Center(
@@ -71,7 +77,7 @@ void main() {
     WidgetTester tester,
     UnlockChallengeLevel level,
   ) async {
-    await tester.tap(find.text('Mostrami la sequenza'));
+    await tester.tap(find.text(enL10n.challengeShowSequence));
     // Due pump: la sorgente è asincrona (per lo strict mode c'è un giro sul
     // channel), quindi si passa da una fase di attesa prima di memorizzare.
     await tester.pump();
@@ -80,7 +86,7 @@ void main() {
     expect(sequence, hasLength(level.sequenceLength));
     // Lascia scadere il countdown → fase di ricostruzione.
     await tester.pumpAndSettle();
-    expect(find.text('Ricostruisci'), findsOneWidget);
+    expect(find.text(enL10n.challengeRecallTitle), findsOneWidget);
     return sequence;
   }
 
@@ -89,8 +95,8 @@ void main() {
   ) async {
     await showDialogUnderTest(tester, UnlockChallengeLevel.standard);
 
-    expect(find.text('Un momento'), findsOneWidget);
-    expect(find.text('Mostrami la sequenza'), findsOneWidget);
+    expect(find.text(enL10n.challengeIntroTitle), findsOneWidget);
+    expect(find.text(enL10n.challengeShowSequence), findsOneWidget);
     // Nessuna griglia e nessuna sequenza prima del via.
     expect(find.byType(GridView), findsNothing);
     expect(find.byType(Wrap), findsNothing);
@@ -145,8 +151,8 @@ void main() {
     await tester.pump(); // rebuild in fase di memorizzazione
 
     // Siamo tornati a memorizzare, con il contatore dei tentativi visibile.
-    expect(find.text('Memorizza'), findsOneWidget);
-    expect(find.text('Un tentativo andato storto. Nessuna fretta.'), findsOneWidget);
+    expect(find.text(enL10n.challengeMemorizeTitle), findsOneWidget);
+    expect(find.text(enL10n.challengeFailedAttempts(1)), findsOneWidget);
     // Il dialog è ancora aperto: sbagliare non sblocca né chiude.
     expect(result(), isNull);
 
@@ -163,7 +169,7 @@ void main() {
       UnlockChallengeLevel.gentle,
     );
 
-    await tester.tap(find.text('Lascia stare'));
+    await tester.tap(find.text(enL10n.challengeGiveUp));
     await tester.pumpAndSettle();
 
     expect(result(), isFalse);
@@ -179,7 +185,7 @@ void main() {
     // Un tocco giusto, poi ci ripensa.
     await tester.tap(find.byIcon(sequence.first));
     await tester.pump();
-    await tester.tap(find.text('Lascia stare'));
+    await tester.tap(find.text(enL10n.challengeGiveUp));
     await tester.pumpAndSettle();
 
     expect(result(), isFalse);

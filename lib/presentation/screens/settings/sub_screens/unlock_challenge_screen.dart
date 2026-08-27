@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../domain/entities/unlock_challenge.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../providers/unlock_challenge_provider.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
 import '../../../widgets/unlock_challenge_dialog.dart';
@@ -14,15 +15,33 @@ import '../../../widgets/unlock_challenge_dialog.dart';
 /// non è la strict mode: non pretende di reggere contro te stesso determinato,
 /// serve a spezzare l'automatismo del momento. Un lucchetto sul lucchetto
 /// avrebbe solo spostato il problema di un tap.
+/// Etichette tradotte dei livelli. Stanno qui e non sull'enum in `domain/`
+/// perché sono testo di UI: il domain non importa Flutter e non può leggere
+/// [AppLocalizations].
+extension UnlockChallengeLevelL10n on UnlockChallengeLevel {
+  String label(AppLocalizations l10n) => switch (this) {
+        UnlockChallengeLevel.gentle => l10n.unlockChallengeLevelGentle,
+        UnlockChallengeLevel.standard => l10n.unlockChallengeLevelStandard,
+        UnlockChallengeLevel.stubborn => l10n.unlockChallengeLevelStubborn,
+      };
+
+  String description(AppLocalizations l10n) => switch (this) {
+        UnlockChallengeLevel.gentle => l10n.unlockChallengeLevelGentleDesc,
+        UnlockChallengeLevel.standard => l10n.unlockChallengeLevelStandardDesc,
+        UnlockChallengeLevel.stubborn => l10n.unlockChallengeLevelStubbornDesc,
+      };
+}
+
 class UnlockChallengeScreen extends ConsumerWidget {
   const UnlockChallengeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final level = ref.watch(unlockChallengeLevelProvider);
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Sfida di sblocco')),
+      appBar: AppBar(title: Text(l10n.unlockChallengeTitle)),
       body: KoruPullToRefresh(
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -46,24 +65,18 @@ class UnlockChallengeScreen extends ConsumerWidget {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'Attrito attivo: ${level.label.toLowerCase()}',
+                          l10n.unlockChallengeActiveFriction(
+                            level.label(l10n).toLowerCase(),
+                          ),
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    'Spegnere un profilo, cancellarlo o togliergli app '
-                    'richiede prima di memorizzare una breve sequenza di '
-                    'simboli e di ricostruirla in una griglia piena di sosia.\n\n'
-                    'Serve a mettere qualche secondo di lucidità fra '
-                    'l\'impulso e il tap. Attivare una protezione resta '
-                    'sempre immediato.\n\n'
-                    'Si sceglie quanto attrito, non se averlo: una sfida che '
-                    'si spegne con un tap è proprio il tap che vorresti '
-                    'fermare.',
-                    style: TextStyle(
+                  Text(
+                    l10n.unlockChallengeExplainer,
+                    style: const TextStyle(
                       color: KoruColors.textSecondary,
                       fontSize: 13,
                       height: 1.5,
@@ -73,7 +86,7 @@ class UnlockChallengeScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 28),
-            _SectionTitle('Quanto attrito'),
+            _SectionTitle(l10n.unlockChallengeHowMuchFriction),
             const SizedBox(height: 4),
             for (final option in UnlockChallengeLevel.values)
               _LevelTile(
@@ -87,7 +100,7 @@ class UnlockChallengeScreen extends ConsumerWidget {
             OutlinedButton.icon(
               onPressed: () => _preview(context, ref),
               icon: const Icon(Icons.play_arrow_outlined),
-              label: const Text('Provala adesso'),
+              label: Text(l10n.unlockChallengeTryNow),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size.fromHeight(50),
                 foregroundColor: KoruColors.primary,
@@ -95,10 +108,10 @@ class UnlockChallengeScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 10),
-            const Text(
-              'Una prova a vuoto: non disattiva niente.',
+            Text(
+              l10n.unlockChallengeTryNowNote,
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 color: KoruColors.textSecondary,
                 fontSize: 12,
               ),
@@ -110,18 +123,19 @@ class UnlockChallengeScreen extends ConsumerWidget {
   }
 
   Future<void> _preview(BuildContext context, WidgetRef ref) async {
+    final l10n = AppLocalizations.of(context);
     final passed = await requireUnlockChallenge(
       context,
       ref,
-      action: 'provare la sfida',
+      action: l10n.unlockChallengeActionPreview,
     );
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           passed
-              ? 'Superata. È esattamente questo che ti verrà chiesto.'
-              : 'Prova annullata.',
+              ? l10n.unlockChallengePreviewPassed
+              : l10n.unlockChallengePreviewCancelled,
         ),
       ),
     );
@@ -141,6 +155,7 @@ class _LevelTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
@@ -168,7 +183,7 @@ class _LevelTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        level.label,
+                        level.label(l10n),
                         style: TextStyle(
                           color: selected
                               ? KoruColors.onPrimaryContainer
@@ -179,7 +194,7 @@ class _LevelTile extends StatelessWidget {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        level.description,
+                        level.description(l10n),
                         style: TextStyle(
                           color: selected
                               ? KoruColors.onPrimaryContainer.withAlpha(190)

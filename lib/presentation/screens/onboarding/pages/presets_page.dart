@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../data/repositories/preset_repository.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../providers/preset_provider.dart';
 
 class PresetsPage extends ConsumerStatefulWidget {
@@ -31,11 +32,11 @@ class _PresetsPageState extends ConsumerState<PresetsPage> {
         error: (e, _) => Center(child: Text('$e')),
         data: (presets) => ListView(
           children: [
-            Text('Quick start',
+            Text(AppLocalizations.of(context).onboardingPresetsTitle,
                 style: Theme.of(context).textTheme.headlineMedium),
             const SizedBox(height: 8),
             Text(
-              'Tap a preset to create a ready-to-go profile. You can edit it later.',
+              AppLocalizations.of(context).onboardingPresetsBody,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: KoruColors.textSecondary,
                   ),
@@ -111,7 +112,10 @@ class _PresetCard extends StatelessWidget {
             ),
             applied
                 ? const Icon(Icons.check_circle, color: KoruColors.success)
-                : TextButton(onPressed: onApply, child: const Text('Apply')),
+                : TextButton(
+                    onPressed: onApply,
+                    child: Text(AppLocalizations.of(context).commonApply),
+                  ),
           ],
         ),
       ),

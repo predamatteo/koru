@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/koru_colors.dart';
 import '../../../core/constants/layout.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../providers/app_list_provider.dart';
 import '../../providers/launcher_swipe_actions_provider.dart';
 import '../../widgets/app_icon.dart';
@@ -51,8 +52,10 @@ class _LauncherSwipePickerScreenState
   }
 
   String _title() => switch (widget.direction) {
-        LauncherSwipeDirection.left => 'Swipe left',
-        LauncherSwipeDirection.right => 'Swipe right',
+        LauncherSwipeDirection.left =>
+          AppLocalizations.of(context).launcherSwipeLeft,
+        LauncherSwipeDirection.right =>
+          AppLocalizations.of(context).launcherSwipeRight,
       };
 
   Future<void> _pick(LauncherSwipeAction action) async {
@@ -85,7 +88,7 @@ class _LauncherSwipePickerScreenState
               onChanged: _onQueryChanged,
               decoration: InputDecoration(
                 isDense: true,
-                hintText: 'Search apps',
+                hintText: AppLocalizations.of(context).commonSearchApps,
                 prefixIcon: const Icon(Icons.search,
                     color: KoruColors.textSecondary),
                 filled: true,
@@ -125,20 +128,20 @@ class _LauncherSwipePickerScreenState
               if (showActions) ...[
                 _ActionTile(
                   icon: Icons.block,
-                  label: 'None',
+                  label: AppLocalizations.of(context).commonNone,
                   selected: current.type == LauncherSwipeActionType.none,
                   onTap: () => _pick(LauncherSwipeAction.none),
                 ),
                 _ActionTile(
                   icon: Icons.apps_outlined,
-                  label: 'All apps',
+                  label: AppLocalizations.of(context).allAppsTitle,
                   selected: current.type == LauncherSwipeActionType.allApps,
                   onTap: () => _pick(const LauncherSwipeAction(
                       LauncherSwipeActionType.allApps)),
                 ),
                 _ActionTile(
                   icon: Icons.search,
-                  label: 'App search',
+                  label: AppLocalizations.of(context).launcherSwipeAppSearch,
                   selected: current.type == LauncherSwipeActionType.appSearch,
                   onTap: () => _pick(const LauncherSwipeAction(
                       LauncherSwipeActionType.appSearch)),

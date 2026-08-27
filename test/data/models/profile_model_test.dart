@@ -3,6 +3,9 @@ import 'package:koru/core/constants/day_flags.dart';
 import 'package:koru/core/constants/profile_types.dart';
 import 'package:koru/data/database/app_database.dart';
 import 'package:koru/data/models/profile_model.dart';
+import 'package:koru/presentation/l10n/model_labels.dart';
+
+import '../../_helpers/l10n_test_utils.dart';
 
 /// Builder for [Profile] (Drift DataClass) with sensible defaults.
 /// Every field in [Profiles] table is required by the constructor.
@@ -86,6 +89,8 @@ Interval buildInterval(int profileId, int from, int to) => Interval(
       isAllDayAuto: false,
       isEnabled: true,
     );
+
+final _en = enL10n;
 
 void main() {
   group('ProfileModel constructor defaults', () {
@@ -205,14 +210,14 @@ void main() {
       final model = ProfileModel(
         data: buildProfile(blockingMode: BlockingMode.allowlist),
       );
-      expect(model.modeLabel, 'Allowlist');
+      expect(model.modeLabel(_en), 'Allowlist');
     });
 
     test('"Blocklist" for BlockingMode.blocklist', () {
       final model = ProfileModel(
         data: buildProfile(blockingMode: BlockingMode.blocklist),
       );
-      expect(model.modeLabel, 'Blocklist');
+      expect(model.modeLabel(_en), 'Blocklist');
     });
   });
 
@@ -221,40 +226,40 @@ void main() {
       final model = ProfileModel(
         data: buildProfile(dayFlags: DayFlags.allDays),
       );
-      expect(model.dayFlagsLabel, 'Every day');
+      expect(model.dayFlagsLabel(_en), 'Every day');
     });
 
     test('"Weekdays" for weekdays (31)', () {
       final model = ProfileModel(
         data: buildProfile(dayFlags: DayFlags.weekdays),
       );
-      expect(model.dayFlagsLabel, 'Weekdays');
+      expect(model.dayFlagsLabel(_en), 'Weekdays');
     });
 
     test('"Weekend" for weekend (96)', () {
       final model = ProfileModel(
         data: buildProfile(dayFlags: DayFlags.weekend),
       );
-      expect(model.dayFlagsLabel, 'Weekend');
+      expect(model.dayFlagsLabel(_en), 'Weekend');
     });
 
     test('"Mon, Wed, Fri" for monday | wednesday | friday', () {
       final flags =
           DayFlags.monday | DayFlags.wednesday | DayFlags.friday;
       final model = ProfileModel(data: buildProfile(dayFlags: flags));
-      expect(model.dayFlagsLabel, 'Mon, Wed, Fri');
+      expect(model.dayFlagsLabel(_en), 'Mon, Wed, Fri');
     });
 
     test('only a single day produces just that day name', () {
       final model = ProfileModel(
         data: buildProfile(dayFlags: DayFlags.thursday),
       );
-      expect(model.dayFlagsLabel, 'Thu');
+      expect(model.dayFlagsLabel(_en), 'Thu');
     });
 
     test('no days set yields empty label (edge case)', () {
       final model = ProfileModel(data: buildProfile(dayFlags: 0));
-      expect(model.dayFlagsLabel, '');
+      expect(model.dayFlagsLabel(_en), '');
     });
   });
 
@@ -262,7 +267,7 @@ void main() {
     test('default subtitle (no apps/sites/intervals) just has mode + 0 apps + days',
         () {
       final model = ProfileModel(data: buildProfile());
-      expect(model.subtitle, 'Blocklist · 0 apps · Every day');
+      expect(model.subtitle(_en), 'Blocklist · 0 apps · Every day');
     });
 
     test('includes apps count', () {
@@ -274,12 +279,12 @@ void main() {
           buildAppRel(1, 'com.c'),
         ],
       );
-      expect(model.subtitle, contains('3 apps'));
+      expect(model.subtitle(_en), contains('3 apps'));
     });
 
     test('omits sites segment when websites is empty', () {
       final model = ProfileModel(data: buildProfile());
-      expect(model.subtitle, isNot(contains('sites')));
+      expect(model.subtitle(_en), isNot(contains('sites')));
     });
 
     test('includes sites count when websites is not empty', () {
@@ -290,7 +295,7 @@ void main() {
           buildWebsiteRule(1, 'twitter.com'),
         ],
       );
-      expect(model.subtitle, contains('2 sites'));
+      expect(model.subtitle(_en), contains('2 sites'));
     });
 
     test(
@@ -300,7 +305,7 @@ void main() {
         data: buildProfile(typeCombinations: 0),
         intervals: [buildInterval(1, 540, 1020)],
       );
-      expect(model.subtitle, isNot(contains('09:00')));
+      expect(model.subtitle(_en), isNot(contains('09:00')));
     });
 
     test('includes interval formatted HH:MM - HH:MM when hasTimeCondition',
@@ -310,7 +315,7 @@ void main() {
         // 09:00 → 17:00 = 540 → 1020.
         intervals: [buildInterval(1, 540, 1020)],
       );
-      expect(model.subtitle, contains('09:00 - 17:00'));
+      expect(model.subtitle(_en), contains('09:00 - 17:00'));
     });
 
     test('renders a from == to interval as "All day", not "00:00 - 00:00"', () {
@@ -320,8 +325,8 @@ void main() {
         // che ScheduleUtils/BlockPolicyEvaluator leggono come 24h.
         intervals: [buildInterval(1, 0, 0)],
       );
-      expect(model.subtitle, contains('All day'));
-      expect(model.subtitle, isNot(contains('00:00 - 00:00')));
+      expect(model.subtitle(_en), contains('All day'));
+      expect(model.subtitle(_en), isNot(contains('00:00 - 00:00')));
     });
 
     test('treats any from == to interval as all-day, not just midnight', () {
@@ -329,8 +334,8 @@ void main() {
         data: buildProfile(typeCombinations: ProfileType.time),
         intervals: [buildInterval(1, 540, 540)],
       );
-      expect(model.subtitle, contains('All day'));
-      expect(model.subtitle, isNot(contains('09:00 - 09:00')));
+      expect(model.subtitle(_en), contains('All day'));
+      expect(model.subtitle(_en), isNot(contains('09:00 - 09:00')));
     });
 
     test('joins multiple intervals with ", "', () {
@@ -341,7 +346,7 @@ void main() {
           buildInterval(1, 840, 1020), // 14:00-17:00
         ],
       );
-      expect(model.subtitle, contains('09:00 - 12:00, 14:00 - 17:00'));
+      expect(model.subtitle(_en), contains('09:00 - 12:00, 14:00 - 17:00'));
     });
 
     test('subtitle terminates with dayFlagsLabel (separated by " \\u00b7 ")',
@@ -357,7 +362,7 @@ void main() {
         intervals: [buildInterval(1, 540, 1020)],
       );
       expect(
-        model.subtitle,
+        model.subtitle(_en),
         'Allowlist · 1 apps · 1 sites · 09:00 - 17:00 · Weekdays',
       );
     });
@@ -370,24 +375,24 @@ void main() {
         );
 
     test('0 → 00:00', () {
-      expect(withInterval(0, 60).subtitle, contains('00:00 - 01:00'));
+      expect(withInterval(0, 60).subtitle(_en), contains('00:00 - 01:00'));
     });
 
     test('90 → 01:30', () {
-      expect(withInterval(90, 120).subtitle, contains('01:30 - 02:00'));
+      expect(withInterval(90, 120).subtitle(_en), contains('01:30 - 02:00'));
     });
 
     test('1439 → 23:59 (one minute before midnight)', () {
-      expect(withInterval(0, 1439).subtitle, contains('00:00 - 23:59'));
+      expect(withInterval(0, 1439).subtitle(_en), contains('00:00 - 23:59'));
     });
 
     test('59 → 00:59', () {
-      expect(withInterval(0, 59).subtitle, contains('00:00 - 00:59'));
+      expect(withInterval(0, 59).subtitle(_en), contains('00:00 - 00:59'));
     });
 
     test('cross-midnight pair (1320 → 360 = 22:00-06:00) still formats both sides',
         () {
-      expect(withInterval(1320, 360).subtitle, contains('22:00 - 06:00'));
+      expect(withInterval(1320, 360).subtitle(_en), contains('22:00 - 06:00'));
     });
   });
 }

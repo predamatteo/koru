@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../domain/entities/achievement.dart';
+import '../../../../l10n/generated/app_localizations.dart';
+import '../../../l10n/model_labels.dart';
 import '../../../providers/achievements_provider.dart';
 import 'achievement_style.dart';
 
@@ -30,7 +32,7 @@ class AchievementsGrid extends ConsumerWidget {
         Row(
           children: [
             Text(
-              'Achievements',
+              AppLocalizations.of(context).achievementsTitle,
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const Spacer(),
@@ -49,7 +51,7 @@ class AchievementsGrid extends ConsumerWidget {
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
               onPressed: () => context.push('/stats/achievements'),
-              child: const Text('View all'),
+              child: Text(AppLocalizations.of(context).commonViewAll),
             ),
           ],
         ),
@@ -106,7 +108,7 @@ class _AchievementBadge extends StatelessWidget {
           Icon(achievementIcon(achievement), color: iconColor, size: 28),
           const SizedBox(height: 6),
           Text(
-            achievement.title,
+            achievement.title(AppLocalizations.of(context)),
             textAlign: TextAlign.center,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,

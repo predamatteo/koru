@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lingue supportate da Koru, dichiarate al sistema.
+
+     Serve a due cose che non si ottengono altrimenti:
+     1. fa comparire Koru in Impostazioni Android › App › Koru › Lingua, così la
+        scelta fatta in-app e quella fatta dal sistema sono LA STESSA cosa
+        invece di due preferenze che divergono;
+     2. è il prerequisito di `LocaleManager.setApplicationLocales`: senza questo
+        file un tag non dichiarato qui viene scartato in silenzio.
+
+     Va tenuto allineato a `AppLocalizations.supportedLocales` (lib/l10n/*.arb).
+     Il guardrail è `test/l10n/arb_parity_test.dart`, che confronta i due
+     insiemi. -->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="en" />
+    <locale android:name="it" />
+</locale-config>

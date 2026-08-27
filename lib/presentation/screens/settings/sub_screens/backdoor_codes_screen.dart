@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/koru_colors.dart';
 import '../../../../core/di/providers.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../../platform/strict_mode_channel.dart';
 import '../../../widgets/koru_pull_to_refresh.dart';
 
@@ -79,13 +80,12 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
       // e unblock).
       final outcome = await _channel.performEmergencyUnblock(input);
       if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
       switch (outcome) {
         case BackdoorValid():
           _codeController.clear();
           setState(() {
-            _validationResult =
-                'Codice valido — strict mode disattivato. Il codice è stato '
-                'consumato; ne sarà generato uno nuovo.';
+            _validationResult = l10n.backdoorResultValid;
             _resultColor = KoruColors.success;
           });
           // Refresh del code corrente: dopo emergency unblock il Kotlin
@@ -98,27 +98,26 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
           });
         case BackdoorInvalid():
           setState(() {
-            _validationResult = 'Codice non valido.';
+            _validationResult = l10n.backdoorResultInvalid;
             _resultColor = KoruColors.danger;
           });
         case BackdoorReplay():
           setState(() {
-            _validationResult =
-                'Codice già usato. Aspetta la rotazione settimanale per '
-                'ricevere un nuovo codice.';
+            _validationResult = l10n.backdoorResultReplay;
             _resultColor = KoruColors.danger;
           });
         case BackdoorLocked(:final remainingMs):
           setState(() {
-            _validationResult = _formatLockoutMessage(remainingMs);
+            _validationResult = _formatLockoutMessage(remainingMs, l10n);
             _resultColor = KoruColors.danger;
             _lockoutRemainingMs = remainingMs;
           });
       }
     } on PlatformException catch (e) {
       if (!mounted) return;
+      final message = e.message ?? e.code;
       setState(() {
-        _validationResult = 'Errore: ${e.message ?? e.code}';
+        _validationResult = AppLocalizations.of(context).backdoorError(message);
         _resultColor = KoruColors.danger;
       });
     } finally {
@@ -129,13 +128,13 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
     }
   }
 
-  String _formatLockoutMessage(int ms) {
+  String _formatLockoutMessage(int ms, AppLocalizations l10n) {
     final minutes = (ms / 60000).ceil();
-    if (minutes < 60) return 'Lockout: $minutes minuti rimanenti.';
+    if (minutes < 60) return l10n.backdoorLockoutMinutes(minutes);
     final hours = (minutes / 60).ceil();
-    if (hours < 24) return 'Lockout: $hours ore rimanenti.';
+    if (hours < 24) return l10n.backdoorLockoutHours(hours);
     final days = (hours / 24).ceil();
-    return 'Lockout: $days giorni rimanenti.';
+    return l10n.backdoorLockoutDays(days);
   }
 
   @override
@@ -143,9 +142,10 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
     if (!_loaded) _hydrate();
 
     final inLockout = _lockoutRemainingMs > 0;
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Sblocco d\'emergenza')),
+      appBar: AppBar(title: Text(l10n.backdoorTitle)),
       body: KoruPullToRefresh(
         onRefresh: _refreshCounters,
         child: ListView(
@@ -160,7 +160,7 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Your current weekly code',
+                      l10n.backdoorCurrentWeeklyCode,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 16),
@@ -169,7 +169,7 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
                     // segnaliamo lo stato e invitiamo a riprovare.
                     if (_codeUnavailable) ...[
                       Text(
-                        'Codice temporaneamente non disponibile',
+                        l10n.backdoorCodeUnavailable,
                         style: Theme.of(context)
                             .textTheme
                             .titleSmall
@@ -177,10 +177,7 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'Lo spazio sicuro del dispositivo (Keystore) non è '
-                        'raggiungibile in questo momento, quindi non possiamo '
-                        'generare il codice settimanale. Riprova tra poco o '
-                        'riavvia il dispositivo.',
+                        l10n.backdoorCodeUnavailableBody,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: KoruColors.textSecondary,
                           height: 1.4,
@@ -198,11 +195,7 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'Copia il codice in un posto sicuro. Ruota ogni '
-                        'settimana, è generato in modo casuale sul tuo '
-                        'dispositivo, funziona offline, e ogni codice è '
-                        'single-use: appena lo usi per sbloccare lo strict '
-                        'mode viene sostituito da uno nuovo.',
+                        l10n.backdoorCodeExplainer,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: KoruColors.textSecondary,
                           height: 1.4,
@@ -215,7 +208,7 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
             ),
             const SizedBox(height: 24),
             Text(
-              'Emergency unblock',
+              l10n.backdoorUnblockSection,
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
@@ -228,11 +221,11 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
                 LengthLimitingTextInputFormatter(16),
               ],
               decoration: InputDecoration(
-                labelText: 'Inserisci il codice',
+                labelText: l10n.backdoorEnterCode,
                 hintText: 'ABCD2345',
                 helperText: inLockout
-                    ? _formatLockoutMessage(_lockoutRemainingMs)
-                    : '$_attemptsLeft tentativi rimanenti prima del lockout',
+                    ? _formatLockoutMessage(_lockoutRemainingMs, l10n)
+                    : l10n.backdoorAttemptsLeft(_attemptsLeft),
                 helperStyle: TextStyle(
                   color: inLockout
                       ? KoruColors.danger
@@ -251,7 +244,7 @@ class _BackdoorCodesScreenState extends ConsumerState<BackdoorCodesScreen> {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Sblocca'),
+                  : Text(l10n.backdoorUnlockButton),
             ),
             if (_validationResult != null) ...[
               const SizedBox(height: 12),

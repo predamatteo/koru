@@ -1,5 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koru/domain/entities/achievement.dart';
+import 'package:koru/presentation/l10n/model_labels.dart';
+
+import '../_helpers/l10n_test_utils.dart';
+
+final _en = enL10n;
 
 void main() {
   group('kAchievementCatalog', () {
@@ -80,7 +85,7 @@ void main() {
       final result = achievementById('setup_first_profile');
       expect(result, isNotNull);
       expect(result!.id, 'setup_first_profile');
-      expect(result.title, 'First profile');
+      expect(result.title(_en), 'First profile');
       expect(result.category, AchievementCategory.setup);
       expect(result.target, 1);
     });
