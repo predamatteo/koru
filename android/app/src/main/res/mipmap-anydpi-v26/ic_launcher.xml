@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icona adattiva (API 26+, cioè tutte le versioni supportate: minSdk = 28).
+     I PNG in mipmap-*dpi/ restano solo come fallback legacy e non vengono mai
+     risolti su un device reale.
+
+     <monochrome> alimenta le icone a tema di Android 13+: il sistema ignora il
+     colore del vector e ne tinge l'alfa con la palette del wallpaper. Per
+     un'app che si presenta come launcher minimale è la resa che l'utente si
+     aspetta sulla propria home. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/koru_icon_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>

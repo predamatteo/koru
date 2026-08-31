@@ -1,7 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Splash background: solid Koru dark base. Evita il flash bianco/wallpaper
-     mentre Flutter renderizza il primo frame, soprattutto quando Koru è
-     usato come launcher di default. -->
+<!-- Splash su API 28-30, dove non esiste ancora la SplashScreen API: la
+     finestra di lancio è tutto ciò che l'utente vede finché Flutter non
+     disegna il primo frame, quindi il marchio va messo qui a mano.
+
+     Su API 31+ questo drawable NON è lo splash — lo splash lo compone il
+     sistema da `values-v31/styles.xml`, e lì `windowBackground` torna a essere
+     una tinta piatta: un marchio anche qui lo farebbe ricomparire per un
+     istante dopo che lo splash di sistema è già sfumato via.
+
+     Il fondo resta la base scura di Koru per non lasciare flash bianchi o
+     wallpaper durante le transizioni di Activity — vale anche quando Koru è
+     il launcher predefinito. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/koru_background_base" />
+    <item
+        android:drawable="@drawable/ic_koru_splash"
+        android:gravity="center"
+        android:width="216dp"
+        android:height="216dp" />
 </layer-list>
