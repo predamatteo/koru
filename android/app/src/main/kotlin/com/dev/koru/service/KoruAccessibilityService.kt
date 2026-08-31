@@ -218,24 +218,25 @@ class KoruAccessibilityService : AccessibilityService() {
         fun triggerReload() { instance?.forceReloadProfiles() }
     }
 
-    /// Riporta l'utente fuori dall'app bloccata. Due strategie:
+    /// Riporta l'utente fuori dall'app bloccata. Due strategie; QUALE delle
+    /// due usare non si decide qui ma in [BlockExitPolicy], sul reason del
+    /// blocco — questo metodo esegue soltanto.
     ///
-    /// **BACK** (default, [forceHome] = false) — usato per il blocco
-    /// AUTOMATICO (l'utente apre l'app fresh dal launcher). Ripristina
-    /// lo stato precedente: se l'utente ha tappato l'icona dalla pagina
-    /// 3 del launcher, BACK lo riporta lì invece che alla pagina 1 (HOME).
-    /// E' il comportamento naturale di Android.
+    /// **BACK** ([forceHome] = false) — solo per APP_BLOCKED con apertura
+    /// diretta dall'icona, cioè quando l'app sta comparendo ORA e non è
+    /// ancora davvero aperta. Ripristina lo stato precedente: se l'utente ha
+    /// tappato l'icona dalla pagina 3 del launcher, BACK lo riporta lì invece
+    /// che alla pagina 1 (HOME). E' il comportamento naturale di Android.
     ///
-    /// **HOME** ([forceHome] = true) — usato per il click ESPLICITO
-    /// dell'utente su "Don't open $appLabel" / "Close $appLabel"
-    /// sull'overlay (callback onReturnHome). Quando l'utente clicca
-    /// quel bottone ha intento univoco: uscire dall'app, indipendente-
-    /// mente dallo stack interno. BACK qui sarebbe sbagliato perche'
-    /// se l'app ha activity stack interno (es. Instagram con storia
-    /// aperta sopra la feed), un singolo BACK chiude solo la storia,
-    /// non IG → l'utente vede l'overlay sparire e IG ancora in
-    /// foreground. Bug osservato: clicchi "Close instagram" dalla storia
-    /// → viene chiusa la storia ma IG no.
+    /// **HOME** ([forceHome] = true) — per tutti i blocchi che colpiscono un
+    /// utente già DENTRO l'app: cap giornaliero, sezione, sito, TTL di bypass
+    /// scaduto, più il click esplicito su "Don't open $appLabel" /
+    /// "Close $appLabel". BACK lì sarebbe sbagliato perché se l'app ha uno
+    /// stack interno (es. Instagram con storia aperta sopra la feed), un
+    /// singolo BACK chiude solo la storia, non IG → l'app resta in foreground,
+    /// il window-event successivo ri-blocca e l'utente risale lo stack "back,
+    /// back, back". Bug osservato due volte: su "Close instagram" dalla storia
+    /// e sul cap giornaliero che scattava a metà navigazione.
     ///
     /// **Fallback HOME-after-BACK**: dopo BACK schedula un re-check a
     /// 600ms; se [blockedPackage] è ancora in foreground (sintomo:
@@ -729,11 +730,12 @@ class KoruAccessibilityService : AccessibilityService() {
             onReturnHome = onReturnHome@{ forceHome ->
                 // Tap esplicito dall'overlay: il flag `forceHome` decide
                 // se forzare HOME (Intent) o tentare BACK prima con
-                // fallback HOME. La policy è scelta in OverlayManager
-                // in base alla BlockReason: APP_BLOCKED → BACK (preserva
-                // sub-pagina launcher), BYPASS_EXPIRED/USAGE_LIMIT/SECTION
-                // → HOME forzato (l'utente vuole uscire univocamente
-                // dall'app con stack interno tipo Instagram-storia).
+                // fallback HOME. La policy è UNA sola — [BlockExitPolicy],
+                // applicata sia qui (via BlockedScreen, che la valuta sul
+                // reason corrente) sia dai rami automatici di blocco:
+                // APP_BLOCKED → BACK (preserva la sub-pagina del launcher),
+                // tutti gli altri → HOME forzato (l'utente è già dentro
+                // l'app e un BACK ne risalirebbe lo stack interno).
                 //
                 // Stale-guard: se il foreground reale non coincide col
                 // target dell'overlay (es. utente ha bloccato schermo +
@@ -1640,7 +1642,16 @@ class KoruAccessibilityService : AccessibilityService() {
                         bypassPolicy = policy,
                     )
                     silenceMediaFor(packageName, BlockReason.USAGE_LIMIT)
-                    performGoHomeForBlock(blockedPackage = packageName)
+                    // forceHome=true (vedi [BlockExitPolicy]): il cap scatta
+                    // quasi sempre mentre l'utente è già DENTRO l'app, spesso
+                    // in profondità nello stack. Con BACK l'app pop-pava una
+                    // schermata sola, restava in foreground e il window-event
+                    // successivo ri-bloccava → l'utente risaliva lo stack
+                    // "back, back, back" invece di uscire.
+                    performGoHomeForBlock(
+                        forceHome = BlockExitPolicy.forceHomeFor(BlockReason.USAGE_LIMIT),
+                        blockedPackage = packageName,
+                    )
                     val now = System.currentTimeMillis()
                     BlockEventLogger.logRestrictedAccess(
                         applicationContext,
@@ -1720,7 +1731,13 @@ class KoruAccessibilityService : AccessibilityService() {
                         overlayOverAppPackage = packageName
                     } else {
                         Log.w(TAG, ">>> BLOCKING APP: $packageName by '${decision.profileTitle}'")
-                        performGoHomeForBlock(blockedPackage = packageName)
+                        // forceHome=false (vedi [BlockExitPolicy]): apertura
+                        // diretta dall'icona, BACK riporta l'utente esattamente
+                        // alla pagina del launcher da cui è partito.
+                        performGoHomeForBlock(
+                            forceHome = BlockExitPolicy.forceHomeFor(BlockReason.APP_BLOCKED),
+                            blockedPackage = packageName,
+                        )
                     }
                     val now = System.currentTimeMillis()
                     BlockEventLogger.logBlockSessionAndAccess(
@@ -2132,13 +2149,16 @@ class KoruAccessibilityService : AccessibilityService() {
         // over-app dello stesso pkg prima del kick-out. Il silenzio resta —
         // lo ri-arma lo `silenceMediaFor` qui sopra.
         endOverlayOverAppKeepingSilence()
-        // SECTION_BLOCKED: forceHome=true. Bloccare una "sezione"
-        // dentro un'app (es. Reels, Shorts) ha senso solo se l'app
-        // viene effettivamente chiusa. BACK chiuderebbe solo la
+        // SECTION_BLOCKED: forceHome=true (vedi [BlockExitPolicy]). Bloccare
+        // una "sezione" dentro un'app (es. Reels, Shorts) ha senso solo se
+        // l'app viene effettivamente chiusa. BACK chiuderebbe solo la
         // sub-activity (es. il viewer Reels) e l'utente resterebbe
         // sulla home dell'app, libero di tornare immediatamente
         // sulla sezione bloccata.
-        performGoHomeForBlock(forceHome = true, blockedPackage = packageName)
+        performGoHomeForBlock(
+            forceHome = BlockExitPolicy.forceHomeFor(BlockReason.SECTION_BLOCKED),
+            blockedPackage = packageName,
+        )
         BlockEventLogger.logBlockSessionAndAccess(
             applicationContext,
             sessionName = "$packageName/${detected.wireId}",
@@ -2301,7 +2321,10 @@ class KoruAccessibilityService : AccessibilityService() {
             // anche dopo il HOME): azzerarla adesso la chiuderebbe proprio un
             // istante prima del momento per cui esiste, e l'overlay verrebbe
             // smontato lasciando l'utente in home senza nessun feedback.
-            performGoHomeForBlock(forceHome = true, blockedPackage = packageName)
+            performGoHomeForBlock(
+                forceHome = BlockExitPolicy.forceHomeFor(BlockReason.WEBSITE_BLOCKED),
+                blockedPackage = packageName,
+            )
         }
     }
 

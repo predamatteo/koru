@@ -243,10 +243,12 @@ class OverlayManager(private val context: Context) : LifecycleOwner, SavedStateR
 
     /// Callback quando l'utente tocca "Go back" → torna alla home.
     ///
-    /// @param forceHome `true` quando il caller vuole una HOME "dura":
-    /// usato dal flow BYPASS_EXPIRED, dove "Close $app" non è solo "torna
-    /// indietro" ma una richiesta esplicita di rimuovere l'app dal foreground
-    /// (l'utente è dentro la app, non sta provando ad aprirla). Il caller
+    /// @param forceHome `true` quando il caller vuole una HOME "dura": non è
+    /// solo "torna indietro" ma una richiesta esplicita di rimuovere l'app dal
+    /// foreground (l'utente è dentro la app, non sta provando ad aprirla). Chi
+    /// invoca la callback — [BlockedScreen] — non decide a mano: valuta
+    /// [BlockExitPolicy.forceHomeFor] sul reason corrente, così l'uscita
+    /// manuale non diverge da quella automatica dei rami di blocco. Il caller
     /// può lanciare ACTION_MAIN+CATEGORY_HOME in entrambi i casi, ma con
     /// `forceHome=true` può saltare logiche di "se sei già su home, no-op"
     /// e forzare anche `moveTaskToBack` o equivalenti.
