@@ -96,6 +96,19 @@ internal fun BlockedScreen(
     // catturare una lambda stale se BlockedScreen ricompone.
     val goHomeNow by rememberUpdatedState(onGoHome)
 
+    // Strategia di uscita per QUESTO blocco — la stessa che usa il ramo
+    // automatico nel service (vedi [BlockExitPolicy]). Tenerla qui invece di
+    // hardcodare `false` evita che l'uscita "a mano" diverga da quella
+    // automatica: sul cap giornaliero il BACK risaliva lo stack interno
+    // dell'app una schermata per volta invece di chiuderla.
+    val exitForcesHome = BlockExitPolicy.forceHomeFor(reason)
+
+    // Stesso motivo di [goHomeNow]: il pointerInput parte una volta sola, quindi
+    // catturare `exitForcesHome` direttamente lo congelerebbe al valore della
+    // prima composizione anche se il reason cambia sulla stessa finestra
+    // (OverlayManager riusa la view, es. APP_BLOCKED → BYPASS_EXPIRED).
+    val exitForcesHomeNow by rememberUpdatedState(exitForcesHome)
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -103,7 +116,7 @@ internal fun BlockedScreen(
             .pointerInput(Unit) {
                 // Swipe-up (dal basso verso l'alto) = stessa azione di
                 // "Don't open": chiude l'overlay e torna in home, SENZA aprire
-                // l'app bloccata (onGoHome(false) → performGoHomeForBlock +
+                // l'app bloccata (onGoHome → performGoHomeForBlock +
                 // dismiss lato service). Replica il gesto "home" di sistema, che
                 // sull'overlay da solo non farebbe nulla. Solo verso l'alto: lo
                 // swipe-down è ignorato. I tap su pulsanti/chip restano intatti
@@ -141,7 +154,7 @@ internal fun BlockedScreen(
                                 flingPxPerSec = flingPx,
                             )
                         ) {
-                            goHomeNow(false)
+                            goHomeNow(exitForcesHomeNow)
                         }
                     },
                 )
@@ -172,11 +185,11 @@ internal fun BlockedScreen(
                 appLabel = appLabel,
                 durations = bypassPolicy.durations,
                 onDurationChosen = { durationMs -> onBypass(durationMs) },
-                // forceHome=true: l'utente è DENTRO l'app (TTL scaduto
-                // mentre era in foreground), non sta solo provando ad
-                // entrare. "Close $app" implica buttare via la task,
-                // non un semplice navigate-to-launcher.
-                onCloseApp = { onGoHome(true) },
+                // forceHome=true (vedi [BlockExitPolicy]): l'utente è DENTRO
+                // l'app (TTL scaduto mentre era in foreground), non sta solo
+                // provando ad entrare. "Close $app" implica buttare via la
+                // task, non un semplice navigate-to-launcher.
+                onCloseApp = { onGoHome(exitForcesHome) },
             )
             return@Box
         }
@@ -248,7 +261,7 @@ internal fun BlockedScreen(
             // incoraggiare, quindi sta in cima; il timer/countdown (escape hatch
             // gateato da frizione) vive sotto.
             Button(
-                onClick = { onGoHome(false) },
+                onClick = { onGoHome(exitForcesHome) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
