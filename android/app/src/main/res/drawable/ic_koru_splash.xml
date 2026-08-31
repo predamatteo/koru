@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Marchio Koru per lo splash di sistema (Android 12+, windowSplashScreenAnimatedIcon)
+     e, ridimensionato, per il windowBackground di launch_background.xml su API 28-30.
+
+     TRACCIATO: gli stessi 97 punti di `_points` in
+     `lib/presentation/widgets/koru_spiral.dart`, in coordinate 0-100 e NON
+     riscalati — il fitting sta tutto nel <group>, così i numeri qui e quelli
+     Dart si confrontano uno a uno. È l'unico modo di accorgersi di una
+     divergenza: il marchio vive in due runtime (CustomPainter Dart e
+     VectorDrawable Android) che nessun compilatore mette a confronto.
+     `test/presentation/widgets/koru_spiral_vector_parity_test.dart` è il guardrail.
+
+     KEYLINE: senza icon background lo splash vuole un riquadro 288x288 dp con
+     il glifo dentro un cerchio di 192 dp (developer.android.com — "Splash
+     screens"). Il bounding box del tracciato, tratto incluso, misura
+     57.24x51.05 (diagonale 76.70): scala 2.5 → diagonale 191.75, esattamente
+     dentro la keyline. La traslazione porta il centro del bounding box —
+     che nel riquadro 0-100 è decentrato in alto a destra — sul centro del
+     riquadro (144,144), come fa `_KoruSpiralPainter` con `_bounds.center`. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp"
+    android:height="288dp"
+    android:viewportWidth="288"
+    android:viewportHeight="288">
+    <group
+        android:scaleX="2.5"
+        android:scaleY="2.5"
+        android:translateX="7.53"
+        android:translateY="39.58">
+        <path
+            android:strokeColor="#FFA4D6A0"
+            android:strokeWidth="4.5"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M50.00,48.40 L50.23,48.36 L50.47,48.36 L50.72,48.39 L50.97,48.46 L51.22,48.56 L51.46,48.70 L51.68,48.89
+L51.88,49.10 L52.06,49.35 L52.20,49.64 L52.30,49.95 L52.36,50.28 L52.38,50.63 L52.34,50.99 L52.25,51.35
+L52.11,51.71 L51.91,52.06 L51.66,52.38 L51.35,52.68 L51.00,52.94 L50.59,53.15 L50.15,53.31 L49.68,53.41
+L49.17,53.44 L48.66,53.40 L48.13,53.29 L47.61,53.09 L47.11,52.82 L46.63,52.46 L46.19,52.03 L45.81,51.53
+L45.49,50.96 L45.25,50.33 L45.09,49.65 L45.02,48.93 L45.06,48.18 L45.21,47.42 L45.47,46.67 L45.85,45.93
+L46.34,45.24 L46.95,44.59 L47.66,44.02 L48.47,43.55 L49.37,43.17 L50.35,42.92 L51.38,42.81 L52.46,42.84
+L53.55,43.03 L54.65,43.38 L55.71,43.90 L56.73,44.58 L57.68,45.43 L58.52,46.44 L59.23,47.59 L59.80,48.87
+L60.19,50.27 L60.39,51.75 L60.38,53.30 L60.15,54.88 L59.68,56.46 L58.96,58.02 L58.01,59.51 L56.82,60.89
+L55.40,62.13 L53.77,63.20 L51.94,64.06 L49.95,64.67 L47.82,65.00 L45.60,65.04 L43.32,64.75 L41.02,64.13
+L38.76,63.16 L36.59,61.84 L34.56,60.17 L32.73,58.17 L31.14,55.86 L29.85,53.26 L28.90,50.41 L28.35,47.37
+L28.22,44.17 L28.56,40.87 L29.38,37.55 L30.70,34.27 L32.53,31.10 L34.86,28.13 L37.68,25.42 L40.95,23.06
+L44.65,21.12 L48.71,19.67 L53.08,18.77 L57.67,18.49 L62.42,18.86 L67.23,19.93 L71.99,21.73 L76.60,24.25
+L80.96,27.51" />
+    </group>
+</vector>

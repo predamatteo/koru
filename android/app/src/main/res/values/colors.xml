@@ -1,11 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Koru dark palette base. Allineato a KoruColors.backgroundBase
-         lato Dart (#0E100F). Usato come window background per evitare
-         flash bianchi/wallpaper durante le transizioni Activity. -->
-    <color name="koru_background_base">#FF0E100F</color>
+         lato Dart (#0F1210). Usato come window background e come sfondo
+         dello splash di sistema: evita flash bianchi/wallpaper durante le
+         transizioni Activity e la cucitura visibile fra splash e primo frame
+         di Flutter. -->
+    <color name="koru_background_base">#FF0F1210</color>
     <color name="koru_surface">#FF1A1D1B</color>
     <color name="koru_primary">#FF5C8262</color>
+
+    <!-- Sfondo dell'icona adattiva (mipmap-anydpi-v26/ic_launcher.xml).
+         È `primaryContainer` di KoruColors, non la base scura: un'icona quasi
+         nera sparisce sui wallpaper scuri, mentre il salvia profondo resta
+         riconoscibile ovunque ed è già la coppia container/on-container su
+         cui il launcher disegna la spirale. -->
+    <color name="koru_icon_background">#FF294E2E</color>
 
     <!-- ── Widget home (RemoteViews) ──────────────────────────────────────
          Mirror ESATTO dei token di `lib/core/constants/koru_colors.dart`:

@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Splash durante il cold start — bg solido dark Koru. -->
+    <!-- Splash durante il cold start su API 28-30: qui non esiste la
+         SplashScreen API, quindi lo splash È la finestra di lancio e il
+         marchio sta dentro `launch_background`. Su API 31+ questo stile è
+         sostituito da `values-v31/styles.xml`, dove lo splash lo compone il
+         sistema. -->
     <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <item name="android:windowBackground">@drawable/launch_background</item>
     </style>

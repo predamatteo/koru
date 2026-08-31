@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ · SplashScreen API.
+
+     Da API 31 lo splash lo disegna il SISTEMA, e non è disattivabile: se il
+     tema non dice altro, mostra `android:icon` dell'app al centro di
+     `windowBackground`. È il motivo per cui si vedeva il logo di Flutter —
+     era l'icona di default mai sostituita, non qualcosa che l'app disegnava.
+
+     Qui lo splash viene composto esplicitamente: sfondo Koru + spirale del
+     marchio. `windowSplashScreenAnimatedIcon` accetta anche un drawable
+     statico; l'icona resta comunque quella dichiarata nel manifest per il
+     launcher, ma lo splash usa la nostra, disegnata sulla keyline giusta.
+
+     `windowBackground` torna alla tinta piatta perché su questa API il
+     drawable non è più lo splash: è solo la finestra dell'Activity fra la
+     dissolvenza dello splash di sistema e il primo frame di Flutter. Il
+     marchio, ripetuto lì, comparirebbe una seconda volta.
+
+     ATTENZIONE al vecchio `values-night/styles.xml`: era un duplicato esatto
+     di `values/styles.xml` (Koru è dark-only) ma il qualificatore di night
+     mode ha precedenza su quello di versione, quindi su un device in tema
+     scuro avrebbe vinto lui e questo file non sarebbe mai stato letto. È
+     stato rimosso; non reintrodurlo senza aggiungere anche values-night-v31. -->
+<resources>
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@color/koru_background_base</item>
+        <item name="android:windowSplashScreenBackground">@color/koru_background_base</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_koru_splash</item>
+    </style>
+</resources>
