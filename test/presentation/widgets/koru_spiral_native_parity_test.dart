@@ -175,6 +175,94 @@ void main() {
     }
   });
 
+  group('icona di notifica', () {
+    // L'unica incarnazione del marchio che NON usa tutti i punti: a 24 dp il
+    // ricciolo interno si chiude in una macchia, quindi il tracciato parte più
+    // in fuori e il tratto è più pesante. È correzione ottica, e la differenza
+    // va tenuta stretta — altrimenti "icona più leggibile" diventa la scusa
+    // per un secondo marchio che nessuno ha disegnato.
+    const path = '$resDir/drawable/ic_notification_koru.xml';
+    const canvas = 24.0;
+    final xml = read(path);
+    final points = pointsOf(
+      RegExp(r'android:pathData="([^"]*)"', dotAll: true)
+          .firstMatch(xml)!
+          .group(1)!,
+      RegExp(r'[ML]\s*([\d.]+),([\d.]+)'),
+    );
+
+    test('il tracciato è un suffisso esatto dei punti Dart', () {
+      final start = dartPoints.indexOf(points.first);
+      expect(start, greaterThanOrEqualTo(0),
+          reason: 'il primo punto non esiste in $dartSource');
+      expect(
+        points,
+        dartPoints.sublist(start),
+        reason: 'non è la spirale di Koru accorciata, è un altro disegno',
+      );
+    });
+
+    test('accorcia solo il ricciolo interno', () {
+      // Tolto troppo, resta un uncino che non si legge più come una spirale.
+      final dropped = dartPoints.length - points.length;
+      expect(dropped, lessThanOrEqualTo(dartPoints.length ~/ 3));
+      expect(dropped, greaterThan(0), reason: 'se non toglie nulla, usa lo '
+          'stesso vector del launcher invece di duplicarlo');
+    });
+
+    test('il tratto reso pesa quanto un\'icona di sistema Material', () {
+      // ~2 dp su 24: sotto sparisce nella status bar, sopra impasta le
+      // spire. È il numero che giustifica l'esistenza di questo file.
+      final rendered = attr(xml, 'strokeWidth') * attr(xml, 'scaleX');
+      expect(rendered, greaterThanOrEqualTo(1.8));
+      expect(rendered, lessThanOrEqualTo(2.4));
+    });
+
+    test('il glifo è centrato e sta nel riquadro', () {
+      final stroke = attr(xml, 'strokeWidth');
+      final scale = attr(xml, 'scaleX');
+      expect(attr(xml, 'scaleY'), scale, reason: 'scala non uniforme');
+
+      final xs = points.map((p) => p.$1);
+      final ys = points.map((p) => p.$2);
+      final cx = (xs.reduce(math.min) + xs.reduce(math.max)) / 2;
+      final cy = (ys.reduce(math.min) + ys.reduce(math.max)) / 2;
+      expect(scale * cx + attr(xml, 'translateX'), closeTo(canvas / 2, 0.05));
+      expect(scale * cy + attr(xml, 'translateY'), closeTo(canvas / 2, 0.05));
+
+      final w = (xs.reduce(math.max) - xs.reduce(math.min) + stroke) * scale;
+      final h = (ys.reduce(math.max) - ys.reduce(math.min) + stroke) * scale;
+      expect(math.max(w, h), lessThanOrEqualTo(canvas));
+      expect(math.max(w, h), greaterThanOrEqualTo(canvas * 0.8),
+          reason: 'un glifo piccolo dentro un riquadro grande si vede come '
+              'un puntino nella status bar');
+    });
+
+    test('è bianco pieno', () {
+      // Da API 21 la small icon è trattata come maschera di alfa: qualunque
+      // colore verrebbe scartato, e uno colorato illude chi legge il file.
+      expect(colorAttr(xml, 'strokeColor'), 0xFFFFFFFF);
+    });
+
+    test('nessuna notifica usa più icone di sistema', () {
+      // Il punto di partenza: lucchetto e triangolo generici, che nella status
+      // bar non dicono da quale app arriva la notifica.
+      final kotlin = Directory('android/app/src/main/kotlin')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.kt'));
+
+      final offenders = <String>[];
+      for (final file in kotlin) {
+        final source = file.readAsStringSync();
+        if (RegExp(r'setSmallIcon\(\s*android\.R\.drawable').hasMatch(source)) {
+          offenders.add(file.path);
+        }
+      }
+      expect(offenders, isEmpty);
+    });
+  });
+
   group('risorse di lancio', () {
     // Due trappole di risoluzione delle risorse Android, entrambe già scattate
     // in questo repo: un file con un qualificatore più specifico oscura quello

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icona di notifica (status bar + tendina). Sostituisce le icone di sistema
+     `ic_lock_lock` / `ic_dialog_alert`: nella status bar la small icon è
+     l'unica cosa che dice CHI sta notificando, e un lucchetto generico non
+     dice Koru.
+
+     Il colore è irrilevante: da API 21 Android tratta la small icon come una
+     maschera di alfa e la ricolora da sé. Bianco pieno è la convenzione.
+
+     PERCHÉ NON È LA SPIRALE INTERA. Le altre due incarnazioni del marchio
+     (`ic_koru_splash.xml`, `ic_launcher_foreground.xml`) usano tutti e 97 i
+     punti di `_points`; qui il tracciato parte dal punto 24, cioè senza il
+     ricciolo più interno, e il tratto passa da 4.5 a 5.5 unità.
+
+     È correzione ottica, non un marchio diverso: a 24 dp il giro interno ha
+     un diametro di ~2.8 dp e con il tratto proporzionale si chiude in una
+     macchia — la spirale diventa un punto con una virgola intorno. Tolto un
+     giro, il tratto reso viene 2.08 dp su 24, cioè esattamente il peso delle
+     icone di sistema Material, e il glifo resta leggibile.
+
+     Il contratto con il Dart resta verificabile: questi punti sono un suffisso
+     ESATTO e contiguo di `_points`, ed è quello che controlla
+     `koru_spiral_native_parity_test.dart`. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:scaleX="0.3777"
+        android:scaleY="0.3777"
+        android:translateX="-8.6212"
+        android:translateY="-3.7766">
+        <path
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="5.5"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M49.17,53.44 L48.66,53.40 L48.13,53.29 L47.61,53.09 L47.11,52.82 L46.63,52.46 L46.19,52.03 L45.81,51.53
+L45.49,50.96 L45.25,50.33 L45.09,49.65 L45.02,48.93 L45.06,48.18 L45.21,47.42 L45.47,46.67 L45.85,45.93
+L46.34,45.24 L46.95,44.59 L47.66,44.02 L48.47,43.55 L49.37,43.17 L50.35,42.92 L51.38,42.81 L52.46,42.84
+L53.55,43.03 L54.65,43.38 L55.71,43.90 L56.73,44.58 L57.68,45.43 L58.52,46.44 L59.23,47.59 L59.80,48.87
+L60.19,50.27 L60.39,51.75 L60.38,53.30 L60.15,54.88 L59.68,56.46 L58.96,58.02 L58.01,59.51 L56.82,60.89
+L55.40,62.13 L53.77,63.20 L51.94,64.06 L49.95,64.67 L47.82,65.00 L45.60,65.04 L43.32,64.75 L41.02,64.13
+L38.76,63.16 L36.59,61.84 L34.56,60.17 L32.73,58.17 L31.14,55.86 L29.85,53.26 L28.90,50.41 L28.35,47.37
+L28.22,44.17 L28.56,40.87 L29.38,37.55 L30.70,34.27 L32.53,31.10 L34.86,28.13 L37.68,25.42 L40.95,23.06
+L44.65,21.12 L48.71,19.67 L53.08,18.77 L57.67,18.49 L62.42,18.86 L67.23,19.93 L71.99,21.73 L76.60,24.25
+L80.96,27.51" />
+    </group>
+</vector>

@@ -11,6 +11,7 @@ import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.dev.koru.MainActivity
+import com.dev.koru.R
 
 /**
  * SEC-02 — strato fail-secure contro il reset dello strict mode via
@@ -129,7 +130,7 @@ object StrictModeFailSafe {
             )
 
             val notification = NotificationCompat.Builder(context, NOTIF_CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setSmallIcon(R.drawable.ic_notification_koru)
                 .setContentTitle("Strict mode ripristinato")
                 .setContentText(
                     "I dati dell'app risultano azzerati con strict mode ancora armato. " +

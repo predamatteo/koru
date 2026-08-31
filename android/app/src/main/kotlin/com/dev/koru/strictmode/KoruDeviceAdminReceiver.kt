@@ -10,6 +10,7 @@ import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.dev.koru.MainActivity
+import com.dev.koru.R
 
 /**
  * Device Admin receiver per Koru Strict Mode.
@@ -136,7 +137,7 @@ class KoruDeviceAdminReceiver : DeviceAdminReceiver() {
             )
 
             val notification = NotificationCompat.Builder(context, NOTIF_CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setSmallIcon(R.drawable.ic_notification_koru)
                 .setContentTitle("Device Admin disabilitato")
                 .setContentText("Koru può ora essere disinstallato. Riabilita Device Admin per ripristinare strict mode.")
                 .setStyle(
